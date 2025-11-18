@@ -14,8 +14,8 @@ logger = logging.getLogger("acm_switchover")
 
 class KubeClient:
     """Wrapper for Kubernetes API client with ACM-specific helpers."""
-    
-    def __init__(self, context: str, dry_run: bool = False) -> None:
+
+    def __init__(self, context: Optional[str] = None, dry_run: bool = False) -> None:
         """
         Initialize Kubernetes client for specific context.
         
@@ -33,7 +33,7 @@ class KubeClient:
         self.apps_v1 = client.AppsV1Api()
         self.custom_api = client.CustomObjectsApi()
         
-        logger.info(f"Initialized Kubernetes client for context: {context}")
+        logger.info(f"Initialized Kubernetes client for context: {context or 'default'}")
     
     def get_namespace(self, name: str) -> Optional[Dict]:
         """Check if namespace exists.
@@ -168,8 +168,7 @@ class KubeClient:
         """
         if self.dry_run:
             logger.info(f"[DRY-RUN] Would patch {plural}/{name} with: {patch}")
-            # Return original resource in dry-run
-            return self.get_custom_resource(group, version, plural, name, namespace) or {}
+            return {}
         
         try:
             if namespace:
@@ -359,6 +358,14 @@ class KubeClient:
             if e.status == 404:
                 return []
             raise
+
+    def list_pods(
+        self,
+        namespace: str,
+        label_selector: Optional[str] = None,
+    ) -> List[Dict]:
+        """Backward compatible alias for get_pods."""
+        return self.get_pods(namespace, label_selector)
     
     def wait_for_pods_ready(
         self,
