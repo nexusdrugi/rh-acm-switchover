@@ -40,5 +40,16 @@ def wait_for_condition(
 
 		time.sleep(interval)
 
+	done, detail = condition_fn()
+	if done:
+		if detail:
+			logger.info("%s complete: %s", description, detail)
+		else:
+			logger.info("%s complete", description)
+		return True
+	elif detail:
+		elapsed = int(time.time() - start_time)
+		logger.debug("%s in progress: %s (elapsed: %ss)", description, detail, elapsed)
+
 	logger.warning("%s not complete after %ss timeout", description, timeout)
 	return False

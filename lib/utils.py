@@ -55,10 +55,6 @@ class StateManager:
             "config": {},
             "errors": [],
             "last_updated": _utc_timestamp()
-        }
-    
-    def save_state(self) -> None:
-        """Save current state to file."""
         state_dir = os.path.dirname(self.state_file)
         if state_dir:  # Only create directory if path contains one
             os.makedirs(state_dir, exist_ok=True)

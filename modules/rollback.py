@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+from lib.constants import BACKUP_NAMESPACE, OBSERVABILITY_NAMESPACE
 from lib.kube_client import KubeClient
 from lib.utils import StateManager
 from .backup_schedule import BackupScheduleManager
@@ -58,7 +59,7 @@ class Rollback:
             version="v1beta1",
             plural="restores",
             name="restore-acm-full",
-            namespace="open-cluster-management-backup",
+            namespace=BACKUP_NAMESPACE,
         )
 
         if deleted:
@@ -112,7 +113,7 @@ class Rollback:
         try:
             self.primary.scale_statefulset(
                 name="observability-thanos-compact",
-                namespace="open-cluster-management-observability",
+                namespace=OBSERVABILITY_NAMESPACE,
                 replicas=1,
             )
 
