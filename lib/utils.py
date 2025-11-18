@@ -40,13 +40,22 @@ class StateManager:
         """Load state from file or create new state."""
         if os.path.exists(self.state_file):
             try:
-                with open(self.state_file, 'r', encoding='utf-8') as f:
+                with open(self.state_file, "r", encoding="utf-8") as f:
                     return json.load(f)
             except json.JSONDecodeError as e:
-                logging.warning(f"Corrupted state file {self.state_file}: {e}, starting fresh")
+                logging.warning(
+                    "Corrupted state file %s: %s, starting fresh", self.state_file, e
+                )
             except OSError as e:
-                logging.error(f"Failed to read state file {self.state_file}: {e}")
-        
+                logging.error("Failed to read state file %s: %s", self.state_file, e)
+
+        # If state file is missing or unreadable, create a new state file.
+        state = self._new_state()
+        self._write_state(state)
+        return state
+
+    def _new_state(self) -> Dict[str, Any]:
+        """Return a fresh state structure."""
         return {
             "version": "1.0",
             "created_at": _utc_timestamp(),
@@ -54,14 +63,24 @@ class StateManager:
             "completed_steps": [],
             "config": {},
             "errors": [],
-            "last_updated": _utc_timestamp()
+            "last_updated": _utc_timestamp(),
+        }
+
+    def _ensure_state_dir(self) -> None:
         state_dir = os.path.dirname(self.state_file)
-        if state_dir:  # Only create directory if path contains one
+        if state_dir:
             os.makedirs(state_dir, exist_ok=True)
+
+    def _write_state(self, state: Dict[str, Any]) -> None:
+        """Write the provided state dict to disk without modifying it."""
+        self._ensure_state_dir()
+        with open(self.state_file, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2)
+
+    def save_state(self) -> None:
+        """Persist current state to disk."""
         self.state["last_updated"] = _utc_timestamp()
-        
-        with open(self.state_file, 'w', encoding='utf-8') as f:
-            json.dump(self.state, f, indent=2)
+        self._write_state(self.state)
     
     def set_phase(self, phase: Phase) -> None:
         """Update current phase."""
