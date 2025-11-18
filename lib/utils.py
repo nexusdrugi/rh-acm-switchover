@@ -35,10 +35,12 @@ class StateManager:
         """Load state from file or create new state."""
         if os.path.exists(self.state_file):
             try:
-                with open(self.state_file, 'r') as f:
+                with open(self.state_file, 'r', encoding='utf-8') as f:
                     return json.load(f)
-            except json.JSONDecodeError:
-                logging.warning(f"Corrupted state file {self.state_file}, starting fresh")
+            except json.JSONDecodeError as e:
+                logging.warning(f"Corrupted state file {self.state_file}: {e}, starting fresh")
+            except OSError as e:
+                logging.error(f"Failed to read state file {self.state_file}: {e}")
         
         return {
             "version": "1.0",
@@ -50,20 +52,20 @@ class StateManager:
             "last_updated": datetime.utcnow().isoformat()
         }
     
-    def save_state(self):
+    def save_state(self) -> None:
         """Save current state to file."""
         os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
         self.state["last_updated"] = datetime.utcnow().isoformat()
         
-        with open(self.state_file, 'w') as f:
+        with open(self.state_file, 'w', encoding='utf-8') as f:
             json.dump(self.state, f, indent=2)
     
-    def set_phase(self, phase: Phase):
+    def set_phase(self, phase: Phase) -> None:
         """Update current phase."""
         self.state["current_phase"] = phase.value
         self.save_state()
     
-    def mark_step_completed(self, step_name: str):
+    def mark_step_completed(self, step_name: str) -> None:
         """Mark a step as completed."""
         if step_name not in self.state["completed_steps"]:
             self.state["completed_steps"].append({
@@ -76,7 +78,7 @@ class StateManager:
         """Check if a step was already completed."""
         return any(s["name"] == step_name for s in self.state["completed_steps"])
     
-    def set_config(self, key: str, value: Any):
+    def set_config(self, key: str, value: Any) -> None:
         """Store configuration value."""
         self.state["config"][key] = value
         self.save_state()
@@ -85,7 +87,7 @@ class StateManager:
         """Retrieve configuration value."""
         return self.state["config"].get(key, default)
     
-    def add_error(self, error: str, phase: Optional[str] = None):
+    def add_error(self, error: str, phase: Optional[str] = None) -> None:
         """Record an error."""
         self.state["errors"].append({
             "error": error,
@@ -94,7 +96,7 @@ class StateManager:
         })
         self.save_state()
     
-    def reset(self):
+    def reset(self) -> None:
         """Reset state to initial."""
         self.state = {
             "version": "1.0",

@@ -15,7 +15,7 @@ logger = logging.getLogger("acm_switchover")
 class KubeClient:
     """Wrapper for Kubernetes API client with ACM-specific helpers."""
     
-    def __init__(self, context: str, dry_run: bool = False):
+    def __init__(self, context: str, dry_run: bool = False) -> None:
         """
         Initialize Kubernetes client for specific context.
         
@@ -36,13 +36,21 @@ class KubeClient:
         logger.info(f"Initialized Kubernetes client for context: {context}")
     
     def get_namespace(self, name: str) -> Optional[Dict]:
-        """Check if namespace exists."""
+        """Check if namespace exists.
+        
+        Args:
+            name: Namespace name
+            
+        Returns:
+            Namespace dict or None if not found
+        """
         try:
             ns = self.core_v1.read_namespace(name)
             return ns.to_dict()
         except ApiException as e:
             if e.status == 404:
                 return None
+            logger.error(f"Failed to get namespace {name}: {e}")
             raise
     
     def namespace_exists(self, name: str) -> bool:

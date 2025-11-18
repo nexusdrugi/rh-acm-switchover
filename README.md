@@ -15,9 +15,14 @@ Automated, idempotent script for switching over Red Hat Advanced Cluster Managem
 
 ## Documentation
 
-- **[Quick Reference](QUICKREF.md)** - Command cheat sheet and common tasks
-- **[Detailed Usage Guide](USAGE.md)** - Complete examples and scenarios
-- **[Architecture](ARCHITECTURE.md)** - Design and implementation details
+- **[Quick Reference](docs/QUICKREF.md)** - Command cheat sheet and common tasks
+- **[Detailed Usage Guide](docs/USAGE.md)** - Complete examples and scenarios
+- **[Installation Guide](docs/INSTALL.md)** - Detailed installation instructions
+- **[Architecture](docs/ARCHITECTURE.md)** - Design and implementation details
+- **[Testing Guide](docs/TESTING.md)** - How to run tests and CI/CD
+- **[Contributing](docs/CONTRIBUTING.md)** - Development guidelines
+
+See [docs/README.md](docs/README.md) for complete documentation index.
 
 ## Prerequisites
 
@@ -147,6 +152,7 @@ python acm_switchover.py --decommission \
 ### State Management
 
 The script maintains a JSON state file tracking:
+
 - Completed steps
 - Current phase
 - Timestamp of each operation
@@ -154,6 +160,7 @@ The script maintains a JSON state file tracking:
 - Errors encountered
 
 This enables:
+
 - Resume from failure point
 - Audit trail of operations
 - Rollback with context awareness
@@ -170,15 +177,19 @@ This enables:
 ## Troubleshooting
 
 ### Clusters Stuck in "Pending Import"
+
 Wait 10-15 minutes for auto-import. Check import secrets in managed cluster namespaces.
 
 ### No Metrics in Grafana After Switchover
+
 Ensure observatorium-api pods were restarted. Wait 10 minutes for metrics collection to resume.
 
 ### Restore Stuck in "Running" Phase
+
 Check Velero restore logs: `oc logs -n open-cluster-management-backup deployment/velero`
 
 ### Resume from Specific Step
+
 Edit state file manually or use `--reset-state` to start fresh (use with caution).
 
 ## Testing
@@ -206,6 +217,7 @@ See [TESTING.md](docs/TESTING.md) for detailed testing guide.
 ### CI/CD Pipelines
 
 **Main Pipeline** (`.github/workflows/ci-cd.yml`):
+
 - Runs on every push and pull request
 - Tests across Python 3.8-3.12
 - Code quality and security checks
@@ -213,6 +225,7 @@ See [TESTING.md](docs/TESTING.md) for detailed testing guide.
 - Documentation verification
 
 **Security Pipeline** (`.github/workflows/security.yml`):
+
 - Runs daily and on security-related changes
 - Dependency vulnerability scanning
 - Static security analysis
@@ -220,7 +233,7 @@ See [TESTING.md](docs/TESTING.md) for detailed testing guide.
 - Container image scanning
 - SBOM generation
 
-## Documentation
+## Related Resources
 
 - **[Quick Reference](docs/QUICKREF.md)** - Command cheat sheet and examples
 - **[Usage Guide](docs/USAGE.md)** - Detailed usage guide with scenarios

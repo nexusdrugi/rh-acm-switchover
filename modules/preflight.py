@@ -12,7 +12,11 @@ logger = logging.getLogger("acm_switchover")
 
 
 class ValidationError(Exception):
-    """Validation check failed."""
+    """Validation check failed.
+    
+    Raised when a critical pre-flight validation check fails,
+    indicating that the switchover should not proceed.
+    """
     pass
 
 
@@ -30,8 +34,15 @@ class PreflightValidator:
         self.method = method
         self.validation_results = []
         
-    def add_result(self, check: str, passed: bool, message: str, critical: bool = True):
-        """Record validation result."""
+    def add_result(self, check: str, passed: bool, message: str, critical: bool = True) -> None:
+        """Record validation result.
+        
+        Args:
+            check: Name of the validation check
+            passed: Whether the check passed
+            message: Descriptive message about the result
+            critical: Whether this is a critical check (blocks switchover if failed)
+        """
         self.validation_results.append({
             "check": check,
             "passed": passed,
