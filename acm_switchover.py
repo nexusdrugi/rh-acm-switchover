@@ -19,14 +19,16 @@ import argparse
 import logging
 import sys
 from datetime import datetime
+from typing import Any, Callable, Dict, Iterable, Optional, Tuple, cast
 
 from lib import (
     KubeClient,
     Phase,
     StateManager,
+    confirm_action,
     setup_logging,
-    confirm_action
 )
+from lib.constants import EXIT_FAILURE, EXIT_INTERRUPT, EXIT_SUCCESS
 from modules import (
     PreflightValidator,
     PrimaryPreparation,
@@ -37,7 +39,10 @@ from modules import (
     Decommission
 )
 
-logger = None
+PhaseHandler = Callable[
+    [argparse.Namespace, StateManager, KubeClient, KubeClient, logging.Logger],
+    bool,
+]
 
 
 def parse_args():
@@ -150,120 +155,39 @@ def validate_args(args):
         sys.exit(1)
 
 
-def run_switchover(args, state: StateManager, primary: KubeClient, secondary: KubeClient):
+def run_switchover(
+    args: argparse.Namespace,
+    state: StateManager,
+    primary: KubeClient,
+    secondary: KubeClient,
+    logger: logging.Logger,
+):
     """Execute the main switchover workflow."""
-    
-    # Phase 1: Pre-flight Validation
-    if state.get_current_phase() == Phase.INIT or state.get_current_phase() == Phase.PREFLIGHT:
-        logger.info("\n" + "=" * 60)
-        logger.info("PHASE 1: PRE-FLIGHT VALIDATION")
-        logger.info("=" * 60)
-        
-        state.set_phase(Phase.PREFLIGHT)
-        
-        validator = PreflightValidator(primary, secondary, args.method)
-        passed, config = validator.validate_all()
-        
-        if not passed:
-            logger.error("Pre-flight validation failed! Cannot proceed.")
-            state.set_phase(Phase.FAILED)
-            return False
-        
-        # Store detected configuration
-        state.set_config("primary_version", config["primary_version"])
-        state.set_config("secondary_version", config["secondary_version"])
-        state.set_config("has_observability", config["has_observability"] and not args.skip_observability_checks)
-        
-        if args.validate_only:
-            logger.info("\n✓ Validation complete. Exiting (--validate-only mode)")
-            return True
-        
-        logger.info("\n✓ Pre-flight validation passed!")
-    
-    # Phase 2: Primary Hub Preparation
-    if state.get_current_phase() in (Phase.PREFLIGHT, Phase.PRIMARY_PREP):
-        logger.info("\n" + "=" * 60)
-        logger.info("PHASE 2: PRIMARY HUB PREPARATION")
-        logger.info("=" * 60)
-        
-        state.set_phase(Phase.PRIMARY_PREP)
-        
-        prep = PrimaryPreparation(
-            primary,
-            state,
-            state.get_config("primary_version", "unknown"),
-            state.get_config("has_observability", False)
-        )
-        
-        if not prep.prepare():
-            logger.error("Primary hub preparation failed!")
-            state.set_phase(Phase.FAILED)
-            return False
-        
-        logger.info("\n✓ Primary hub preparation complete!")
-    
-    # Phase 3: Secondary Hub Activation
-    if state.get_current_phase() in (Phase.PREFLIGHT, Phase.PRIMARY_PREP, Phase.ACTIVATION):
-        logger.info("\n" + "=" * 60)
-        logger.info("PHASE 3: SECONDARY HUB ACTIVATION")
-        logger.info("=" * 60)
-        
-        state.set_phase(Phase.ACTIVATION)
-        
-        activation = SecondaryActivation(secondary, state, args.method)
-        
-        if not activation.activate():
-            logger.error("Secondary hub activation failed!")
-            state.set_phase(Phase.FAILED)
-            return False
-        
-        logger.info("\n✓ Secondary hub activation complete!")
-    
-    # Phase 4: Post-Activation Verification
-    if state.get_current_phase() in (Phase.ACTIVATION, Phase.POST_ACTIVATION):
-        logger.info("\n" + "=" * 60)
-        logger.info("PHASE 4: POST-ACTIVATION VERIFICATION")
-        logger.info("=" * 60)
-        
-        state.set_phase(Phase.POST_ACTIVATION)
-        
-        verification = PostActivationVerification(
-            secondary,
-            state,
-            state.get_config("has_observability", False)
-        )
-        
-        if not verification.verify():
-            logger.error("Post-activation verification failed!")
-            state.set_phase(Phase.FAILED)
-            return False
-        
-        logger.info("\n✓ Post-activation verification complete!")
-    
-    # Phase 5: Finalization
-    if state.get_current_phase() in (Phase.POST_ACTIVATION, Phase.FINALIZATION):
-        logger.info("\n" + "=" * 60)
-        logger.info("PHASE 5: FINALIZATION")
-        logger.info("=" * 60)
-        
-        state.set_phase(Phase.FINALIZATION)
-        
-        finalization = Finalization(
-            secondary,
-            state,
-            state.get_config("secondary_version", "unknown")
-        )
-        
-        if not finalization.finalize():
-            logger.error("Finalization failed!")
-            state.set_phase(Phase.FAILED)
-            return False
-        
-        logger.info("\n✓ Finalization complete!")
-    
-    # Mark as completed
+
+    if secondary is None:
+        raise ValueError("Secondary client is required for switchover")
+
+    phase_flow: Tuple[Tuple[PhaseHandler, Iterable[Phase]], ...] = (
+        (_run_phase_preflight, (Phase.INIT, Phase.PREFLIGHT)),
+        (_run_phase_primary_prep, (Phase.PREFLIGHT, Phase.PRIMARY_PREP)),
+        (
+            _run_phase_activation,
+            (Phase.PREFLIGHT, Phase.PRIMARY_PREP, Phase.ACTIVATION),
+        ),
+        (_run_phase_post_activation, (Phase.ACTIVATION, Phase.POST_ACTIVATION)),
+        (_run_phase_finalization, (Phase.POST_ACTIVATION, Phase.FINALIZATION)),
+    )
+
+    for handler, allowed_phases in phase_flow:
+        if state.get_current_phase() in allowed_phases:
+            result = handler(args, state, primary, secondary, logger)
+            if args.validate_only:
+                return result
+            if not result:
+                return False
+
     state.set_phase(Phase.COMPLETED)
-    
+
     logger.info("\n" + "=" * 60)
     logger.info("SWITCHOVER COMPLETED SUCCESSFULLY!")
     logger.info("=" * 60)
@@ -274,11 +198,158 @@ def run_switchover(args, state: StateManager, primary: KubeClient, secondary: Ku
     logger.info("  2. Provide new hub connection details")
     logger.info("  3. Verify applications are functioning correctly")
     logger.info("  4. Optionally decommission old hub with: --decommission")
-    
+
     return True
 
 
-def run_rollback(args, state: StateManager, primary: KubeClient, secondary: KubeClient):
+def _run_phase_preflight(
+    args: argparse.Namespace,
+    state: StateManager,
+    primary: KubeClient,
+    secondary: KubeClient,
+    logger: logging.Logger,
+) -> bool:
+    _log_phase_banner("PHASE 1: PRE-FLIGHT VALIDATION", logger)
+
+    state.set_phase(Phase.PREFLIGHT)
+
+    validator = PreflightValidator(primary, secondary, args.method)
+    passed, config = cast(
+        Tuple[bool, Dict[str, Any]],
+        validator.validate_all(),
+    )
+
+    if not passed:
+        logger.error("Pre-flight validation failed! Cannot proceed.")
+        state.set_phase(Phase.FAILED)
+        return False
+
+    state.set_config("primary_version", config["primary_version"])
+    state.set_config("secondary_version", config["secondary_version"])
+    state.set_config(
+        "has_observability",
+        config["has_observability"] and not args.skip_observability_checks,
+    )
+
+    if args.validate_only:
+        logger.info("\n✓ Validation complete. Exiting (--validate-only mode)")
+        return True
+
+    logger.info("\n✓ Pre-flight validation passed!")
+    return True
+
+
+def _run_phase_primary_prep(
+    args: argparse.Namespace,
+    state: StateManager,
+    primary: KubeClient,
+    secondary: KubeClient,
+    logger: logging.Logger,
+) -> bool:
+    _log_phase_banner("PHASE 2: PRIMARY HUB PREPARATION", logger)
+    state.set_phase(Phase.PRIMARY_PREP)
+
+    prep = PrimaryPreparation(
+        primary,
+        state,
+        state.get_config("primary_version", "unknown"),
+        state.get_config("has_observability", False),
+    )
+
+    if not prep.prepare():
+        logger.error("Primary hub preparation failed!")
+        state.set_phase(Phase.FAILED)
+        return False
+
+    logger.info("\n✓ Primary hub preparation complete!")
+    return True
+
+
+def _run_phase_activation(
+    args: argparse.Namespace,
+    state: StateManager,
+    primary: KubeClient,
+    secondary: KubeClient,
+    logger: logging.Logger,
+) -> bool:
+    _log_phase_banner("PHASE 3: SECONDARY HUB ACTIVATION", logger)
+    state.set_phase(Phase.ACTIVATION)
+
+    activation = SecondaryActivation(secondary, state, args.method)
+
+    if not activation.activate():
+        logger.error("Secondary hub activation failed!")
+        state.set_phase(Phase.FAILED)
+        return False
+
+    logger.info("\n✓ Secondary hub activation complete!")
+    return True
+
+
+def _run_phase_post_activation(
+    args: argparse.Namespace,
+    state: StateManager,
+    primary: KubeClient,
+    secondary: KubeClient,
+    logger: logging.Logger,
+) -> bool:
+    _log_phase_banner("PHASE 4: POST-ACTIVATION VERIFICATION", logger)
+    state.set_phase(Phase.POST_ACTIVATION)
+
+    verification = PostActivationVerification(
+        secondary,
+        state,
+        state.get_config("has_observability", False),
+    )
+
+    if not verification.verify():
+        logger.error("Post-activation verification failed!")
+        state.set_phase(Phase.FAILED)
+        return False
+
+    logger.info("\n✓ Post-activation verification complete!")
+    return True
+
+
+def _run_phase_finalization(
+    args: argparse.Namespace,
+    state: StateManager,
+    primary: KubeClient,
+    secondary: KubeClient,
+    logger: logging.Logger,
+) -> bool:
+    _log_phase_banner("PHASE 5: FINALIZATION", logger)
+    state.set_phase(Phase.FINALIZATION)
+
+    finalization = Finalization(
+        secondary,
+        state,
+        state.get_config("secondary_version", "unknown"),
+    )
+
+    if not finalization.finalize():
+        logger.error("Finalization failed!")
+        state.set_phase(Phase.FAILED)
+        return False
+
+    logger.info("\n✓ Finalization complete!")
+    return True
+
+
+def _log_phase_banner(title: str, logger: logging.Logger) -> None:
+    """Log a standardized banner around key phases."""
+    logger.info("\n" + "=" * 60)
+    logger.info(title)
+    logger.info("=" * 60)
+
+
+def run_rollback(
+    args: argparse.Namespace,
+    state: StateManager,
+    primary: KubeClient,
+    secondary: KubeClient,
+    logger: logging.Logger,
+):
     """Execute rollback to primary hub."""
     logger.warning("\n" + "=" * 60)
     logger.warning("ROLLBACK MODE")
@@ -311,76 +382,102 @@ def run_rollback(args, state: StateManager, primary: KubeClient, secondary: Kube
         return False
 
 
-def run_decommission(args, primary: KubeClient, state: StateManager):
+def run_decommission(
+    args: argparse.Namespace,
+    primary: KubeClient,
+    state: StateManager,
+    logger: logging.Logger,
+):
     """Execute decommission of old hub."""
     decom = Decommission(
         primary,
         state.get_config("has_observability", False)
     )
-    
+
+    logger.info("Starting decommission workflow")
+
     return decom.decommission(interactive=not args.non_interactive)
 
 
 def main():
     """Main entry point."""
-    global logger
-    
     args = parse_args()
     validate_args(args)
-    
-    # Setup logging
+
     logger = setup_logging(args.verbose)
-    
     logger.info("ACM Hub Switchover Automation")
     logger.info(f"Started at: {datetime.utcnow().isoformat()}")
-    
-    # Initialize state manager
+
     state = StateManager(args.state_file)
-    
+
     if args.reset_state:
         logger.warning("Resetting state file...")
         state.reset()
-    
-    # Initialize Kubernetes clients
+
     try:
-        logger.info(f"Connecting to primary hub: {args.primary_context}")
-        primary = KubeClient(args.primary_context, dry_run=args.dry_run)
-        
-        if args.secondary_context:
-            logger.info(f"Connecting to secondary hub: {args.secondary_context}")
-            secondary = KubeClient(args.secondary_context, dry_run=args.dry_run)
-        else:
-            secondary = None
-            
-    except Exception as e:
-        logger.error(f"Failed to initialize Kubernetes clients: {e}")
-        sys.exit(1)
-    
-    # Execute requested operation
+        primary, secondary = _initialize_clients(args, logger)
+    except Exception as exc:  # pragma: no cover - fatal init error
+        logger.error(f"Failed to initialize Kubernetes clients: {exc}")
+        sys.exit(EXIT_FAILURE)
+
     try:
-        if args.decommission:
-            success = run_decommission(args, primary, state)
-        elif args.rollback:
-            success = run_rollback(args, state, primary, secondary)
-        else:
-            success = run_switchover(args, state, primary, secondary)
-        
-        if success:
-            logger.info("\n✓ Operation completed successfully!")
-            sys.exit(0)
-        else:
-            logger.error("\n✗ Operation failed!")
-            sys.exit(1)
-            
+        success = _execute_operation(args, state, primary, secondary, logger)
     except KeyboardInterrupt:
         logger.warning("\n\nOperation interrupted by user")
         logger.info(f"State saved to: {args.state_file}")
         logger.info("Re-run the same command to resume from last successful step")
-        sys.exit(130)
-    except Exception as e:
-        logger.error(f"\n✗ Unexpected error: {e}", exc_info=args.verbose)
-        state.add_error(str(e))
-        sys.exit(1)
+        sys.exit(EXIT_INTERRUPT)
+    except Exception as exc:
+        logger.error(f"\n✗ Unexpected error: {exc}", exc_info=args.verbose)
+        state.add_error(str(exc))
+        sys.exit(EXIT_FAILURE)
+
+    if success:
+        logger.info("\n✓ Operation completed successfully!")
+        sys.exit(EXIT_SUCCESS)
+
+    logger.error("\n✗ Operation failed!")
+    sys.exit(EXIT_FAILURE)
+
+
+def _initialize_clients(
+    args: argparse.Namespace,
+    logger: logging.Logger,
+) -> Tuple[KubeClient, Optional[KubeClient]]:
+    """Create Kubernetes clients for provided contexts."""
+
+    logger.info(f"Connecting to primary hub: {args.primary_context}")
+    primary = KubeClient(args.primary_context, dry_run=args.dry_run)
+
+    secondary = None
+    if args.secondary_context:
+        logger.info(f"Connecting to secondary hub: {args.secondary_context}")
+        secondary = KubeClient(args.secondary_context, dry_run=args.dry_run)
+
+    return primary, secondary
+
+
+def _execute_operation(
+    args: argparse.Namespace,
+    state: StateManager,
+    primary: KubeClient,
+    secondary: Optional[KubeClient],
+    logger: logging.Logger,
+) -> bool:
+    """Execute the operation requested by CLI flags."""
+
+    if args.decommission:
+        return run_decommission(args, primary, state, logger)
+
+    if args.rollback:
+        if secondary is None:
+            raise ValueError("Secondary context is required for rollback")
+        return run_rollback(args, state, primary, secondary, logger)
+
+    if secondary is None:
+        raise ValueError("Secondary context is required for switchover")
+
+    return run_switchover(args, state, primary, secondary, logger)
 
 
 if __name__ == "__main__":
