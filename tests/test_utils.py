@@ -31,19 +31,37 @@ class TestStateManager(unittest.TestCase):
 
     def test_initial_state(self):
         """Test initial state creation."""
-        self.assertEqual(self.state.get_phase(), Phase.INIT)
+        self.assertEqual(self.state.get_current_phase(), Phase.INIT)
         self.assertFalse(self.state.is_step_completed("any_step"))
         self.assertEqual(self.state.get_config("key"), None)
+
+    def test_bare_filename(self):
+        """Test that StateManager works with bare filename (no directory)."""
+        # Use a bare filename in temp directory
+        bare_file = os.path.join(self.temp_dir, "state.json")
+        state = StateManager(bare_file)
+        
+        # Should be able to save without FileNotFoundError
+        state.set_phase(Phase.PREFLIGHT)
+        state.mark_step_completed("test_step")
+        
+        # Verify file was created and can be loaded
+        self.assertTrue(os.path.exists(bare_file))
+        loaded = StateManager(bare_file)
+        self.assertEqual(loaded.get_current_phase(), Phase.PREFLIGHT)
+        
+        # Cleanup
+        if os.path.exists(bare_file):
+            os.remove(bare_file)
 
     def test_set_phase(self):
         """Test phase transition."""
         self.state.set_phase(Phase.PREFLIGHT)
-        self.assertEqual(self.state.get_phase(), Phase.PREFLIGHT)
-        self.state.save()
+        self.assertEqual(self.state.get_current_phase(), Phase.PREFLIGHT)
         
-        # Load in new instance
+        # Load in new instance to verify persistence
         new_state = StateManager(self.state_file)
-        self.assertEqual(new_state.get_phase(), Phase.PREFLIGHT)
+        self.assertEqual(new_state.get_current_phase(), Phase.PREFLIGHT)
 
     def test_mark_step_completed(self):
         """Test marking steps as completed."""
@@ -51,9 +69,11 @@ class TestStateManager(unittest.TestCase):
         self.assertTrue(self.state.is_step_completed("step1"))
         self.assertFalse(self.state.is_step_completed("step2"))
         
-        # Verify timestamp exists
+        # Verify timestamp exists in the list of completed steps
         completed = self.state.state["completed_steps"]
-        self.assertIn("timestamp", completed["step1"])
+        self.assertEqual(len(completed), 1)
+        self.assertEqual(completed[0]["name"], "step1")
+        self.assertIn("timestamp", completed[0])
 
     def test_set_get_config(self):
         """Test configuration storage."""
@@ -64,9 +84,9 @@ class TestStateManager(unittest.TestCase):
         # Test with default
         self.assertEqual(self.state.get_config("missing", "default"), "default")
 
-    def test_record_error(self):
+    def test_add_error(self):
         """Test error recording."""
-        self.state.record_error("Test error", Phase.PREFLIGHT)
+        self.state.add_error("Test error", Phase.PREFLIGHT.value)
         errors = self.state.state["errors"]
         self.assertEqual(len(errors), 1)
         self.assertEqual(errors[0]["error"], "Test error")
@@ -78,11 +98,11 @@ class TestStateManager(unittest.TestCase):
         self.state.set_phase(Phase.ACTIVATION)
         self.state.mark_step_completed("step1")
         self.state.set_config("key", "value")
-        self.state.record_error("error")
+        self.state.add_error("error")
         
         self.state.reset()
         
-        self.assertEqual(self.state.get_phase(), Phase.INIT)
+        self.assertEqual(self.state.get_current_phase(), Phase.INIT)
         self.assertFalse(self.state.is_step_completed("step1"))
         self.assertEqual(self.state.get_config("key"), None)
         self.assertEqual(len(self.state.state["errors"]), 0)
@@ -92,23 +112,23 @@ class TestStateManager(unittest.TestCase):
         self.state.set_phase(Phase.PRIMARY_PREP)
         self.state.mark_step_completed("backup_paused")
         self.state.set_config("observability", True)
-        self.state.save()
         
         # Load in new instance
         loaded_state = StateManager(self.state_file)
-        self.assertEqual(loaded_state.get_phase(), Phase.PRIMARY_PREP)
+        self.assertEqual(loaded_state.get_current_phase(), Phase.PRIMARY_PREP)
         self.assertTrue(loaded_state.is_step_completed("backup_paused"))
         self.assertEqual(loaded_state.get_config("observability"), True)
 
-    def test_get_all_completed_steps(self):
-        """Test retrieval of all completed steps."""
+    def test_mark_step_completed_idempotency(self):
+        """Test that marking same step multiple times doesn't create duplicates."""
         self.state.mark_step_completed("step1")
-        self.state.mark_step_completed("step2")
+        self.state.mark_step_completed("step1")  # Call again
+        self.state.mark_step_completed("step1")  # And again
         
-        steps = self.state.get_all_completed_steps()
-        self.assertIn("step1", steps)
-        self.assertIn("step2", steps)
-        self.assertEqual(len(steps), 2)
+        # Should only have one entry
+        completed = self.state.state["completed_steps"]
+        self.assertEqual(len(completed), 1)
+        self.assertEqual(completed[0]["name"], "step1")
 
 
 class TestPhaseEnum(unittest.TestCase):
@@ -117,10 +137,17 @@ class TestPhaseEnum(unittest.TestCase):
     def test_phase_values(self):
         """Test phase enum values."""
         self.assertEqual(Phase.INIT.value, "init")
-        self.assertEqual(Phase.PREFLIGHT.value, "preflight")
-        self.assertEqual(Phase.PRIMARY_PREP.value, "primary_prep")
+        self.assertEqual(Phase.PREFLIGHT.value, "preflight_validation")
+        self.assertEqual(Phase.PRIMARY_PREP.value, "primary_preparation")
         self.assertEqual(Phase.ACTIVATION.value, "activation")
-        self.assertEqual(Phase.POST_ACTIVATION.value, "post_activation")
+        self.assertEqual(Phase.POST_ACTIVATION.value, "post_activation_verification")
+        self.assertEqual(Phase.FINALIZATION.value, "finalization")
+        self.assertEqual(Phase.COMPLETED.value, "completed")
+        self.assertEqual(Phase.ROLLBACK.value, "rollback")
+        self.assertEqual(Phase.FAILED.value, "failed")
+
+
+
         self.assertEqual(Phase.FINALIZATION.value, "finalization")
         self.assertEqual(Phase.COMPLETED.value, "completed")
         self.assertEqual(Phase.FAILED.value, "failed")

@@ -54,7 +54,9 @@ class StateManager:
     
     def save_state(self) -> None:
         """Save current state to file."""
-        os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
+        state_dir = os.path.dirname(self.state_file)
+        if state_dir:  # Only create directory if path contains one
+            os.makedirs(state_dir, exist_ok=True)
         self.state["last_updated"] = datetime.utcnow().isoformat()
         
         with open(self.state_file, 'w', encoding='utf-8') as f:
@@ -67,7 +69,7 @@ class StateManager:
     
     def mark_step_completed(self, step_name: str) -> None:
         """Mark a step as completed."""
-        if step_name not in self.state["completed_steps"]:
+        if not self.is_step_completed(step_name):
             self.state["completed_steps"].append({
                 "name": step_name,
                 "timestamp": datetime.utcnow().isoformat()
