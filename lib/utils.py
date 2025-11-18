@@ -128,7 +128,6 @@ def setup_logging(verbose: bool = False) -> logging.Logger:
     )
     
     return logging.getLogger("acm_switchover")
-    from typing import Optional, Tuple
 
 
 def parse_acm_version(version_string: str) -> Optional[Tuple[int, int, int]]:
