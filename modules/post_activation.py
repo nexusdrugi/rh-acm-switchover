@@ -3,11 +3,15 @@ Post-activation verification module for ACM switchover.
 """
 
 import logging
-import time
-from typing import List
 
+from lib.constants import (
+    CLUSTER_VERIFY_INTERVAL,
+    CLUSTER_VERIFY_TIMEOUT,
+    OBSERVABILITY_NAMESPACE,
+)
 from lib.kube_client import KubeClient
 from lib.utils import StateManager
+from lib.waiter import wait_for_condition
 
 logger = logging.getLogger("acm_switchover")
 
@@ -72,88 +76,89 @@ class PostActivationVerification:
             self.state.add_error(str(e), "post_activation_verification")
             return False
     
-    def _verify_managed_clusters_connected(self, timeout: int = 600):
-        """
-        Verify all ManagedClusters are connected.
-        
-        Args:
-            timeout: Maximum wait time in seconds (default 10 minutes)
-        """
-        logger.info("Verifying ManagedCluster connections...")
-        
-        start_time = time.time()
-        
-        while time.time() - start_time < timeout:
+    def _verify_managed_clusters_connected(self, timeout: int = CLUSTER_VERIFY_TIMEOUT):
+        """Verify all ManagedClusters are connected."""
+
+        latest_status = {
+            "available": 0,
+            "joined": 0,
+            "total": 0,
+            "pending": [],
+        }
+
+        def _poll_clusters():
+            nonlocal latest_status
             managed_clusters = self.secondary.list_custom_resources(
                 group="cluster.open-cluster-management.io",
                 version="v1",
-                plural="managedclusters"
+                plural="managedclusters",
             )
-            
+
             if not managed_clusters:
-                logger.warning("No ManagedClusters found")
-                time.sleep(10)
-                continue
-            
-            # Check each cluster's status
+                latest_status = {"available": 0, "joined": 0, "total": 0, "pending": []}
+                return False, "no ManagedClusters found"
+
             total_clusters = 0
             available_clusters = 0
             joined_clusters = 0
             pending_clusters = []
-            
+
             for mc in managed_clusters:
-                mc_name = mc.get('metadata', {}).get('name')
-                
-                # Skip local-cluster
+                mc_name = mc.get("metadata", {}).get("name")
+
                 if mc_name == "local-cluster":
                     continue
-                
+
                 total_clusters += 1
-                
-                conditions = mc.get('status', {}).get('conditions', [])
-                
-                # Check for ManagedClusterConditionAvailable
+                conditions = mc.get("status", {}).get("conditions", [])
+
                 is_available = any(
-                    c.get('type') == 'ManagedClusterConditionAvailable' and
-                    c.get('status') == 'True'
+                    c.get("type") == "ManagedClusterConditionAvailable" and c.get("status") == "True"
                     for c in conditions
                 )
-                
-                # Check for ManagedClusterJoined
                 is_joined = any(
-                    c.get('type') == 'ManagedClusterJoined' and
-                    c.get('status') == 'True'
+                    c.get("type") == "ManagedClusterJoined" and c.get("status") == "True"
                     for c in conditions
                 )
-                
+
                 if is_available:
                     available_clusters += 1
                 if is_joined:
                     joined_clusters += 1
-                
                 if not (is_available and is_joined):
-                    pending_clusters.append(mc_name)
-            
-            elapsed = int(time.time() - start_time)
-            logger.info(
-                f"Cluster status: {available_clusters}/{total_clusters} available, "
-                f"{joined_clusters}/{total_clusters} joined (elapsed: {elapsed}s)"
+                    pending_clusters.append(mc_name or "unknown")
+
+            latest_status = {
+                "available": available_clusters,
+                "joined": joined_clusters,
+                "total": total_clusters,
+                "pending": pending_clusters,
+            }
+
+            if total_clusters == 0:
+                return False, "No non-local ManagedClusters found"
+
+            is_ready = available_clusters == total_clusters and joined_clusters == total_clusters
+            detail = (
+                f"available={available_clusters}/{total_clusters}, "
+                f"joined={joined_clusters}/{total_clusters}"
             )
-            
-            if available_clusters == total_clusters and joined_clusters == total_clusters:
-                logger.info("All ManagedClusters are connected!")
-                return
-            
-            if pending_clusters:
-                logger.debug(f"Pending clusters: {', '.join(pending_clusters[:5])}")
-            
-            time.sleep(30)
-        
-        raise Exception(
-            f"Timeout waiting for ManagedClusters to connect. "
-            f"{available_clusters}/{total_clusters} available, "
-            f"{joined_clusters}/{total_clusters} joined"
+            return is_ready, detail
+
+        success = wait_for_condition(
+            "ManagedCluster connections",
+            _poll_clusters,
+            timeout=timeout,
+            interval=CLUSTER_VERIFY_INTERVAL,
+            logger=logger,
         )
+
+        if not success:
+            raise Exception(
+                "Timeout waiting for ManagedClusters to connect. "
+                f"{latest_status['available']}/{latest_status['total']} available, "
+                f"{latest_status['joined']}/{latest_status['total']} joined"
+            )
     
     def _restart_observatorium_api(self):
         """Restart observatorium-api deployment (ACM 2.12 issue workaround)."""
@@ -170,7 +175,7 @@ class PostActivationVerification:
             # Wait for pods to be ready
             logger.info("Waiting for observatorium-api pods to be ready...")
             ready = self.secondary.wait_for_pods_ready(
-                namespace="open-cluster-management-observability",
+                namespace=OBSERVABILITY_NAMESPACE,
                 label_selector="app.kubernetes.io/name=observatorium-api",
                 timeout=300
             )
@@ -192,7 +197,7 @@ class PostActivationVerification:
         logger.info("Verifying Observability pod health...")
         
         pods = self.secondary.get_pods(
-            namespace="open-cluster-management-observability"
+            namespace=OBSERVABILITY_NAMESPACE
         )
         
         if not pods:
@@ -251,7 +256,7 @@ class PostActivationVerification:
         
         # We could check if metrics-collector pods are running
         metrics_pods = self.secondary.get_pods(
-            namespace="open-cluster-management-observability",
+            namespace=OBSERVABILITY_NAMESPACE,
             label_selector="app=metrics-collector"
         )
         

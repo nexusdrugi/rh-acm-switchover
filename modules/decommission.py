@@ -3,10 +3,18 @@ Decommission module for old primary hub.
 """
 
 import logging
-import time
 
+from lib.constants import (
+    ACM_NAMESPACE,
+    DECOMMISSION_POD_INTERVAL,
+    DECOMMISSION_POD_TIMEOUT,
+    OBSERVABILITY_NAMESPACE,
+    OBSERVABILITY_TERMINATE_INTERVAL,
+    OBSERVABILITY_TERMINATE_TIMEOUT,
+)
 from lib.kube_client import KubeClient
 from lib.utils import confirm_action
+from lib.waiter import wait_for_condition
 
 logger = logging.getLogger("acm_switchover")
 
@@ -103,24 +111,27 @@ class Decommission:
                 name=mco_name
             )
         
-        # Wait for Observability pods to terminate
-        logger.info("Waiting for Observability pods to terminate...")
-        timeout = 300  # 5 minutes
-        start_time = time.time()
-        
-        while time.time() - start_time < timeout:
+        def _observability_terminated():
             pods = self.primary.get_pods(
-                namespace="open-cluster-management-observability"
+                namespace=OBSERVABILITY_NAMESPACE
             )
-            
             if not pods:
-                logger.info("All Observability pods terminated")
-                break
-            
-            logger.debug(f"{len(pods)} Observability pod(s) still running...")
-            time.sleep(10)
-        else:
-            logger.warning(f"Some Observability pods still running after {timeout}s")
+                return True, "all observability pods terminated"
+            return False, f"{len(pods)} pod(s) remaining"
+
+        success = wait_for_condition(
+            "Observability pod termination",
+            _observability_terminated,
+            timeout=OBSERVABILITY_TERMINATE_TIMEOUT,
+            interval=OBSERVABILITY_TERMINATE_INTERVAL,
+            logger=logger,
+        )
+
+        if not success:
+            logger.warning(
+                "Some Observability pods still running after %ss",
+                OBSERVABILITY_TERMINATE_TIMEOUT,
+            )
     
     def _delete_managed_clusters(self):
         """Delete ManagedCluster resources (excluding local-cluster)."""
@@ -173,7 +184,7 @@ class Decommission:
             group="operator.open-cluster-management.io",
             version="v1",
             plural="multiclusterhubs",
-            namespace="open-cluster-management"
+            namespace=ACM_NAMESPACE
         )
         
         if not mchs:
@@ -191,28 +202,30 @@ class Decommission:
                 version="v1",
                 plural="multiclusterhubs",
                 name=mch_name,
-                namespace="open-cluster-management"
+                namespace=ACM_NAMESPACE
             )
         
-        # Wait for ACM pods to be removed
-        logger.info("Waiting for ACM pods to be removed...")
-        timeout = 1200  # 20 minutes
-        start_time = time.time()
-        
-        while time.time() - start_time < timeout:
+        def _acm_pods_removed():
             pods = self.primary.get_pods(
-                namespace="open-cluster-management"
+                namespace=ACM_NAMESPACE
             )
-            
             if not pods:
-                logger.info("All ACM pods removed")
-                break
-            
-            elapsed = int(time.time() - start_time)
-            logger.info(f"{len(pods)} ACM pod(s) still running... (elapsed: {elapsed}s)")
-            time.sleep(30)
-        else:
-            logger.warning(f"Some ACM pods still running after {timeout}s")
+                return True, "all ACM pods removed"
+            return False, f"{len(pods)} pod(s) remaining"
+
+        success = wait_for_condition(
+            "ACM pod removal",
+            _acm_pods_removed,
+            timeout=DECOMMISSION_POD_TIMEOUT,
+            interval=DECOMMISSION_POD_INTERVAL,
+            logger=logger,
+        )
+
+        if not success:
+            logger.warning(
+                "Some ACM pods still running after %ss",
+                DECOMMISSION_POD_TIMEOUT,
+            )
         
         logger.info(
             "Decommission complete. Backup data in object storage remains "

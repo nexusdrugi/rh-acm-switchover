@@ -3,11 +3,11 @@ Secondary hub activation module for ACM switchover.
 """
 
 import logging
-import time
-from typing import Optional
 
+from lib.constants import BACKUP_NAMESPACE, RESTORE_POLL_INTERVAL, RESTORE_WAIT_TIMEOUT
 from lib.kube_client import KubeClient
 from lib.utils import StateManager
+from lib.waiter import wait_for_condition
 
 logger = logging.getLogger("acm_switchover")
 
@@ -80,7 +80,7 @@ class SecondaryActivation:
             version="v1beta1",
             plural="restores",
             name="restore-acm-passive-sync",
-            namespace="open-cluster-management-backup"
+            namespace=BACKUP_NAMESPACE
         )
         
         if not restore:
@@ -112,7 +112,7 @@ class SecondaryActivation:
             plural="restores",
             name="restore-acm-passive-sync",
             patch=patch,
-            namespace="open-cluster-management-backup"
+            namespace=BACKUP_NAMESPACE
         )
         
         logger.info("Patched restore-acm-passive-sync to activate managed clusters")
@@ -127,7 +127,7 @@ class SecondaryActivation:
             version="v1beta1",
             plural="restores",
             name="restore-acm-full",
-            namespace="open-cluster-management-backup"
+            namespace=BACKUP_NAMESPACE
         )
         
         if existing_restore:
@@ -140,7 +140,7 @@ class SecondaryActivation:
             "kind": "Restore",
             "metadata": {
                 "name": "restore-acm-full",
-                "namespace": "open-cluster-management-backup"
+                "namespace": BACKUP_NAMESPACE,
             },
             "spec": {
                 "veleroManagedClustersBackupName": "latest",
@@ -155,47 +155,46 @@ class SecondaryActivation:
             version="v1beta1",
             plural="restores",
             body=restore_body,
-            namespace="open-cluster-management-backup"
+            namespace=BACKUP_NAMESPACE
         )
         
         logger.info("Created restore-acm-full resource")
     
-    def _wait_for_restore_completion(self, timeout: int = 1800):
-        """
-        Wait for restore to complete.
-        
-        Args:
-            timeout: Maximum wait time in seconds (default 30 minutes)
-        """
-        logger.info("Waiting for restore to complete...")
-        
+    def _wait_for_restore_completion(self, timeout: int = RESTORE_WAIT_TIMEOUT):
+        """Wait for restore to complete."""
+
         restore_name = "restore-acm-passive-sync" if self.method == "passive" else "restore-acm-full"
-        start_time = time.time()
-        
-        while time.time() - start_time < timeout:
+
+        def _poll_restore():
             restore = self.secondary.get_custom_resource(
                 group="cluster.open-cluster-management.io",
                 version="v1beta1",
                 plural="restores",
                 name=restore_name,
-                namespace="open-cluster-management-backup"
+                namespace=BACKUP_NAMESPACE,
             )
-            
+
             if not restore:
                 raise Exception(f"Restore {restore_name} disappeared during wait")
-            
-            status = restore.get('status', {})
-            phase = status.get('phase', 'unknown')
-            message = status.get('lastMessage', '')
-            
-            if phase == 'Finished':
-                logger.info(f"Restore completed successfully: {message}")
-                return
-            elif phase == 'Failed' or phase == 'PartiallyFailed':
+
+            status = restore.get("status", {})
+            phase = status.get("phase", "unknown")
+            message = status.get("lastMessage", "")
+
+            if phase == "Finished":
+                return True, message or "restore finished"
+            if phase in ("Failed", "PartiallyFailed"):
                 raise Exception(f"Restore failed: {phase} - {message}")
-            
-            elapsed = time.time() - start_time
-            logger.info(f"Restore phase: {phase} (elapsed: {int(elapsed)}s)")
-            time.sleep(30)
-        
-        raise Exception(f"Timeout waiting for restore to complete after {timeout}s")
+
+            return False, f"phase={phase} message={message}"
+
+        completed = wait_for_condition(
+            f"restore {restore_name}",
+            _poll_restore,
+            timeout=timeout,
+            interval=RESTORE_POLL_INTERVAL,
+            logger=logger,
+        )
+
+        if not completed:
+            raise Exception(f"Timeout waiting for restore to complete after {timeout}s")
