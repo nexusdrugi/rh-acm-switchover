@@ -13,3 +13,10 @@ build/
 .state/
 *.state.json
 .DS_Store
+
+# Test coverage
+htmlcov/
+.coverage
+.pytest_cache/
+coverage.xml
+*.cover
