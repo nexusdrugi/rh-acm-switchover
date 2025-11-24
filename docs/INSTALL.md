@@ -286,7 +286,7 @@ rh-acm-switchover/
 │   └── decommission.py
 │
 ├── docs/                      # Documentation
-│   └── ACM_switchover_runbook_Complete_Nov12.txt
+│   └── ACM_SWITCHOVER_RUNBOOK.md
 │
 ├── .state/                    # State files (created at runtime)
 │   └── switchover-state.json

@@ -52,7 +52,7 @@ rh-acm-switchover/
 │   └── .gitignore
 │
 └── docs/
-    └── ACM_switchover_runbook_Complete_Nov12.txt  # Source runbook
+    └── ACM_SWITCHOVER_RUNBOOK.md  # Source runbook
 ```
 
 **Total Lines of Code**: ~2,156 lines (excluding documentation and tests)

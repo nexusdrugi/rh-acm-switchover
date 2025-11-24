@@ -282,7 +282,7 @@ See [TESTING.md](docs/TESTING.md) for detailed testing guide.
 ## References
 
 - [ACM Backup and Restore Documentation](https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/)
-- Based on: `docs/ACM_switchover_runbook_Complete_Nov12.txt`
+- Based on: [ACM Switchover Runbook](docs/ACM_SWITCHOVER_RUNBOOK.md)
 
 ## Contributing
 

@@ -346,7 +346,7 @@ Complete Python-based automation tool for Red Hat Advanced Cluster Management (A
 
 ## Source Documentation
 
-- ✅ **`docs/ACM_switchover_runbook_Complete_Nov12.txt`**
+- ✅ **[`docs/ACM_SWITCHOVER_RUNBOOK.md`](ACM_SWITCHOVER_RUNBOOK.md)**
   - Original runbook used as basis
   - Manual switchover procedures
   - Reference material

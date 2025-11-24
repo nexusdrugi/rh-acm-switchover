@@ -413,38 +413,39 @@ Automated Python tool that:
    - **Status**: ⏳ Planned v1.1
 
 3. **FR-10.3**: Container Image
-   - Create Containerfile/Dockerfile
-   - Use UBI 9 minimal base image
-   - Multi-stage build for optimization
-   - Install Python 3.9 runtime
-   - Install CLI prerequisites (oc, kubectl, jq, curl)
-   - Copy application code and dependencies
-   - Set appropriate user (non-root, UID 1001)
-   - Define ENTRYPOINT and CMD
-   - Support volume mounts for kubeconfig and state
-   - Configure health checks
-   - Set OCI labels and metadata
-   - **Status**: ⏳ Planned v1.1
+   - Create Containerfile/Dockerfile ✓
+   - Use UBI 9 minimal base image ✓
+   - Multi-stage build for optimization ✓
+   - Install Python 3.9 runtime ✓
+   - Install CLI prerequisites (oc, kubectl, jq, curl) ✓
+   - Copy application code and dependencies ✓
+   - Set appropriate user (non-root, UID 1001) ✓
+   - Define ENTRYPOINT and CMD ✓
+   - Support volume mounts for kubeconfig and state ✓
+   - Configure health checks ✓
+   - Set OCI labels and metadata ✓
+   - **Status**: ✅ Implemented
 
 4. **FR-10.4**: Container Registry Publishing
-   - Publish to quay.io/tomazborstnar/acm-switchover
-   - Tag with version numbers and 'latest'
-   - Multi-arch builds (x86_64, aarch64)
-   - Security scanning integration (Trivy)
-   - Automated builds on releases
-   - Generate and publish SBOM (SPDX format)
-   - Sign images with cosign/sigstore
-   - **Status**: ⏳ Planned v1.1
+   - Publish to quay.io/tomazborstnar/acm-switchover ✓
+   - Publish to ghcr.io/tomazb/acm-switchover (GitHub Container Registry) ✓
+   - Tag with version numbers and 'latest' ✓
+   - Multi-arch builds (x86_64, aarch64) ✓
+   - Security scanning integration (Trivy) ✓
+   - Automated builds on releases ✓
+   - Generate and publish SBOM (SPDX format) ✓
+   - Sign images with cosign/sigstore ✓
+   - **Status**: ✅ Implemented (requires QUAY_USERNAME and QUAY_PASSWORD secrets)
 
 5. **FR-10.5**: GitHub Actions CI/CD
-   - Automated container builds on push/tag
-   - Multi-architecture build support (QEMU)
-   - Security scanning (Trivy vulnerability scanner)
-   - SBOM generation (Anchore)
-   - Image signing (cosign)
-   - Automated GitHub releases
-   - Container testing (verify prerequisites)
-   - **Status**: ⏳ Planned v1.1
+   - Automated container builds on push/tag ✓
+   - Multi-architecture build support (QEMU) ✓
+   - Security scanning (Trivy vulnerability scanner) ✓
+   - SBOM generation (Anchore) ✓
+   - Image signing (cosign) ✓
+   - Automated GitHub releases ✓
+   - Container testing (verify prerequisites) ✓
+   - **Status**: ✅ Workflow Implemented (requires QUAY_USERNAME and QUAY_PASSWORD secrets)
 
 6. **FR-10.6**: PyPI Package (future)
    - Create `setup.py` or `pyproject.toml`
@@ -588,7 +589,9 @@ Automated Python tool that:
 - Base image: `registry.access.redhat.com/ubi9/ubi-minimal:latest`
 - Multi-stage build (builder + runtime)
 - Python 3.9 runtime included
-- Image registry: `quay.io/tomazborstnar/acm-switchover`
+- Image registries:
+  - Primary: `quay.io/tomazborstnar/acm-switchover`
+  - Mirror: `ghcr.io/tomazb/acm-switchover` (GitHub Container Registry)
 - Tagged versions: `latest`, `v1.0.0`, `v1.1.0`, `v1.2.0`
 
 **Included Prerequisites**:
@@ -640,12 +643,19 @@ Users should be able to install via:
    dnf install acm-switchover
    ```
 
-3. **Container** (planned v1.1):
+3. **Container** (implemented):
    ```bash
+   # From Quay.io
    podman run -it --rm \
      -v ~/.kube:/root/.kube:ro \
      -v ./state:/var/lib/acm-switchover \
      quay.io/tomazborstnar/acm-switchover:latest --help
+   
+   # From GitHub Container Registry
+   podman run -it --rm \
+     -v ~/.kube:/root/.kube:ro \
+     -v ./state:/var/lib/acm-switchover \
+     ghcr.io/tomazb/acm-switchover:latest --help
    ```
 
 4. **Direct from source** (current):
@@ -664,7 +674,7 @@ Users should be able to install via:
 | COPR project setup | Planned v1.1 ⏳ |
 | Containerfile/Dockerfile | Implemented ✓ |
 | Container prerequisites (oc, jq) | Implemented ✓ |
-| Multi-arch container builds | Planned v1.1 ⏳ |
+| Multi-arch container builds | Implemented ✓ |
 | GitHub Actions workflow | Implemented ✓ |
 | PyPI package | Planned v1.2 ⏳ |
 | GitHub releases automation | Implemented ✓ |
@@ -672,6 +682,8 @@ Users should be able to install via:
 | Container image signing (cosign) | Implemented ✓ |
 | SBOM generation | Implemented ✓ |
 | Security scanning (Trivy) | Implemented ✓ |
+| Quay.io publishing | Requires Secrets ⏳ |
+| GHCR publishing | Implemented ✓ |
 
 ---
 
