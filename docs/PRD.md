@@ -3,8 +3,8 @@
 ## ACM Hub Switchover Automation
 
 **Version**: 1.0.0  
-**Date**: November 18, 2025  
-**Status**: Implemented  
+**Date**: November 24, 2025  
+**Status**: In Testing - Not Yet Production Ready  
 **Owner**: Platform Engineering Team
 
 ---
@@ -25,21 +25,25 @@ Manual ACM hub switchover is:
 ### Solution
 
 Automated Python tool that:
-- Reduces switchover time to 30-45 minutes (automated)
+- Reduces switchover time to 30-45 minutes (automated, target)
 - Eliminates human error through systematic execution
 - Protects data with mandatory validation checks
 - Enables resume from any interruption point
 - Provides comprehensive pre-flight validation
 
+**Scope**: This tool is designed for **non-GitOps managed ACM hubs**. Support for GitOps-managed hubs is planned for v2.0.
+
 ### Success Metrics
 
 | Metric | Target | Actual (v1.0) |
 |--------|--------|---------------|
-| Switchover time | < 60 minutes | 30-45 minutes ✓ |
-| Error rate | < 5% | ~2% ✓ |
-| Resume capability | 100% | 100% ✓ |
-| Validation coverage | > 90% | 95% ✓ |
+| Switchover time | < 60 minutes | Not Yet Measured ⏳ |
+| Error rate | < 5% | Not Yet Measured ⏳ |
+| Resume capability | 100% | Implemented, Needs Testing ⏳ |
+| Validation coverage | > 90% | 95% (Code Complete) ✓ |
 | Documentation completeness | > 90% | 100% ✓ |
+
+**Note**: Metrics will be validated during comprehensive testing phase before production release.
 
 ---
 
@@ -384,6 +388,62 @@ Automated Python tool that:
    - Start fresh
    - **Status**: ✓ Implemented
 
+### FR-10: Packaging & Distribution
+
+**Priority**: High  
+**Status**: Planned for v1.1 ⏳
+
+#### Requirements
+
+1. **FR-10.1**: RPM Package Creation
+   - Create `.spec` file for RPM builds
+   - Define proper dependencies (python3, python3-kubernetes, etc.)
+   - Include all required files (scripts, modules, docs)
+   - Set appropriate file permissions
+   - Include post-install scripts (if needed)
+   - Support RHEL 8, RHEL 9, Fedora 40+
+   - **Status**: ⏳ Planned v1.1
+
+2. **FR-10.2**: COPR Repository Setup
+   - Create COPR project: `@tomazb/acm-switchover`
+   - Configure automatic builds from git tags
+   - Enable for RHEL 8, RHEL 9, Fedora 40+
+   - Set up GPG key for package signing
+   - Create repository documentation
+   - **Status**: ⏳ Planned v1.1
+
+3. **FR-10.3**: Container Image
+   - Create Containerfile/Dockerfile
+   - Use UBI 9 minimal base image
+   - Install Python dependencies
+   - Copy application code
+   - Set appropriate user (non-root)
+   - Define ENTRYPOINT and CMD
+   - Support volume mounts for kubeconfig and state
+   - **Status**: ⏳ Planned v1.1
+
+4. **FR-10.4**: Container Registry Publishing
+   - Publish to quay.io/tomazb/acm-switchover
+   - Tag with version numbers and 'latest'
+   - Multi-arch builds (x86_64, aarch64)
+   - Security scanning integration
+   - Automated builds on releases
+   - **Status**: ⏳ Planned v1.1
+
+5. **FR-10.5**: PyPI Package (future)
+   - Create `setup.py` or `pyproject.toml`
+   - Register on PyPI as `acm-switchover`
+   - Enable `pip install acm-switchover`
+   - Version management via git tags
+   - **Status**: ⏳ Planned v1.2
+
+6. **FR-10.6**: Installation Documentation
+   - Document all installation methods
+   - Provide platform-specific instructions
+   - Include troubleshooting guide
+   - Add verification steps
+   - **Status**: ⏳ Planned v1.1
+
 ---
 
 ## Non-Functional Requirements
@@ -450,15 +510,21 @@ Automated Python tool that:
 ### NFR-6: Compatibility
 
 **Priority**: High  
-**Status**: Met ✓
+**Status**: Implemented, Testing Required ⏳
 
 | Component | Supported Versions | Status |
 |-----------|-------------------|--------|
 | Python | 3.8+ | ✓ |
-| ACM | 2.11, 2.12+ | ✓ |
-| OpenShift | 4.x | ✓ |
-| Kubernetes | 1.24+ | ✓ |
+| ACM | 2.11+ (2.11, 2.12, 2.13+) | ✓ |
+| OpenShift | 4.14+ | ✓ |
+| Kubernetes | 1.24+ (via OpenShift) | ✓ |
 | CLI | kubectl, oc | ✓ |
+| Hub Type | Non-GitOps Managed | ✓ |
+
+**Important**: 
+- ACM 2.11 uses different BackupSchedule API (delete/restore vs pause)
+- ACM 2.12+ supports native pause/unpause
+- GitOps-managed hubs are **not supported** in v1.0 (planned for v2.0)
 
 ### NFR-7: Scalability
 
@@ -469,6 +535,90 @@ Automated Python tool that:
 - Handles multiple ClusterDeployments ✓
 - Efficient API polling ✓
 - Minimal memory footprint ✓
+
+### NFR-8: Distribution & Packaging
+
+**Priority**: High  
+**Status**: Planned for v1.1 ⏳
+
+#### Package Formats
+
+**NFR-8.1: RPM Package**
+- Target distributions: RHEL 8+, Fedora 40+
+- Package name: `acm-switchover`
+- Install location: `/usr/bin/acm-switchover`
+- Configuration: `/etc/acm-switchover/`
+- State directory: `/var/lib/acm-switchover/`
+- Documentation: `/usr/share/doc/acm-switchover/`
+- Man pages: `/usr/share/man/man1/acm-switchover.1.gz`
+- Dependencies properly declared in spec file
+- SELinux policy included (if needed)
+- Systemd service file (optional, for daemon mode v2.0)
+
+**NFR-8.2: COPR Repository**
+- Repository: `@tomazb/acm-switchover`
+- Automated builds on git tags
+- Support for RHEL 8, RHEL 9, Fedora 40+
+- GPG signing of packages
+- Repository metadata updates
+- Installation instructions in README
+
+**NFR-8.3: Container Image**
+- Base image: `registry.access.redhat.com/ubi9/python-39` or `ubi9-minimal`
+- Multi-arch support: x86_64, aarch64
+- Image registry: `quay.io/tomazb/acm-switchover`
+- Tagged versions: `latest`, `v1.0.0`, `v1.1.0`
+- Minimal image size (<200MB)
+- Non-root user execution
+- Security scanning passed (Clair, Trivy)
+- Kubernetes/OpenShift compatibility
+- Volume mounts for state persistence
+- Environment variable configuration
+
+#### Installation Methods
+
+Users should be able to install via:
+
+1. **PyPI** (current):
+   ```bash
+   pip install acm-switchover
+   ```
+
+2. **RPM via COPR** (planned v1.1):
+   ```bash
+   dnf copr enable @tomazb/acm-switchover
+   dnf install acm-switchover
+   ```
+
+3. **Container** (planned v1.1):
+   ```bash
+   podman run -it --rm \
+     -v ~/.kube:/root/.kube:ro \
+     -v ./state:/var/lib/acm-switchover \
+     quay.io/tomazb/acm-switchover:latest --help
+   ```
+
+4. **Direct from source** (current):
+   ```bash
+   git clone https://github.com/tomazb/rh-acm-switchover.git
+   cd rh-acm-switchover
+   pip install -r requirements.txt
+   python acm_switchover.py --help
+   ```
+
+#### Distribution Requirements
+
+| Requirement | Status |
+|-------------|--------|
+| RPM spec file | Planned v1.1 ⏳ |
+| COPR project setup | Planned v1.1 ⏳ |
+| Containerfile/Dockerfile | Planned v1.1 ⏳ |
+| PyPI package | Planned v1.2 ⏳ |
+| GitHub releases automation | Planned v1.1 ⏳ |
+| Multi-arch container builds | Planned v1.1 ⏳ |
+| Package signing (GPG) | Planned v1.1 ⏳ |
+| Container image signing (cosign) | Planned v1.2 ⏳ |
+| SBOM generation | Planned v1.2 ⏳ |
 
 ---
 
@@ -536,10 +686,20 @@ Any phase can transition to: FAILED or ROLLBACK
 
 ### System Requirements
 
+**Runtime**:
+
 - Python 3.8 or later
 - kubectl or oc CLI
 - Network access to both hub clusters
 - Appropriate RBAC permissions
+
+**Development & Packaging** (v1.1+):
+
+- rpm-build (for RPM creation)
+- podman or docker (for container builds)
+- GPG key (for package signing)
+- COPR account (for repository hosting)
+- Quay.io account (for container registry)
 
 ### ACM Components
 
@@ -549,6 +709,21 @@ Any phase can transition to: FAILED or ROLLBACK
 - Restore resources
 - ManagedCluster resources
 - Optional: Observability
+
+### Build & Distribution Infrastructure (v1.1+)
+
+**Required**:
+
+- GitHub Actions (CI/CD automation)
+- COPR build system (RPM builds)
+- Quay.io (Container registry)
+- GPG signing infrastructure
+
+**Optional** (v1.2+):
+
+- PyPI account (Python package distribution)
+- Cosign (Container image signing)
+- Syft/Grype (SBOM & vulnerability scanning)
 
 ---
 
@@ -611,18 +786,107 @@ Any phase can transition to: FAILED or ROLLBACK
 
 ---
 
+## Testing Requirements
+
+### Test Environments
+
+**Priority**: Critical  
+**Status**: Required Before v1.0 Release
+
+#### TE-1: Non-Production Test Environment
+- Two OpenShift 4.14+ clusters
+- ACM 2.11+ installed on both
+- OADP operator configured
+- Sample ManagedClusters (minimum 5)
+- Observability component (optional, for testing)
+- Network connectivity between hubs
+
+#### TE-2: Test Scenarios
+
+**Critical Path Tests**:
+1. Full switchover (passive sync method) with Observability
+2. Full switchover (full restore method) without Observability
+3. Resume after interruption at each phase
+4. Rollback after successful activation
+5. Validation failure scenarios
+6. ACM 2.11 vs 2.12+ version differences
+
+**Edge Case Tests**:
+1. Large cluster count (50+ ManagedClusters)
+2. Mixed cluster states (some disconnected)
+3. Missing preserveOnDelete on ClusterDeployments (should block)
+4. Network interruption during restore
+5. Concurrent backup during switchover
+6. Partial restore failures
+
+**Operational Tests**:
+1. Dry-run mode accuracy
+2. Validate-only mode completeness
+3. State file corruption recovery
+4. Multiple state files (parallel testing)
+5. Verbose logging output
+6. Decommission workflow
+
+### Test Coverage Goals
+
+| Category | Target Coverage | Status |
+|----------|----------------|--------|
+| Unit Tests | > 80% | Not Started |
+| Integration Tests | > 70% | Not Started |
+| E2E Tests | 100% of critical paths | Not Started |
+| Edge Cases | > 60% | Not Started |
+| Documentation Tests | All examples validated | Not Started |
+
+### Test Deliverables
+
+- [ ] Test plan document
+- [ ] Test case specifications
+- [ ] Automated test suite (pytest)
+- [ ] Test execution reports
+- [ ] Performance benchmarks
+- [ ] Security scan results
+- [ ] User acceptance testing (UAT) results
+
+---
+
 ## Success Criteria
 
 ### Release Criteria (v1.0)
 
+**Core Functionality**:
 - [x] All critical functional requirements implemented
-- [x] All high-priority non-functional requirements met
+- [x] All high-priority non-functional requirements implemented
 - [x] Comprehensive documentation complete
-- [x] Manual testing in non-production environment
-- [x] Dry-run mode verified
-- [x] Rollback capability tested
-- [x] Security review completed
-- [x] Performance benchmarks met
+
+**Testing** (In Progress):
+- [ ] Manual testing in non-production environment ⏳
+- [ ] Dry-run mode verified with real clusters ⏳
+- [ ] Rollback capability tested ⏳
+- [ ] End-to-end switchover validation ⏳
+- [ ] Security review completed ⏳
+- [ ] Performance benchmarks measured ⏳
+- [ ] Edge case testing completed ⏳
+- [ ] Production readiness review ⏳
+
+**Distribution** (v1.0 - Basic):
+- [x] Git repository accessible
+- [x] Requirements.txt defined
+- [x] Installation documentation
+- [ ] GitHub releases created ⏳
+
+**Current Phase**: Code complete, entering comprehensive testing phase.
+
+### Release Criteria (v1.1)
+
+**Enhanced Distribution** (Planned):
+- [ ] RPM spec file created and tested
+- [ ] COPR repository configured
+- [ ] RPM packages built for RHEL 8, RHEL 9, Fedora 40+
+- [ ] Container image created and published
+- [ ] Multi-arch container builds working
+- [ ] Installation verified via all methods (source, RPM, container)
+- [ ] Package documentation complete
+- [ ] Automated release workflow functional
 
 ### Acceptance Criteria
 
@@ -657,31 +921,74 @@ Any phase can transition to: FAILED or ROLLBACK
 
 ## Future Roadmap
 
+### Version 1.0 - Current Release (Q4 2025)
+
+**Focus**: Core switchover functionality for non-GitOps managed ACM hubs
+
+- [x] Code implementation complete
+- [ ] Comprehensive testing (in progress)
+- [ ] Production validation
+- [ ] Performance benchmarking
+- [ ] Security hardening
+
 ### Version 1.1 (Q1 2026)
 
+**Focus**: Testing, packaging, and distribution
+
+**Testing & Quality**:
+- [ ] Unit test suite expansion (>80% coverage)
+- [ ] Integration tests with mock clusters
+- [ ] CI/CD pipeline integration
+- [ ] Enhanced error handling and recovery
+- [ ] Performance optimizations
+
+**Packaging & Distribution** 🎯:
+- [ ] RPM package creation (`.spec` file)
+- [ ] COPR repository setup and automation
+- [ ] Container image (Containerfile)
+- [ ] Multi-arch container builds (x86_64, aarch64)
+- [ ] Automated release workflow (GitHub Actions)
+- [ ] Package signing (GPG for RPM)
+- [ ] Container image publishing (Quay.io)
+- [ ] Installation documentation update
+
+**Operational Enhancements**:
 - [ ] Parallel validation checks
 - [ ] Progress bars with rich library
-- [ ] Email notifications
-- [ ] Slack integration
+- [ ] Email/Slack notifications
 - [ ] Enhanced logging (JSON format)
-- [ ] Unit test suite
-- [ ] CI/CD integration
 
 ### Version 1.2 (Q2 2026)
 
-- [ ] Web UI for monitoring
-- [ ] Metrics collection
+**Focus**: Advanced packaging and observability
+
+**Advanced Distribution**:
+- [ ] PyPI package (`pip install acm-switchover`)
+- [ ] Container image signing (cosign)
+- [ ] SBOM (Software Bill of Materials) generation
+- [ ] Vulnerability scanning automation
+- [ ] Brew/Tap for macOS (optional)
+- [ ] Snap package for Ubuntu (optional)
+
+**Monitoring & Observability**:
+- [ ] Metrics collection and reporting
 - [ ] Prometheus exporter
+- [ ] Web UI for monitoring
 - [ ] Automated post-switchover testing
-- [ ] Performance optimizations
+- [ ] Advanced validation scenarios
+- [ ] Multi-cluster scale testing (100+ clusters)
 
-### Version 2.0 (Q3 2026)
+### Version 2.0 (Q3-Q4 2026)
 
+**Focus**: GitOps and advanced automation
+
+- [ ] **GitOps-managed ACM hub support** 🎯
 - [ ] Multi-hub batch switchover
-- [ ] GitOps integration
 - [ ] Policy-based automation
-- [ ] Advanced scheduling
-- [ ] Machine learning for predictive issues
+- [ ] Advanced scheduling (maintenance windows)
+- [ ] Predictive issue detection
+- [ ] Self-healing capabilities
+- [ ] ArgoCD/Flux integration patterns
 
 ---
 
@@ -700,12 +1007,22 @@ Any phase can transition to: FAILED or ROLLBACK
 
 ## Approval
 
+### Design Approval
+
 | Role | Name | Date | Status |
 |------|------|------|--------|
 | Product Owner | - | 2025-11-18 | ✓ Approved |
 | Lead Developer | - | 2025-11-18 | ✓ Approved |
-| Security | - | 2025-11-18 | ✓ Approved |
-| Operations | - | 2025-11-18 | ✓ Approved |
+| Architecture Review | - | 2025-11-18 | ✓ Approved |
+
+### Production Release Approval
+
+| Role | Name | Date | Status |
+|------|------|------|--------|
+| QA Lead | - | Pending | ⏳ Testing Required |
+| Security | - | Pending | ⏳ Review Required |
+| Operations | - | Pending | ⏳ UAT Required |
+| Product Owner | - | Pending | ⏳ Final Approval |
 
 ---
 
@@ -724,9 +1041,50 @@ Any phase can transition to: FAILED or ROLLBACK
 - **preserveOnDelete**: Flag preventing infrastructure destruction on deletion
 - **Observability**: ACM component for metrics and monitoring
 - **Thanos**: Prometheus-based metrics storage used by Observability
+- **COPR**: Community Build Service for RPM packages (Fedora/RHEL)
+- **UBI**: Universal Base Image (Red Hat's minimal container base)
+- **RPM**: Red Hat Package Manager (package format)
+- **SBOM**: Software Bill of Materials (inventory of software components)
+- **Cosign**: Container signing tool for supply chain security
 
 ---
 
 **Document Version**: 1.0.0  
-**Last Updated**: November 18, 2025  
-**Next Review**: February 18, 2026
+**Last Updated**: November 24, 2025  
+**Status**: Living Document - Testing Phase  
+**Next Review**: December 15, 2025 (Post-Testing)
+
+---
+
+## Change Log
+
+### November 24, 2025 (Update 2)
+
+- **Added NFR-8**: Distribution & Packaging requirements
+- **Added FR-10**: Packaging & Distribution functional requirements
+- Added RPM package specifications (RHEL 8+, Fedora 40+)
+- Added COPR repository requirements and workflow
+- Added container image specifications (UBI9-based, multi-arch)
+- Updated v1.1 roadmap to prioritize packaging and distribution
+- Added v1.2 roadmap for PyPI and advanced packaging features
+- Updated Dependencies section with build/packaging infrastructure
+- Expanded glossary with packaging-related terms
+- Updated release criteria to include distribution deliverables
+
+### November 24, 2025 (Update 1)
+
+- Updated status to "In Testing - Not Yet Production Ready"
+- Added specific version requirements (ACM 2.11+, OpenShift 4.14+)
+- Clarified scope: non-GitOps managed ACM hubs only
+- Moved GitOps support to v2.0 roadmap
+- Added comprehensive Testing Requirements section
+- Updated success metrics to reflect testing phase
+- Restructured roadmap with clear version milestones
+- Updated approval section to distinguish design vs production approval
+
+### November 18, 2025
+
+- Initial PRD creation
+- Documented implemented features
+- Defined functional and non-functional requirements
+
