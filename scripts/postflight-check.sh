@@ -71,20 +71,20 @@ fi
 
 # Helper functions
 check_pass() {
-    ((TOTAL_CHECKS++))
-    ((PASSED_CHECKS++))
+    ((TOTAL_CHECKS++)) || true
+    ((PASSED_CHECKS++)) || true
     echo -e "${GREEN}✓${NC} $1"
 }
 
 check_fail() {
-    ((TOTAL_CHECKS++))
-    ((FAILED_CHECKS++))
+    ((TOTAL_CHECKS++)) || true
+    ((FAILED_CHECKS++)) || true
     echo -e "${RED}✗${NC} $1"
 }
 
 check_warn() {
-    ((TOTAL_CHECKS++))
-    ((WARNING_CHECKS++))
+    ((TOTAL_CHECKS++)) || true
+    ((WARNING_CHECKS++)) || true
     echo -e "${YELLOW}⚠${NC} $1"
 }
 
@@ -128,7 +128,7 @@ fi
 # Check 2: Verify ManagedClusters are connected
 section_header "2. Checking ManagedCluster Status"
 
-TOTAL_CLUSTERS=$(oc --context="$NEW_HUB_CONTEXT" get managedclusters --no-headers 2>/dev/null | grep -c -v local-cluster)
+TOTAL_CLUSTERS=$(oc --context="$NEW_HUB_CONTEXT" get managedclusters --no-headers 2>/dev/null | grep -c -v local-cluster || echo "0")
 if [[ $TOTAL_CLUSTERS -gt 0 ]]; then
     check_pass "Found $TOTAL_CLUSTERS managed cluster(s) (excluding local-cluster)"
     
@@ -144,7 +144,7 @@ if [[ $TOTAL_CLUSTERS -gt 0 ]]; then
     if [[ -z "$UNAVAILABLE_LIST" ]]; then
         check_pass "All $TOTAL_CLUSTERS cluster(s) show Available=True"
     else
-        NUM_UNAVAILABLE=$(echo "$UNAVAILABLE_LIST" | grep -c -v "^$")
+        NUM_UNAVAILABLE=$(echo "$UNAVAILABLE_LIST" | grep -c -v "^$" || echo "0")
         NUM_AVAILABLE=$((TOTAL_CLUSTERS - NUM_UNAVAILABLE))
         
         check_fail "Only $NUM_AVAILABLE of $TOTAL_CLUSTERS cluster(s) are Available"
@@ -163,7 +163,7 @@ if [[ $TOTAL_CLUSTERS -gt 0 ]]; then
     fi
     
     # Check for Pending Import
-    PENDING_IMPORT=$(oc --context="$NEW_HUB_CONTEXT" get managedclusters 2>/dev/null | grep -c "Pending Import")
+    PENDING_IMPORT=$(oc --context="$NEW_HUB_CONTEXT" get managedclusters 2>/dev/null | grep -c "Pending Import" || echo "0")
     if [[ $PENDING_IMPORT -eq 0 ]]; then
         check_pass "No clusters stuck in Pending Import"
     else
@@ -300,7 +300,7 @@ if [[ -n "$OLD_HUB_CONTEXT" ]]; then
     section_header "7. Comparing with Old Hub"
     
     # Check old hub cluster status
-    OLD_CLUSTERS=$(oc --context="$OLD_HUB_CONTEXT" get managedclusters --no-headers 2>/dev/null | grep -c -v local-cluster)
+    OLD_CLUSTERS=$(oc --context="$OLD_HUB_CONTEXT" get managedclusters --no-headers 2>/dev/null | grep -c -v local-cluster || echo "0")
     if [[ $OLD_CLUSTERS -gt 0 ]]; then
         OLD_UNKNOWN=$(oc --context="$OLD_HUB_CONTEXT" get managedclusters -o json 2>/dev/null | \
             jq -r '.items[] | select(.metadata.name != "local-cluster") | select(.status.conditions[]? | select(.type=="ManagedClusterConditionAvailable" and .status!="True")) | .metadata.name' | wc -l)

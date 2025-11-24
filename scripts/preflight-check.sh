@@ -77,20 +77,20 @@ fi
 
 # Helper functions
 check_pass() {
-    ((TOTAL_CHECKS++))
-    ((PASSED_CHECKS++))
+    ((TOTAL_CHECKS++)) || true
+    ((PASSED_CHECKS++)) || true
     echo -e "${GREEN}✓${NC} $1"
 }
 
 check_fail() {
-    ((TOTAL_CHECKS++))
-    ((FAILED_CHECKS++))
+    ((TOTAL_CHECKS++)) || true
+    ((FAILED_CHECKS++)) || true
     echo -e "${RED}✗${NC} $1"
 }
 
 check_warn() {
-    ((TOTAL_CHECKS++))
-    ((WARNING_CHECKS++))
+    ((TOTAL_CHECKS++)) || true
+    ((WARNING_CHECKS++)) || true
     echo -e "${YELLOW}⚠${NC} $1"
 }
 
