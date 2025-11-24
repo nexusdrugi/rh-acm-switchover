@@ -110,18 +110,16 @@ echo ""
 # Check 1: Verify restore completed
 section_header "1. Checking Restore Status"
 
-RESTORES=$(oc --context="$NEW_HUB_CONTEXT" get restore -n open-cluster-management-backup --no-headers 2>/dev/null | wc -l)
-if [[ $RESTORES -gt 0 ]]; then
-    # Check for any restore (passive-sync, activate, or full)
-    RESTORE_NAME=$(oc --context="$NEW_HUB_CONTEXT" get restore -n open-cluster-management-backup -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-    RESTORE_PHASE=$(oc --context="$NEW_HUB_CONTEXT" get restore "$RESTORE_NAME" -n open-cluster-management-backup -o jsonpath='{.status.phase}' 2>/dev/null)
-    
+# Get details of the most recent restore (sort by creation timestamp)
+read -r RESTORE_NAME RESTORE_PHASE RESTORE_TIME <<< "$(oc --context="$NEW_HUB_CONTEXT" get restore -n open-cluster-management-backup --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name} {.items[-1].status.phase} {.items[-1].metadata.creationTimestamp}' 2>/dev/null)"
+
+if [[ -n "$RESTORE_NAME" ]]; then
     if [[ "$RESTORE_PHASE" == "Finished" ]]; then
-        check_pass "Restore '$RESTORE_NAME' completed successfully (Phase: Finished)"
+        check_pass "Latest restore '$RESTORE_NAME' completed successfully (Phase: Finished, Created: $RESTORE_TIME)"
     elif [[ "$RESTORE_PHASE" == "Enabled" ]]; then
-        check_warn "Restore '$RESTORE_NAME' in Enabled state (passive sync may still be running)"
+        check_warn "Latest restore '$RESTORE_NAME' is Enabled (passive sync may still be running)"
     else
-        check_fail "Restore '$RESTORE_NAME' in unexpected state: $RESTORE_PHASE"
+        check_fail "Latest restore '$RESTORE_NAME' in unexpected state: $RESTORE_PHASE"
     fi
 else
     check_fail "No restore resources found on new hub"
@@ -135,20 +133,23 @@ if [[ $TOTAL_CLUSTERS -gt 0 ]]; then
     check_pass "Found $TOTAL_CLUSTERS managed cluster(s) (excluding local-cluster)"
     
     # Check Available status
-    AVAILABLE_CLUSTERS=$(oc --context="$NEW_HUB_CONTEXT" get managedclusters -o json 2>/dev/null | \
-        jq -r '.items[] | select(.metadata.name != "local-cluster") | select(.status.conditions[]? | select(.type=="ManagedClusterConditionAvailable" and .status=="True")) | .metadata.name' | wc -l)
+    # Check Available status
+    # Identify clusters that are NOT Available (single API call)
+    # This correctly catches clusters with Available=False, Unknown, or missing status
+    UNAVAILABLE_LIST=$(oc --context="$NEW_HUB_CONTEXT" get managedclusters -o json 2>/dev/null | \
+        jq -r '.items[] | select(.metadata.name != "local-cluster") | select(
+            ([.status.conditions[]? | select(.type=="ManagedClusterConditionAvailable" and .status=="True")] | length) == 0
+        ) | .metadata.name')
     
-    if [[ $AVAILABLE_CLUSTERS -eq $TOTAL_CLUSTERS ]]; then
+    if [[ -z "$UNAVAILABLE_LIST" ]]; then
         check_pass "All $TOTAL_CLUSTERS cluster(s) show Available=True"
     else
-        check_fail "Only $AVAILABLE_CLUSTERS of $TOTAL_CLUSTERS cluster(s) are Available"
+        NUM_UNAVAILABLE=$(echo "$UNAVAILABLE_LIST" | grep -c -v "^$")
+        NUM_AVAILABLE=$((TOTAL_CLUSTERS - NUM_UNAVAILABLE))
         
-        # List unavailable clusters
-        UNAVAILABLE=$(oc --context="$NEW_HUB_CONTEXT" get managedclusters -o json 2>/dev/null | \
-            jq -r '.items[] | select(.metadata.name != "local-cluster") | select(.status.conditions[]? | select(.type=="ManagedClusterConditionAvailable" and .status!="True")) | .metadata.name')
-        if [[ -n "$UNAVAILABLE" ]]; then
-            echo -e "${RED}       Unavailable clusters: $UNAVAILABLE${NC}"
-        fi
+        check_fail "Only $NUM_AVAILABLE of $TOTAL_CLUSTERS cluster(s) are Available"
+        echo -e "${RED}       Unavailable clusters:${NC}"
+        echo "$UNAVAILABLE_LIST" | sed 's/^/         - /'
     fi
     
     # Check Joined status
@@ -250,11 +251,16 @@ if [[ $BACKUP_SCHEDULE -gt 0 ]]; then
     # Check for recent backups
     RECENT_BACKUPS=$(oc --context="$NEW_HUB_CONTEXT" get backup -n open-cluster-management-backup --sort-by=.metadata.creationTimestamp --no-headers 2>/dev/null | tail -3 | wc -l)
     if [[ $RECENT_BACKUPS -gt 0 ]]; then
-        LATEST_BACKUP=$(oc --context="$NEW_HUB_CONTEXT" get backup -n open-cluster-management-backup --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1:].metadata.name}' 2>/dev/null)
-        LATEST_PHASE=$(oc --context="$NEW_HUB_CONTEXT" get backup "$LATEST_BACKUP" -n open-cluster-management-backup -o jsonpath='{.status.phase}' 2>/dev/null)
-        LATEST_TIME=$(oc --context="$NEW_HUB_CONTEXT" get backup "$LATEST_BACKUP" -n open-cluster-management-backup -o jsonpath='{.metadata.creationTimestamp}' 2>/dev/null)
+        # Get details of the latest backup in a single call
+        read -r LATEST_BACKUP LATEST_PHASE LATEST_TIME <<< "$(oc --context="$NEW_HUB_CONTEXT" get backup -n open-cluster-management-backup --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name} {.items[-1].status.phase} {.items[-1].metadata.creationTimestamp}' 2>/dev/null)"
         
-        check_pass "Latest backup: '$LATEST_BACKUP' (Phase: $LATEST_PHASE, Created: $LATEST_TIME)"
+        if [[ "$LATEST_PHASE" == "Completed" ]]; then
+            check_pass "Latest backup: '$LATEST_BACKUP' (Phase: $LATEST_PHASE, Created: $LATEST_TIME)"
+        elif [[ "$LATEST_PHASE" == "InProgress" ]]; then
+            check_warn "Latest backup: '$LATEST_BACKUP' is InProgress (Created: $LATEST_TIME)"
+        else
+            check_fail "Latest backup: '$LATEST_BACKUP' failed or in unexpected state: $LATEST_PHASE"
+        fi
     else
         check_warn "No recent backups found (may take time for first backup to run)"
     fi
