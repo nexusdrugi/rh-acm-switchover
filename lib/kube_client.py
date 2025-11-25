@@ -49,6 +49,7 @@ class KubeClient:
         context: Optional[str] = None,
         dry_run: bool = False,
         request_timeout: int = 30,
+        disable_hostname_verification: bool = False,
     ) -> None:
         """
         Initialize Kubernetes client for specific context.
@@ -57,9 +58,11 @@ class KubeClient:
             context: Kubernetes context name
             dry_run: If True, don't make actual changes
             request_timeout: API request timeout in seconds
+            disable_hostname_verification: If True, skip TLS hostname verification (not recommended)
         """
         self.context = context
         self.dry_run = dry_run
+        self.disable_hostname_verification = disable_hostname_verification
 
         # Load config for specific context
         config.load_kube_config(context=context)
@@ -67,8 +70,14 @@ class KubeClient:
         # Configure default timeouts
         configuration = client.Configuration.get_default_copy()
         configuration.retries = 3
-        # Connect timeout, Read timeout
-        configuration.assert_hostname = False
+
+        if disable_hostname_verification and hasattr(configuration, "assert_hostname"):
+            configuration.assert_hostname = False
+            logger.warning(
+                "Hostname verification disabled for context: %s",
+                context or "default",
+            )
+
         client.Configuration.set_default(configuration)
 
         self.core_v1 = client.CoreV1Api()

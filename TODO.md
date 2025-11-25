@@ -1,43 +1,47 @@
-# Reliability Hardening Plan
+# Code Smell Remediation Checklist
 
-This document tracks the progress of reliability hardening tasks for the ACM Switchover tool.
+1. [x] **Reinstate secure TLS defaults in `lib/kube_client.py`**  
+   - Remove the blanket `configuration.assert_hostname = False` setting, or guard it behind an explicit opt-in flag so hostname verification stays on by default.
 
-## High Priority
+2. [ ] **Track primary vs. secondary Observability state separately**  
+   - Update `ObservabilityDetector` to return both flags.  
+   - Ensure post-activation verification only restarts/validates Observability when the secondary hub actually runs it.
 
-- [x] **1. Implement API Retry Logic** (Est: 4h)
-    - Add `tenacity` dependency.
-    - Create `@retry_with_backoff` decorator in `lib/kube_client.py`.
-    - Apply decorator to all `KubeClient` methods (`get_`, `list_`, `patch_`, `create_`, `delete_`).
-    - Handle `ApiException` (5xx) and `urllib3` connection errors.
+3. [ ] **Enhance Observability pod health checks (`modules/post_activation.py`)**  
+   - Inspect container `waiting`/`terminated` states so CrashLoopBackOff pods are reported instead of being counted as healthy.
 
-- [x] **2. Client-Side Timeouts** (Est: 1h)
-    - Update `KubeClient.__init__` to accept `request_timeout`.
-    - Configure `kubernetes.client.Configuration` with default timeouts (e.g., 30s connect, 60s read).
+4. [ ] **Make bash scripts honor the detected CLI (`scripts/preflight-check.sh`, `scripts/postflight-check.sh`)**  
+   - After detecting whether `oc` or `kubectl` is available, run every subsequent command with that binary (or explicitly require `oc`).
 
-- [x] **3. Failure Scenario Testing** (Est: 4h)
-    - Create unit tests mocking API failures (503, timeouts).
-    - Verify retry logic behavior (backoff, eventual failure).
-    - Ensure `SwitchoverError` is raised appropriately.
+5. [ ] **Prevent stale state leakage across runs**  
+   - Derive the default state file path from the primary/secondary context pair or store the contexts inside the state file and validate the match before reuse.  
+   - Consider auto-resetting when contexts change.
 
-## Medium Priority
+6. [ ] **Harden `StateManager.get_current_phase`**  
+   - Catch `ValueError` when unknown strings are stored and fall back to `Phase.INIT` (or instruct the user to reset), instead of crashing.
 
-- [x] **4. Refine Exception Handling** (Est: 3h)
-    - Define custom exception hierarchy in `lib/exceptions.py` (e.g., `SwitchoverError`, `TransientError`, `FatalError`).
-    - Update `modules/*.py` to catch specific exceptions instead of generic `Exception`.
-    - Ensure fatal errors stop execution immediately.
+7. [ ] **Handle Kubernetes list pagination in `lib/kube_client.list_custom_resources`**  
+   - Loop on `metadata.continue` so large fleets don’t silently drop items, ensuring pre-flight and verification steps see every resource.
 
-## Low Priority
+8. [ ] **Loosen `wait_for_pods_ready` pod count handling**  
+   - Allow extra pods during rollouts (e.g., accept `len(pods) >= expected_count`) so transient replica mismatches don’t time out when the desired number of pods are already ready.
 
-- [x] **5. Structured Logging** (Est: 2h)
-    - Update `lib/utils.py` to support JSON logging via `--log-format=json`.
-    - Add context to log messages (cluster, resource, phase).
+9. [ ] **Port CLI/context prerequisite checks into Python preflight**  
+   - Mirror the bash script’s validation that `oc`/`kubectl`/`jq` are available and both contexts resolve before deeper checks run.  
+   - Ensure missing Observability prerequisites such as the Thanos object-storage secret on the secondary hub are surfaced in `PreflightValidator`.
 
-## Documentation Updates (Post-Implementation)
+10. [ ] **Bring postflight Observability/Grafana checks into Python workflow**  
+    - Extend `PostActivationVerification` to flag pods in `CrashLoopBackOff` or other error states, capture observatorium-api restart info, and surface Grafana route availability guidance.
 
-- [x] Update `requirements.txt` with `tenacity`.
-- [x] Update `ARCHITECTURE.md` to reflect:
-    - New exception handling strategy.
-    - Retry logic in Kubernetes Client component.
-    - Updated Mermaid diagrams if component interactions change.
-- [x] Update `PRD.md` (Reliability NFRs).
-- [x] Update `USAGE.md` (new flags like `--log-format` if added).
+11. [ ] **Add backup schedule + MultiClusterHub status validation to finalization**  
+    - After enabling the backup schedule, re-read the CR to ensure it is unpaused and recent backups exist.  
+    - Confirm the new hub’s MultiClusterHub is `Running` and all ACM pods are healthy, similar to `postflight-check.sh`.
+
+12. [ ] **Introduce “old hub” regression checks post-switchover**  
+    - Optionally verify the old hub shows clusters as disconnected, BackupSchedule paused, and Thanos compactor still scaled down, paralleling script section 7.
+
+13. [ ] **Reconfirm disable-auto-import cleanup on the new hub**  
+    - After activation, ensure no ManagedClusters retain the `disable-auto-import` annotation unless explicitly expected.
+
+14. [ ] **Update/extend tests affected by these changes**  
+    - Add or refresh unit/integration tests (Python modules and bash script harness) so new validations and flows are covered.
