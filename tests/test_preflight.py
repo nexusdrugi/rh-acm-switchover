@@ -10,6 +10,7 @@ from unittest.mock import Mock, patch
 from modules.preflight_validators import (
     ValidationReporter,
     NamespaceValidator,
+    ObservabilityDetector,
 )
 from lib.constants import ACM_NAMESPACE, BACKUP_NAMESPACE
 
@@ -155,3 +156,31 @@ class TestNamespaceValidator:
         check_names = [r["check"] for r in reporter.results]
         assert any(ACM_NAMESPACE in check for check in check_names)
         assert any(BACKUP_NAMESPACE in check for check in check_names)
+
+
+@pytest.mark.unit
+class TestObservabilityDetector:
+    """Tests for the ObservabilityDetector."""
+
+    @pytest.mark.parametrize(
+        "primary_has,secondary_has,expected_message",
+        [
+            (True, True, "detected on both hubs"),
+            (True, False, "detected on primary hub only"),
+            (False, True, "detected on secondary hub only"),
+            (False, False, "not detected (optional component)"),
+        ],
+    )
+    def test_detect_reports_per_hub_presence(
+        self, reporter, primary_has, secondary_has, expected_message
+    ):
+        primary = Mock()
+        secondary = Mock()
+        primary.namespace_exists.return_value = primary_has
+        secondary.namespace_exists.return_value = secondary_has
+
+        detector = ObservabilityDetector(reporter)
+        result = detector.detect(primary, secondary)
+
+        assert result == (primary_has, secondary_has)
+        assert reporter.results[-1]["message"] == expected_message

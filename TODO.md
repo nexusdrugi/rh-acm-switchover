@@ -3,7 +3,7 @@
 1. [x] **Reinstate secure TLS defaults in `lib/kube_client.py`**  
    - Remove the blanket `configuration.assert_hostname = False` setting, or guard it behind an explicit opt-in flag so hostname verification stays on by default.
 
-2. [ ] **Track primary vs. secondary Observability state separately**  
+2. [x] **Track primary vs. secondary Observability state separately**  
    - Update `ObservabilityDetector` to return both flags.  
    - Ensure post-activation verification only restarts/validates Observability when the secondary hub actually runs it.
 

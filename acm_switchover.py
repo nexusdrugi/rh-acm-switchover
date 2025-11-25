@@ -227,9 +227,24 @@ def _run_phase_preflight(
     state.set_config("primary_version", config["primary_version"])
     state.set_config("secondary_version", config["secondary_version"])
     state.set_config(
-        "has_observability",
-        config["has_observability"] and not args.skip_observability_checks,
+        "primary_observability_detected",
+        config["primary_observability_detected"],
     )
+    state.set_config(
+        "secondary_observability_detected",
+        config["secondary_observability_detected"],
+    )
+
+    primary_obs_enabled = (
+        config["primary_observability_detected"] and not args.skip_observability_checks
+    )
+    secondary_obs_enabled = (
+        config["secondary_observability_detected"] and not args.skip_observability_checks
+    )
+
+    state.set_config("primary_has_observability", primary_obs_enabled)
+    state.set_config("secondary_has_observability", secondary_obs_enabled)
+    state.set_config("has_observability", primary_obs_enabled or secondary_obs_enabled)
 
     if args.validate_only:
         logger.info("\n✓ Validation complete. Exiting (--validate-only mode)")
@@ -253,7 +268,7 @@ def _run_phase_primary_prep(
         primary,
         state,
         state.get_config("primary_version", "unknown"),
-        state.get_config("has_observability", False),
+        state.get_config("primary_has_observability", False),
     )
 
     if not prep.prepare():
@@ -299,7 +314,7 @@ def _run_phase_post_activation(
     verification = PostActivationVerification(
         secondary,
         state,
-        state.get_config("has_observability", False),
+        state.get_config("secondary_has_observability", False),
     )
 
     if not verification.verify():
@@ -368,7 +383,7 @@ def run_rollback(
         secondary,
         state,
         state.get_config("primary_version", "unknown"),
-        state.get_config("has_observability", False),
+        state.get_config("primary_has_observability", False),
     )
 
     if rollback.rollback():
@@ -390,7 +405,9 @@ def run_decommission(
     logger: logging.Logger,
 ):
     """Execute decommission of old hub."""
-    decom = Decommission(primary, state.get_config("has_observability", False))
+    decom = Decommission(
+        primary, state.get_config("primary_has_observability", False)
+    )
 
     logger.info("Starting decommission workflow")
 

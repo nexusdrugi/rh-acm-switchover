@@ -63,7 +63,7 @@ class PreflightValidator:
         if self.method == "passive":
             self.passive_sync_validator.run(self.secondary)
 
-        has_observability = self.observability_detector.detect(
+        primary_observability, secondary_observability = self.observability_detector.detect(
             self.primary,
             self.secondary,
         )
@@ -73,7 +73,9 @@ class PreflightValidator:
         config = {
             "primary_version": primary_version,
             "secondary_version": secondary_version,
-            "has_observability": has_observability,
+            "primary_observability_detected": primary_observability,
+            "secondary_observability_detected": secondary_observability,
+            "has_observability": primary_observability or secondary_observability,
         }
 
         critical_failures = self.reporter.critical_failures()

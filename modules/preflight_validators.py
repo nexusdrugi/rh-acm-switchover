@@ -465,12 +465,12 @@ class PassiveSyncValidator:
 
 
 class ObservabilityDetector:
-    """Detects whether ACM Observability is deployed."""
+    """Detects whether ACM Observability is deployed on each hub."""
 
     def __init__(self, reporter: ValidationReporter) -> None:
         self.reporter = reporter
 
-    def detect(self, primary: KubeClient, secondary: KubeClient) -> bool:
+    def detect(self, primary: KubeClient, secondary: KubeClient) -> Tuple[bool, bool]:
         primary_has = primary.namespace_exists(OBSERVABILITY_NAMESPACE)
         secondary_has = secondary.namespace_exists(OBSERVABILITY_NAMESPACE)
 
@@ -481,28 +481,26 @@ class ObservabilityDetector:
                 "detected on both hubs",
                 critical=False,
             )
-            return True
-        if primary_has:
+        elif primary_has:
             self.reporter.add_result(
                 "ACM Observability",
                 True,
                 "detected on primary hub only",
                 critical=False,
             )
-            return True
-        if secondary_has:
+        elif secondary_has:
             self.reporter.add_result(
                 "ACM Observability",
                 True,
                 "detected on secondary hub only",
                 critical=False,
             )
-            return True
+        else:
+            self.reporter.add_result(
+                "ACM Observability",
+                True,
+                "not detected (optional component)",
+                critical=False,
+            )
 
-        self.reporter.add_result(
-            "ACM Observability",
-            True,
-            "not detected (optional component)",
-            critical=False,
-        )
-        return False
+        return primary_has, secondary_has
