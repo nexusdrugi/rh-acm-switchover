@@ -420,10 +420,10 @@ git clone https://github.com/tomazb/rh-acm-switchover.git
 cd rh-acm-switchover
 
 # Build with podman
-podman build -f Containerfile -t acm-switchover:custom .
+podman build -f container-bootstrap/Containerfile -t acm-switchover:custom .
 
 # Build with docker
-docker build -f Containerfile -t acm-switchover:custom .
+docker build -f container-bootstrap/Containerfile -t acm-switchover:custom .
 ```
 
 ### Build Multi-Arch Image
@@ -431,7 +431,7 @@ docker build -f Containerfile -t acm-switchover:custom .
 ```bash
 # Build for multiple architectures
 podman build --platform linux/amd64,linux/arm64 \
-  -f Containerfile \
+  -f container-bootstrap/Containerfile \
   -t acm-switchover:multi-arch .
 ```
 
@@ -441,7 +441,7 @@ podman build --platform linux/amd64,linux/arm64 \
 # Build with specific OpenShift CLI version
 podman build \
   --build-arg OC_VERSION=4.15 \
-  -f Containerfile \
+  -f container-bootstrap/Containerfile \
   -t acm-switchover:oc415 .
 ```
 
