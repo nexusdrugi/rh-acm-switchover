@@ -8,8 +8,36 @@ from typing import Any, Dict, List, Optional
 
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+    before_sleep_log,
+)
+from urllib3.exceptions import HTTPError
 
 logger = logging.getLogger("acm_switchover")
+
+
+def is_retryable_error(exception: Exception) -> bool:
+    """Check if exception is retryable."""
+    if isinstance(exception, ApiException):
+        # Retry on server errors (5xx) and too many requests (429)
+        return 500 <= exception.status < 600 or exception.status == 429
+    if isinstance(exception, HTTPError):
+        return True
+    return False
+
+
+# Standard retry decorator for API calls
+retry_api_call = retry(
+    retry=retry_if_exception_type((ApiException, HTTPError)),
+    wait=wait_exponential(multiplier=1, min=1, max=10),
+    stop=stop_after_attempt(5),
+    before_sleep=before_sleep_log(logger, logging.DEBUG),
+    reraise=True,
+)
 
 
 class KubeClient:
@@ -37,6 +65,7 @@ class KubeClient:
             f"Initialized Kubernetes client for context: {context or 'default'}"
         )
 
+    @retry_api_call
     def get_namespace(self, name: str) -> Optional[Dict]:
         """Check if namespace exists.
 
@@ -52,6 +81,9 @@ class KubeClient:
         except ApiException as e:
             if e.status == 404:
                 return None
+            # Re-raise retryable errors for tenacity to catch
+            if is_retryable_error(e):
+                raise
             logger.error(f"Failed to get namespace {name}: {e}")
             raise
 
@@ -59,6 +91,7 @@ class KubeClient:
         """Check if namespace exists."""
         return self.get_namespace(name) is not None
 
+    @retry_api_call
     def get_custom_resource(
         self,
         group: str,
@@ -97,8 +130,11 @@ class KubeClient:
         except ApiException as e:
             if e.status == 404:
                 return None
+            if is_retryable_error(e):
+                raise
             raise
 
+    @retry_api_call
     def list_custom_resources(
         self,
         group: str,
@@ -140,8 +176,11 @@ class KubeClient:
         except ApiException as e:
             if e.status == 404:
                 return []
+            if is_retryable_error(e):
+                raise
             raise
 
+    @retry_api_call
     def patch_custom_resource(
         self,
         group: str,
@@ -185,9 +224,12 @@ class KubeClient:
                 )
             return result
         except ApiException as e:
+            if is_retryable_error(e):
+                raise
             logger.error(f"Failed to patch {plural}/{name}: {e}")
             raise
 
+    @retry_api_call
     def create_custom_resource(
         self,
         group: str,
@@ -218,9 +260,12 @@ class KubeClient:
                 )
             return result
         except ApiException as e:
+            if is_retryable_error(e):
+                raise
             logger.error(f"Failed to create {plural}: {e}")
             raise
 
+    @retry_api_call
     def delete_custom_resource(
         self,
         group: str,
@@ -251,6 +296,8 @@ class KubeClient:
         except ApiException as e:
             if e.status == 404:
                 return False
+            if is_retryable_error(e):
+                raise
             logger.error(f"Failed to delete {plural}/{name}: {e}")
             raise
 
@@ -272,6 +319,7 @@ class KubeClient:
             patch=patch,
         )
 
+    @retry_api_call
     def scale_deployment(self, name: str, namespace: str, replicas: int) -> Dict:
         """Scale a deployment."""
         if self.dry_run:
@@ -287,9 +335,12 @@ class KubeClient:
             )
             return result.to_dict()
         except ApiException as e:
+            if is_retryable_error(e):
+                raise
             logger.error(f"Failed to scale deployment {namespace}/{name}: {e}")
             raise
 
+    @retry_api_call
     def scale_statefulset(self, name: str, namespace: str, replicas: int) -> Dict:
         """Scale a statefulset."""
         if self.dry_run:
@@ -305,9 +356,12 @@ class KubeClient:
             )
             return result.to_dict()
         except ApiException as e:
+            if is_retryable_error(e):
+                raise
             logger.error(f"Failed to scale statefulset {namespace}/{name}: {e}")
             raise
 
+    @retry_api_call
     def rollout_restart_deployment(self, name: str, namespace: str) -> Dict:
         """Restart a deployment by updating restart annotation."""
         if self.dry_run:
@@ -330,9 +384,12 @@ class KubeClient:
             )
             return result.to_dict()
         except ApiException as e:
+            if is_retryable_error(e):
+                raise
             logger.error(f"Failed to restart deployment {namespace}/{name}: {e}")
             raise
 
+    @retry_api_call
     def get_pods(
         self, namespace: str, label_selector: Optional[str] = None
     ) -> List[Dict]:
@@ -345,6 +402,8 @@ class KubeClient:
         except ApiException as e:
             if e.status == 404:
                 return []
+            if is_retryable_error(e):
+                raise
             raise
 
     def list_pods(
