@@ -34,6 +34,7 @@ def mock_state_manager():
 @pytest.fixture
 def post_verify_with_obs(mock_secondary_client, mock_state_manager):
     """Create PostActivationVerification instance with observability."""
+    mock_secondary_client.get_route_host.return_value = "grafana.example.com"
     return PostActivationVerification(
         secondary_client=mock_secondary_client,
         state_manager=mock_state_manager,
@@ -73,6 +74,7 @@ class TestPostActivationVerification:
     ):
         """Test successful verification with observability."""
         mock_wait.return_value = True
+        mock_secondary_client.wait_for_pods_ready.return_value = True
 
         # Mock clusters
         mock_secondary_client.list_custom_resources.return_value = [
@@ -87,9 +89,27 @@ class TestPostActivationVerification:
             }
         ]
 
-        # Mock observability pods
-        mock_secondary_client.get_pods.return_value = [
-            {"metadata": {"name": "pod1"}, "status": {"phase": "Running"}}
+        mock_secondary_client.get_pods.side_effect = [
+            [
+                {
+                    "metadata": {"name": "obs-api"},
+                    "status": {
+                        "phase": "Running",
+                        "startTime": "2024-01-01T00:00:00Z",
+                        "conditions": [{"type": "Ready", "status": "True"}],
+                    },
+                }
+            ],
+            [
+                {
+                    "metadata": {"name": "pod1"},
+                    "status": {
+                        "phase": "Running",
+                        "conditions": [{"type": "Ready", "status": "True"}],
+                    },
+                }
+            ],
+            [{"metadata": {"name": "metrics-pod"}}],
         ]
 
         mock_secondary_client.rollout_restart_deployment.return_value = {"status": "ok"}
@@ -201,6 +221,10 @@ class TestPostActivationVerification:
         self, post_verify_with_obs, mock_secondary_client
     ):
         """Test restarting observatorium API deployment."""
+        mock_secondary_client.wait_for_pods_ready.return_value = True
+        mock_secondary_client.get_pods.return_value = [
+            {"metadata": {"name": "api"}, "status": {"startTime": "2024-01-01T00:00:00Z"}}
+        ]
         mock_secondary_client.rollout_restart_deployment.return_value = {"status": "ok"}
 
         post_verify_with_obs._restart_observatorium_api()
@@ -208,6 +232,7 @@ class TestPostActivationVerification:
         mock_secondary_client.rollout_restart_deployment.assert_called_once_with(
             namespace=OBSERVABILITY_NAMESPACE, name="observability-observatorium-api"
         )
+        mock_secondary_client.get_pods.assert_called()
 
     @patch("modules.post_activation.wait_for_condition")
     def test_verify_observability_pods_all_ready(
@@ -294,6 +319,34 @@ class TestPostActivationVerification:
 
         # Verify get_pods was called
         assert mock_secondary_client.get_pods.called
+
+    @patch("modules.post_activation.logger")
+    def test_log_grafana_route_found(
+        self, mock_logger, post_verify_with_obs, mock_secondary_client
+    ):
+        """Grafana route should be logged when host detected."""
+        mock_secondary_client.get_route_host.return_value = "grafana.example.com"
+
+        post_verify_with_obs._log_grafana_route()
+
+        mock_logger.info.assert_any_call(
+            "Grafana route detected: https://%s (namespace: %s)",
+            "grafana.example.com",
+            OBSERVABILITY_NAMESPACE,
+        )
+
+    @patch("modules.post_activation.logger")
+    def test_log_grafana_route_missing(
+        self, mock_logger, post_verify_with_obs, mock_secondary_client
+    ):
+        """Missing Grafana route should emit warning."""
+        mock_secondary_client.get_route_host.return_value = None
+
+        post_verify_with_obs._log_grafana_route()
+
+        mock_logger.warning.assert_any_call(
+            "Grafana route not found in Observability namespace"
+        )
 
     def test_verify_error_handling(
         self, post_verify_with_obs, mock_secondary_client, mock_state_manager

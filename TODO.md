@@ -30,7 +30,7 @@
    - Mirror the bash script’s validation that `oc`/`kubectl`/`jq` are available and both contexts resolve before deeper checks run.  
    - Ensure missing Observability prerequisites such as the Thanos object-storage secret on the secondary hub are surfaced in `PreflightValidator`.
 
-10. [ ] **Bring postflight Observability/Grafana checks into Python workflow**  
+10. [x] **Bring postflight Observability/Grafana checks into Python workflow**  
     - Extend `PostActivationVerification` to flag pods in `CrashLoopBackOff` or other error states, capture observatorium-api restart info, and surface Grafana route availability guidance.
 
 11. [ ] **Add backup schedule + MultiClusterHub status validation to finalization**  

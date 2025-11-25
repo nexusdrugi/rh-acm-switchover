@@ -134,6 +134,26 @@ class KubeClient:
             raise
 
     @retry_api_call
+    def get_route_host(self, namespace: str, name: str) -> Optional[str]:
+        """Fetch the hostname for an OpenShift Route."""
+        try:
+            route = self.custom_api.get_namespaced_custom_object(
+                group="route.openshift.io",
+                version="v1",
+                namespace=namespace,
+                plural="routes",
+                name=name,
+            )
+            return route.get("spec", {}).get("host")
+        except ApiException as e:
+            if e.status == 404:
+                return None
+            if is_retryable_error(e):
+                raise
+            logger.error("Failed to read Route %s/%s: %s", namespace, name, e)
+            raise
+
+    @retry_api_call
     def get_custom_resource(
         self,
         group: str,

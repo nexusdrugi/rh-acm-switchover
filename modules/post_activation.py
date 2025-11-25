@@ -187,6 +187,20 @@ class PostActivationVerification:
 
             if ready:
                 logger.info("observatorium-api pods are ready")
+                pods = self.secondary.get_pods(
+                    namespace=OBSERVABILITY_NAMESPACE,
+                    label_selector="app.kubernetes.io/name=observatorium-api",
+                )
+                start_times = [
+                    pod.get("status", {}).get("startTime")
+                    for pod in pods
+                    if pod.get("status", {}).get("startTime")
+                ]
+                if start_times:
+                    logger.info(
+                        "observatorium-api pod start times: %s",
+                        ", ".join(start_times),
+                    )
             else:
                 logger.warning("observatorium-api pods did not become ready in time")
 
@@ -292,6 +306,7 @@ class PostActivationVerification:
             "\n"
             "Metrics should appear within 5-10 minutes after observatorium-api restart."
         )
+        self._log_grafana_route()
 
         # We could check if metrics-collector pods are running
         metrics_pods = self.secondary.get_pods(
@@ -302,3 +317,20 @@ class PostActivationVerification:
             logger.info(f"Found {len(metrics_pods)} metrics-collector pod(s)")
         else:
             logger.warning("No metrics-collector pods found")
+
+    def _log_grafana_route(self):
+        """Log Grafana route availability to help operators verify UI."""
+        try:
+            host = self.secondary.get_route_host(
+                OBSERVABILITY_NAMESPACE, "grafana"
+            )
+            if host:
+                logger.info(
+                    "Grafana route detected: https://%s (namespace: %s)",
+                    host,
+                    OBSERVABILITY_NAMESPACE,
+                )
+            else:
+                logger.warning("Grafana route not found in Observability namespace")
+        except Exception as exc:
+            logger.warning(f"Unable to query Grafana route: {exc}")

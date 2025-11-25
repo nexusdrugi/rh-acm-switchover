@@ -272,6 +272,21 @@ class TestKubeClient:
         )
         assert kube_client.secret_exists("ns", "secret") is False
 
+    def test_get_route_host(self, kube_client, mock_k8s_apis):
+        """Test retrieving a route host."""
+        mock_k8s_apis["custom_api"].get_namespaced_custom_object.return_value = {
+            "spec": {"host": "grafana.example.com"}
+        }
+        host = kube_client.get_route_host("ns", "grafana")
+        assert host == "grafana.example.com"
+
+    def test_get_route_host_not_found(self, kube_client, mock_k8s_apis):
+        """Test route host returns None when route missing."""
+        mock_k8s_apis["custom_api"].get_namespaced_custom_object.side_effect = (
+            ApiException(status=404)
+        )
+        assert kube_client.get_route_host("ns", "grafana") is None
+
     def test_get_pods(self, kube_client, mock_k8s_apis):
         """Test getting pods with label selector."""
         pod1 = MagicMock()
