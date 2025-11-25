@@ -99,38 +99,38 @@ case "$*" in
         exit 0
         ;;
     
-    # OADP/Velero checks
-    "--context=primary-ok get pods -n openshift-adp -l app.kubernetes.io/name=velero --no-headers")
+    # OADP/Velero checks (using BACKUP_NAMESPACE from constants.sh)
+    "--context=primary-ok get pods -n open-cluster-management-backup -l app.kubernetes.io/name=velero --no-headers")
         echo "velero-xyz   1/1   Running"
         exit 0
         ;;
-    "--context=secondary-ok get pods -n openshift-adp -l app.kubernetes.io/name=velero --no-headers")
+    "--context=secondary-ok get pods -n open-cluster-management-backup -l app.kubernetes.io/name=velero --no-headers")
         echo "velero-abc   1/1   Running"
         exit 0
         ;;
     
     # DPA checks
-    "--context=primary-ok get dpa -n openshift-adp --no-headers")
+    "--context=primary-ok get dpa -n open-cluster-management-backup --no-headers")
         echo "dpa-config   Reconciled"
         exit 0
         ;;
-    "--context=secondary-ok get dpa -n openshift-adp --no-headers")
+    "--context=secondary-ok get dpa -n open-cluster-management-backup --no-headers")
         echo "dpa-config   Reconciled"
         exit 0
         ;;
-    "--context=primary-ok get dpa -n openshift-adp -o jsonpath="*"items[0].metadata.name"*"")
+    "--context=primary-ok get dpa -n open-cluster-management-backup -o jsonpath="*"items[0].metadata.name"*"")
         echo "dpa-config"
         exit 0
         ;;
-    "--context=secondary-ok get dpa -n openshift-adp -o jsonpath="*"items[0].metadata.name"*"")
+    "--context=secondary-ok get dpa -n open-cluster-management-backup -o jsonpath="*"items[0].metadata.name"*"")
         echo "dpa-config"
         exit 0
         ;;
-    "--context=primary-ok get dpa dpa-config -n openshift-adp -o jsonpath="*"Reconciled"*"")
+    "--context=primary-ok get dpa dpa-config -n open-cluster-management-backup -o jsonpath="*"Reconciled"*"")
         echo "True"
         exit 0
         ;;
-    "--context=secondary-ok get dpa dpa-config -n openshift-adp -o jsonpath="*"Reconciled"*"")
+    "--context=secondary-ok get dpa dpa-config -n open-cluster-management-backup -o jsonpath="*"Reconciled"*"")
         echo "True"
         exit 0
         ;;
@@ -162,21 +162,27 @@ case "$*" in
         ;;
     
     # Passive sync restore check
-    "--context=secondary-ok get restore restore-acm-passive-sync -n open-cluster-management-backup --no-headers")
-        echo "restore-acm-passive-sync   Enabled"
+    "--context=secondary-ok get restore -n open-cluster-management-backup --sort-by=.metadata.creationTimestamp -o jsonpath="*"items[-1].metadata.name"*"")
+        echo "restore-sample"
         exit 0
         ;;
-    "--context=secondary-ok get restore restore-acm-passive-sync -n open-cluster-management-backup -o jsonpath="*"phase"*"")
-        echo "Enabled"
+    "--context=secondary-ok get restore restore-sample -n open-cluster-management-backup -o jsonpath="*"phase"*"")
+        echo "Completed"
         exit 0
         ;;
     
     # Observability checks
     "--context=primary-ok get namespace open-cluster-management-observability")
-        exit 1
+        exit 0
+        ;;
+    "--context=primary-ok get mco observability -n open-cluster-management-observability")
+        exit 0
         ;;
     "--context=secondary-ok get namespace open-cluster-management-observability")
-        exit 1
+        exit 0
+        ;;
+    "--context=secondary-ok get secret thanos-object-storage -n open-cluster-management-observability")
+        exit 0
         ;;
     
     # Postflight checks
@@ -234,7 +240,40 @@ EOF
         exit 0
         ;;
     "--context=new-hub get namespace open-cluster-management-observability")
-        exit 1
+        exit 0
+        ;;
+    "--context=new-hub get mco observability -n open-cluster-management-observability -o jsonpath="*"")
+        echo "True"
+        exit 0
+        ;;
+    "--context=new-hub get pods -n open-cluster-management-observability -l "*"app=observability-grafana"*" --no-headers")
+        echo "observability-grafana-1 Running"
+        exit 0
+        ;;
+    "--context=new-hub get pods -n open-cluster-management-observability -l "*"app=observability-observatorium-api"*" --no-headers")
+        echo "observability-observatorium-api-1 Running"
+        exit 0
+        ;;
+    "--context=new-hub get pods -n open-cluster-management-observability -l "*"app=observability-thanos-query"*" --no-headers")
+        echo "observability-thanos-query-1 Running"
+        exit 0
+        ;;
+    "--context=new-hub get pods -n open-cluster-management-observability --no-headers")
+        # For error check
+        echo "pod-ok Running"
+        exit 0
+        ;;
+    "--context=new-hub get pods -n open-cluster-management-observability -l "*"app.kubernetes.io/name=observatorium-api"*" --no-headers")
+        echo "observatorium-api-1 Running"
+        exit 0
+        ;;
+    "--context=new-hub get pods -n open-cluster-management-observability -l "*"app.kubernetes.io/name=observatorium-api"*" -o jsonpath="*"")
+        echo "2024-11-24T10:00:00Z"
+        exit 0
+        ;;
+    "--context=new-hub get route grafana -n open-cluster-management-observability -o jsonpath="*"")
+        echo "grafana.example.com"
+        exit 0
         ;;
     "--context=new-hub get backupschedule -n open-cluster-management-backup --no-headers")
         echo "schedule-acm"
@@ -405,6 +444,9 @@ def test_preflight_success_passive_method(mock_oc_success):
     assert "ALL CRITICAL CHECKS PASSED" in out
     assert "Failed:          0" in out
     assert "Passive sync" in out.lower() or "Method 1" in out  # Should check passive sync
+    assert "Observability namespace exists" in out
+    assert "MultiClusterObservability CR found" in out
+    assert "'thanos-object-storage' secret exists" in out
 
 
 @pytest.mark.integration
@@ -439,6 +481,12 @@ def test_postflight_success(mock_oc_success):
     # Must have found clusters and show verification passed or be close to passing
     assert "2 managed cluster(s)" in out
     assert "Failed:          0" in out  # No critical failures
+    
+    # Observability checks
+    assert "Observability namespace exists" in out
+    assert "MultiClusterObservability CR is Ready" in out
+    assert "observability-grafana: 1 pod(s) running" in out
+    assert "Grafana route accessible" in out
     
     # Either fully passed or had only warnings
     if code == 0:
