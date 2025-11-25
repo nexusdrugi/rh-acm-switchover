@@ -33,7 +33,7 @@
 10. [x] **Bring postflight Observability/Grafana checks into Python workflow**  
     - Extend `PostActivationVerification` to flag pods in `CrashLoopBackOff` or other error states, capture observatorium-api restart info, and surface Grafana route availability guidance.
 
-11. [ ] **Add backup schedule + MultiClusterHub status validation to finalization**  
+11. [x] **Add backup schedule + MultiClusterHub status validation to finalization**  
     - After enabling the backup schedule, re-read the CR to ensure it is unpaused and recent backups exist.  
     - Confirm the new hub’s MultiClusterHub is `Running` and all ACM pods are healthy, similar to `postflight-check.sh`.
 

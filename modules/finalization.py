@@ -6,6 +6,7 @@ import logging
 import time
 from typing import Optional
 
+from lib.constants import ACM_NAMESPACE, BACKUP_NAMESPACE
 from lib.kube_client import KubeClient
 from lib.utils import StateManager
 from .backup_schedule import BackupScheduleManager
@@ -48,12 +49,24 @@ class Finalization:
             else:
                 logger.info("Step already completed: enable_backup_schedule")
 
+            if not self.state.is_step_completed("verify_backup_schedule_enabled"):
+                self._verify_backup_schedule_enabled()
+                self.state.mark_step_completed("verify_backup_schedule_enabled")
+            else:
+                logger.info("Step already completed: verify_backup_schedule_enabled")
+
             # Verify new backups are being created
             if not self.state.is_step_completed("verify_new_backups"):
                 self._verify_new_backups()
                 self.state.mark_step_completed("verify_new_backups")
             else:
                 logger.info("Step already completed: verify_new_backups")
+
+            if not self.state.is_step_completed("verify_mch_health"):
+                self._verify_multiclusterhub_health()
+                self.state.mark_step_completed("verify_mch_health")
+            else:
+                logger.info("Step already completed: verify_mch_health")
 
             logger.info("Finalization completed successfully")
             return True
@@ -82,7 +95,7 @@ class Finalization:
             group="cluster.open-cluster-management.io",
             version="v1beta1",
             plural="backups",
-            namespace="open-cluster-management-backup",
+            namespace=BACKUP_NAMESPACE,
         )
 
         initial_backup_names = {
@@ -99,7 +112,7 @@ class Finalization:
                 group="cluster.open-cluster-management.io",
                 version="v1beta1",
                 plural="backups",
-                namespace="open-cluster-management-backup",
+                namespace=BACKUP_NAMESPACE,
             )
 
             current_backup_names = {
@@ -139,3 +152,70 @@ class Finalization:
             f"No new backups detected after {timeout}s. "
             "BackupSchedule may take time to create first backup."
         )
+
+    def _verify_backup_schedule_enabled(self):
+        """Ensure BackupSchedule is present and not paused."""
+        schedules = self.secondary.list_custom_resources(
+            group="cluster.open-cluster-management.io",
+            version="v1beta1",
+            plural="backupschedules",
+            namespace=BACKUP_NAMESPACE,
+        )
+
+        if not schedules:
+            raise RuntimeError("No BackupSchedule found while verifying finalization")
+
+        schedule = schedules[0]
+        schedule_name = schedule.get("metadata", {}).get("name", "schedule-rhacm")
+        paused = schedule.get("spec", {}).get("paused", False)
+
+        if paused:
+            raise RuntimeError(f"BackupSchedule {schedule_name} is still paused")
+
+        logger.info("BackupSchedule %s is enabled", schedule_name)
+
+    def _verify_multiclusterhub_health(self):
+        """Ensure MultiClusterHub reports healthy and pods are running."""
+        logger.info("Verifying MultiClusterHub health...")
+        mch = self.secondary.get_custom_resource(
+            group="operator.open-cluster-management.io",
+            version="v1",
+            plural="multiclusterhubs",
+            name="multiclusterhub",
+            namespace=ACM_NAMESPACE,
+        )
+
+        if not mch:
+            hubs = self.secondary.list_custom_resources(
+                group="operator.open-cluster-management.io",
+                version="v1",
+                plural="multiclusterhubs",
+                namespace=ACM_NAMESPACE,
+            )
+            if hubs:
+                mch = hubs[0]
+
+        if not mch:
+            raise RuntimeError("No MultiClusterHub resource found on secondary hub")
+
+        mch_name = mch.get("metadata", {}).get("name", "multiclusterhub")
+        phase = mch.get("status", {}).get("phase", "unknown")
+
+        if phase != "Running":
+            raise RuntimeError(
+                f"MultiClusterHub {mch_name} is in phase '{phase}', expected Running"
+            )
+
+        pods = self.secondary.get_pods(namespace=ACM_NAMESPACE)
+        non_running = [
+            pod.get("metadata", {}).get("name", "unknown")
+            for pod in pods
+            if pod.get("status", {}).get("phase") != "Running"
+        ]
+
+        if non_running:
+            raise RuntimeError(
+                "ACM namespace still has non-running pods: " + ", ".join(non_running)
+            )
+
+        logger.info("MultiClusterHub %s is Running and all pods are healthy", mch_name)

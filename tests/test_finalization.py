@@ -77,12 +77,22 @@ class TestFinalization:
         # Mock time to avoid loops
         mock_time.time.side_effect = [0, 1, 2, 3]
 
-        # Mock backup verification (immediate success)
+        # Mock list responses: schedule, initial backups, loop 1, loop 2
         mock_secondary_client.list_custom_resources.side_effect = [
-            [],  # Initial check: no backups
+            [{"metadata": {"name": "schedule"}, "spec": {"paused": False}}],
+            [],  # Initial backups
+            [],  # Loop iteration 1
             [
                 {"metadata": {"name": "backup-1"}, "status": {"phase": "InProgress"}}
-            ],  # Second check: new backup
+            ],  # Loop iteration 2 - new backup
+        ]
+
+        mock_secondary_client.get_custom_resource.return_value = {
+            "metadata": {"name": "multiclusterhub"},
+            "status": {"phase": "Running"},
+        }
+        mock_secondary_client.get_pods.return_value = [
+            {"metadata": {"name": "acm-pod"}, "status": {"phase": "Running"}}
         ]
 
         result = finalization.finalize()
@@ -91,9 +101,14 @@ class TestFinalization:
 
         # Verify steps
         mock_backup_manager.ensure_enabled.assert_called_with("2.12.0")
-        assert mock_state_manager.mark_step_completed.call_count == 2
+        assert mock_state_manager.mark_step_completed.call_count == 4
         mock_state_manager.mark_step_completed.assert_has_calls(
-            [call("enable_backup_schedule"), call("verify_new_backups")]
+            [
+                call("enable_backup_schedule"),
+                call("verify_backup_schedule_enabled"),
+                call("verify_new_backups"),
+                call("verify_mch_health"),
+            ]
         )
 
     def test_finalize_skips_completed_steps(
@@ -153,3 +168,29 @@ class TestFinalization:
         result = finalization.finalize()
 
         assert result is False
+
+    def test_verify_backup_schedule_enabled_failure(
+        self, finalization, mock_secondary_client
+    ):
+        """Backup schedule verification should fail when paused."""
+        mock_secondary_client.list_custom_resources.return_value = [
+            {"metadata": {"name": "schedule"}, "spec": {"paused": True}}
+        ]
+
+        with pytest.raises(RuntimeError):
+            finalization._verify_backup_schedule_enabled()
+
+    def test_verify_multiclusterhub_health_failure(
+        self, finalization, mock_secondary_client
+    ):
+        """MCH verification should fail when not running."""
+        mock_secondary_client.get_custom_resource.return_value = {
+            "metadata": {"name": "multiclusterhub"},
+            "status": {"phase": "Degraded"},
+        }
+        mock_secondary_client.get_pods.return_value = [
+            {"metadata": {"name": "acm-pod"}, "status": {"phase": "Running"}}
+        ]
+
+        with pytest.raises(RuntimeError):
+            finalization._verify_multiclusterhub_health()
