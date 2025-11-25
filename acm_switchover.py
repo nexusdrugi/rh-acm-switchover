@@ -136,6 +136,12 @@ Examples:
     parser.add_argument(
         "--verbose", "-v", action="store_true", help="Enable verbose logging"
     )
+    parser.add_argument(
+        "--log-format",
+        choices=["text", "json"],
+        default="text",
+        help="Log output format (text or json)",
+    )
 
     return parser.parse_args()
 
@@ -396,7 +402,7 @@ def main():
     args = parse_args()
     validate_args(args)
 
-    logger = setup_logging(args.verbose)
+    logger = setup_logging(args.verbose, args.log_format)
     logger.info("ACM Hub Switchover Automation")
     logger.info(f"Started at: {datetime.utcnow().isoformat()}")
 

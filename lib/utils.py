@@ -138,15 +138,55 @@ class StateManager:
         return Phase(self.state["current_phase"])
 
 
-def setup_logging(verbose: bool = False) -> logging.Logger:
-    """Configure logging with rich formatting."""
-    level = logging.DEBUG if verbose else logging.INFO
+class JSONFormatter(logging.Formatter):
+    """Format logs as JSON for structured logging."""
 
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    def format(self, record: logging.LogRecord) -> str:
+        log_record = {
+            "timestamp": datetime.fromtimestamp(record.created, timezone.utc).isoformat(),
+            "level": record.levelname,
+            "message": record.getMessage(),
+            "logger": record.name,
+            "module": record.module,
+            "function": record.funcName,
+            "line": record.lineno,
+        }
+
+        if record.exc_info:
+            log_record["exception"] = self.formatException(record.exc_info)
+
+        return json.dumps(log_record)
+
+
+def setup_logging(verbose: bool = False, log_format: str = "text") -> logging.Logger:
+    """
+    Configure logging with rich formatting.
+
+    Args:
+        verbose: Enable debug logging
+        log_format: 'text' or 'json'
+    """
+    level = logging.DEBUG if verbose else logging.INFO
+    root_logger = logging.getLogger()
+    root_logger.setLevel(level)
+
+    # Remove existing handlers to avoid duplicates
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+
+    handler = logging.StreamHandler()
+
+    if log_format.lower() == "json":
+        handler.setFormatter(JSONFormatter())
+    else:
+        handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s - %(levelname)s - %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
+        )
+
+    root_logger.addHandler(handler)
 
     return logging.getLogger("acm_switchover")
 
