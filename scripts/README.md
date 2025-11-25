@@ -10,6 +10,7 @@ These scripts automate the validation process before and after switchover, ensur
 |--------|---------|-------------|
 | [`preflight-check.sh`](preflight-check.sh) | Validate prerequisites before switchover | Before starting switchover procedure |
 | [`postflight-check.sh`](postflight-check.sh) | Verify switchover completed successfully | After switchover activation completes |
+| [`constants.sh`](constants.sh) | Shared configuration constants | Sourced by other scripts |
 
 ## Idempotency & Safety
 
@@ -61,8 +62,8 @@ Automates all prerequisite checks before starting an ACM switchover to catch con
 6. **DataProtectionApplication** - Verifies DPA is configured and reconciled
 7. **Backup Status** - Confirms latest backup completed, no in-progress backups
 8. **ClusterDeployment Safety** - **CRITICAL:** Verifies `preserveOnDelete=true` on ALL ClusterDeployments
-9. **Passive Sync** (Method 1 only) - Validates passive restore is running and up-to-date
-10. **Observability** - Detects if observability is installed (optional)
+9. **Passive Sync** (Method 1 only) - Validates passive restore is running and up-to-date (dynamically finds latest restore)
+10. **Observability** - Detects if observability is installed (optional) - Checks for CRs and secrets
 
 ### Example Output
 
@@ -125,11 +126,11 @@ graph TD
     N --> O{All CDs have<br/>preserveOnDelete=true?}
     O -->|No| P[FAIL: Missing preserveOnDelete<br/>DANGER: Infrastructure at risk!]
     O -->|Yes| Q{Method?}
-    Q -->|Passive| R[Check Passive Sync Status]
+    Q -->|Passive| R[Find & Check Latest Restore]
     Q -->|Full| S[Skip Passive Check]
     R --> T{Passive Sync<br/>Enabled?}
     T -->|No| U[FAIL: Passive Sync Not Ready]
-    T -->|Yes| V[Check Observability Optional]
+    T -->|Yes| V[Check Observability CRs & Secrets]
     S --> V
     V --> W[Generate Summary Report]
     W --> X{Any Failures?}
@@ -172,9 +173,9 @@ Verifies that the ACM switchover completed successfully by validating all critic
 
 ### What It Checks
 
-1. **Restore Status** - Confirms restore completed successfully (Phase: Finished)
+1. **Restore Status** - Confirms restore completed successfully (Phase: Finished) - Dynamically finds latest restore
 2. **ManagedCluster Connectivity** - Verifies all clusters are Available and Joined
-3. **Observability Components** - Checks all observability pods are running
+3. **Observability Components** - Checks all observability pods are running (Grafana, Observatorium, Thanos)
 4. **Metrics Collection** - Validates Grafana route and observatorium-api status
 5. **Backup Configuration** - Ensures BackupSchedule is enabled and creating backups
 6. **ACM Hub Components** - Verifies MultiClusterHub and ACM pods are healthy
@@ -239,7 +240,7 @@ Recommended next steps:
 ```mermaid
 graph TD
     A[Start Post-flight Check] --> B[Parse Arguments]
-    B --> C[Check Restore Status]
+    B --> C[Find & Check Latest Restore]
     C --> D{Restore<br/>Finished?}
     D -->|No| E[FAIL: Restore Not Complete]
     D -->|Yes| F[Check ManagedCluster Status]

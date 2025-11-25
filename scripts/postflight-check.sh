@@ -18,6 +18,15 @@
 
 set -euo pipefail
 
+# Source constants
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "${SCRIPT_DIR}/constants.sh" ]]; then
+    source "${SCRIPT_DIR}/constants.sh"
+else
+    echo "Error: constants.sh not found in ${SCRIPT_DIR}"
+    exit 1
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -30,6 +39,10 @@ TOTAL_CHECKS=0
 PASSED_CHECKS=0
 FAILED_CHECKS=0
 WARNING_CHECKS=0
+
+# Arrays to store messages
+FAILED_MESSAGES=()
+WARNING_MESSAGES=()
 
 # Parse arguments
 NEW_HUB_CONTEXT=""
@@ -79,12 +92,14 @@ check_pass() {
 check_fail() {
     ((TOTAL_CHECKS++)) || true
     ((FAILED_CHECKS++)) || true
+    FAILED_MESSAGES+=("$1")
     echo -e "${RED}✗${NC} $1"
 }
 
 check_warn() {
     ((TOTAL_CHECKS++)) || true
     ((WARNING_CHECKS++)) || true
+    WARNING_MESSAGES+=("$1")
     echo -e "${YELLOW}⚠${NC} $1"
 }
 
@@ -111,11 +126,28 @@ echo ""
 section_header "1. Checking Restore Status"
 
 # Get details of the most recent restore (sort by creation timestamp)
-read -r RESTORE_NAME RESTORE_PHASE RESTORE_TIME <<< "$(oc --context="$NEW_HUB_CONTEXT" get restore -n open-cluster-management-backup --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name} {.items[-1].status.phase} {.items[-1].metadata.creationTimestamp}' 2>/dev/null)"
+read -r RESTORE_NAME RESTORE_PHASE RESTORE_TIME <<< "$(oc --context="$NEW_HUB_CONTEXT" get restore -n "$BACKUP_NAMESPACE" --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name} {.items[-1].status.phase} {.items[-1].metadata.creationTimestamp}' 2>/dev/null || true)"
 
 if [[ -n "$RESTORE_NAME" ]]; then
-    if [[ "$RESTORE_PHASE" == "Finished" ]]; then
-        check_pass "Latest restore '$RESTORE_NAME' completed successfully (Phase: Finished, Created: $RESTORE_TIME)"
+    if [[ "$RESTORE_PHASE" == "Finished" ]] || [[ "$RESTORE_PHASE" == "Completed" ]]; then
+        check_pass "Latest restore '$RESTORE_NAME' completed successfully (Phase: $RESTORE_PHASE, Created: $RESTORE_TIME)"
+        
+        # Check if it looks like a passive sync restore
+        if [[ "$RESTORE_NAME" == *"passive"* ]]; then
+            echo -e "       (Identified as likely passive sync restore based on name)"
+        fi
+
+        # Check age of restore
+        if [[ -n "$RESTORE_TIME" ]]; then
+            RESTORE_EPOCH=$(date -d "$RESTORE_TIME" +%s 2>/dev/null || echo "0")
+            CURRENT_EPOCH=$(date +%s)
+            AGE_SECONDS=$((CURRENT_EPOCH - RESTORE_EPOCH))
+            
+            # If older than threshold
+            if [[ $AGE_SECONDS -gt $RESTORE_AGE_WARNING_SECONDS ]]; then
+                 check_warn "Latest restore is older than 1 hour ($((AGE_SECONDS / 60)) mins ago). Ensure this is the switchover restore."
+            fi
+        fi
     elif [[ "$RESTORE_PHASE" == "Enabled" ]]; then
         check_warn "Latest restore '$RESTORE_NAME' is Enabled (passive sync may still be running)"
     else
@@ -128,23 +160,23 @@ fi
 # Check 2: Verify ManagedClusters are connected
 section_header "2. Checking ManagedCluster Status"
 
-TOTAL_CLUSTERS=$(oc --context="$NEW_HUB_CONTEXT" get managedclusters --no-headers 2>/dev/null | grep -c -v local-cluster || echo "0")
+TOTAL_CLUSTERS=$(oc --context="$NEW_HUB_CONTEXT" get managedclusters --no-headers 2>/dev/null | grep -c -v "$LOCAL_CLUSTER_NAME" || true)
 if [[ $TOTAL_CLUSTERS -gt 0 ]]; then
-    check_pass "Found $TOTAL_CLUSTERS managed cluster(s) (excluding local-cluster)"
+    check_pass "Found $TOTAL_CLUSTERS managed cluster(s) (excluding $LOCAL_CLUSTER_NAME)"
     
     # Check Available status
     # Check Available status
     # Identify clusters that are NOT Available (single API call)
     # This correctly catches clusters with Available=False, Unknown, or missing status
     UNAVAILABLE_LIST=$(oc --context="$NEW_HUB_CONTEXT" get managedclusters -o json 2>/dev/null | \
-        jq -r '.items[] | select(.metadata.name != "local-cluster") | select(
+        jq -r --arg LOCAL "$LOCAL_CLUSTER_NAME" '.items[] | select(.metadata.name != $LOCAL) | select(
             ([.status.conditions[]? | select(.type=="ManagedClusterConditionAvailable" and .status=="True")] | length) == 0
         ) | .metadata.name')
     
     if [[ -z "$UNAVAILABLE_LIST" ]]; then
         check_pass "All $TOTAL_CLUSTERS cluster(s) show Available=True"
     else
-        NUM_UNAVAILABLE=$(echo "$UNAVAILABLE_LIST" | grep -c -v "^$" || echo "0")
+        NUM_UNAVAILABLE=$(echo "$UNAVAILABLE_LIST" | grep -c -v "^$" || true)
         NUM_AVAILABLE=$((TOTAL_CLUSTERS - NUM_UNAVAILABLE))
         
         check_fail "Only $NUM_AVAILABLE of $TOTAL_CLUSTERS cluster(s) are Available"
@@ -154,7 +186,7 @@ if [[ $TOTAL_CLUSTERS -gt 0 ]]; then
     
     # Check Joined status
     JOINED_CLUSTERS=$(oc --context="$NEW_HUB_CONTEXT" get managedclusters -o json 2>/dev/null | \
-        jq -r '.items[] | select(.metadata.name != "local-cluster") | select(.status.conditions[]? | select(.type=="ManagedClusterJoined" and .status=="True")) | .metadata.name' | wc -l)
+        jq -r --arg LOCAL "$LOCAL_CLUSTER_NAME" '.items[] | select(.metadata.name != $LOCAL) | select(.status.conditions[]? | select(.type=="ManagedClusterJoined" and .status=="True")) | .metadata.name' | wc -l)
     
     if [[ $JOINED_CLUSTERS -eq $TOTAL_CLUSTERS ]]; then
         check_pass "All $TOTAL_CLUSTERS cluster(s) show Joined=True"
@@ -163,7 +195,7 @@ if [[ $TOTAL_CLUSTERS -gt 0 ]]; then
     fi
     
     # Check for Pending Import
-    PENDING_IMPORT=$(oc --context="$NEW_HUB_CONTEXT" get managedclusters 2>/dev/null | grep -c "Pending Import" || echo "0")
+    PENDING_IMPORT=$(oc --context="$NEW_HUB_CONTEXT" get managedclusters 2>/dev/null | grep -c "Pending Import" || true)
     if [[ $PENDING_IMPORT -eq 0 ]]; then
         check_pass "No clusters stuck in Pending Import"
     else
@@ -176,14 +208,30 @@ fi
 # Check 3: Verify Observability pods
 section_header "3. Checking Observability Components"
 
-if oc --context="$NEW_HUB_CONTEXT" get namespace open-cluster-management-observability &> /dev/null; then
+if oc --context="$NEW_HUB_CONTEXT" get namespace "$OBSERVABILITY_NAMESPACE" &> /dev/null; then
     check_pass "Observability namespace exists"
 
+    # Check MCO CR status
+    MCO_STATUS=$(oc --context="$NEW_HUB_CONTEXT" get mco observability -n "$OBSERVABILITY_NAMESPACE" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "Unknown")
+    
+    if [[ "$MCO_STATUS" == "True" ]]; then
+        check_pass "MultiClusterObservability CR is Ready"
+    else
+        check_warn "MultiClusterObservability CR is not Ready (Status: $MCO_STATUS)"
+    fi
+
     # Check critical pods
-    CRITICAL_PODS=("observability-grafana" "observability-observatorium-api" "observability-thanos-query")
+    CRITICAL_PODS=("$OBS_GRAFANA_POD" "$OBS_API_POD" "$OBS_THANOS_QUERY_POD")
 
     for pod_prefix in "${CRITICAL_PODS[@]}"; do
-        POD_COUNT=$(oc --context="$NEW_HUB_CONTEXT" get pods -n open-cluster-management-observability -l "app=${pod_prefix}" --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+        # Try by label first
+        POD_COUNT=$(oc --context="$NEW_HUB_CONTEXT" get pods -n "$OBSERVABILITY_NAMESPACE" -l "app=${pod_prefix}" --no-headers 2>/dev/null | grep -c "Running" || true)
+        
+        # Fallback to name prefix if label check returns 0
+        if [[ $POD_COUNT -eq 0 ]]; then
+             POD_COUNT=$(oc --context="$NEW_HUB_CONTEXT" get pods -n "$OBSERVABILITY_NAMESPACE" --no-headers 2>/dev/null | grep "^${pod_prefix}" | grep -c "Running" || true)
+        fi
+
         if [[ $POD_COUNT -gt 0 ]]; then
             check_pass "${pod_prefix}: $POD_COUNT pod(s) running"
         else
@@ -192,8 +240,8 @@ if oc --context="$NEW_HUB_CONTEXT" get namespace open-cluster-management-observa
     done
 
     # Check for any pods in error state
-    ERROR_PODS=$(oc --context="$NEW_HUB_CONTEXT" get pods -n open-cluster-management-observability --no-headers 2>/dev/null | \
-        grep -E -c "Error|CrashLoopBackOff|ImagePullBackOff")
+    ERROR_PODS=$(oc --context="$NEW_HUB_CONTEXT" get pods -n "$OBSERVABILITY_NAMESPACE" --no-headers 2>/dev/null | \
+        grep -E -c "Error|CrashLoopBackOff|ImagePullBackOff" || true)
     if [[ $ERROR_PODS -eq 0 ]]; then
         check_pass "No pods in error state"
     else
@@ -201,10 +249,21 @@ if oc --context="$NEW_HUB_CONTEXT" get namespace open-cluster-management-observa
     fi
 
     # Check observatorium-api specifically (critical for metrics)
-    OBSERVATORIUM_API_PODS=$(oc --context="$NEW_HUB_CONTEXT" get pods -n open-cluster-management-observability -l "app.kubernetes.io/name=observatorium-api" --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+    # Try label first
+    OBSERVATORIUM_API_PODS=$(oc --context="$NEW_HUB_CONTEXT" get pods -n "$OBSERVABILITY_NAMESPACE" -l "app.kubernetes.io/name=observatorium-api" --no-headers 2>/dev/null | grep -c "Running" || true)
+    
+    if [[ $OBSERVATORIUM_API_PODS -eq 0 ]]; then
+         # Fallback to name
+         OBSERVATORIUM_API_PODS=$(oc --context="$NEW_HUB_CONTEXT" get pods -n "$OBSERVABILITY_NAMESPACE" --no-headers 2>/dev/null | grep "$OBS_API_POD" | grep -c "Running" || true)
+    fi
+
     if [[ $OBSERVATORIUM_API_PODS -gt 0 ]]; then
         # Check if pods were recently restarted (should be after switchover)
-        RESTART_TIME=$(oc --context="$NEW_HUB_CONTEXT" get pods -n open-cluster-management-observability -l "app.kubernetes.io/name=observatorium-api" -o jsonpath='{.items[0].status.startTime}' 2>/dev/null)
+        # Try to get start time using label, fallback to name
+        RESTART_TIME=$(oc --context="$NEW_HUB_CONTEXT" get pods -n "$OBSERVABILITY_NAMESPACE" -l "app.kubernetes.io/name=observatorium-api" -o jsonpath='{.items[0].status.startTime}' 2>/dev/null || true)
+        if [[ -z "$RESTART_TIME" ]]; then
+             RESTART_TIME=$(oc --context="$NEW_HUB_CONTEXT" get pods -n "$OBSERVABILITY_NAMESPACE" --no-headers 2>/dev/null | grep "$OBS_API_POD" | head -n 1 | awk '{print "Unknown (Name match)"}')
+        fi
         check_pass "observatorium-api pods running (started: $RESTART_TIME)"
     else
         check_fail "observatorium-api pods not running (critical for metrics)"
@@ -216,9 +275,9 @@ fi
 # Check 4: Verify Grafana metrics (if observability exists)
 section_header "4. Checking Metrics Collection"
 
-if oc --context="$NEW_HUB_CONTEXT" get namespace open-cluster-management-observability &> /dev/null; then
+if oc --context="$NEW_HUB_CONTEXT" get namespace "$OBSERVABILITY_NAMESPACE" &> /dev/null; then
     # Get Grafana route
-    GRAFANA_ROUTE=$(oc --context="$NEW_HUB_CONTEXT" get route grafana -n open-cluster-management-observability -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+    GRAFANA_ROUTE=$(oc --context="$NEW_HUB_CONTEXT" get route grafana -n "$OBSERVABILITY_NAMESPACE" -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
     
     if [[ -n "$GRAFANA_ROUTE" ]]; then
         check_pass "Grafana route accessible: https://$GRAFANA_ROUTE"
@@ -237,10 +296,10 @@ fi
 # Check 5: Verify BackupSchedule is enabled
 section_header "5. Checking Backup Configuration"
 
-BACKUP_SCHEDULE=$(oc --context="$NEW_HUB_CONTEXT" get backupschedule -n open-cluster-management-backup --no-headers 2>/dev/null | wc -l)
+BACKUP_SCHEDULE=$(oc --context="$NEW_HUB_CONTEXT" get backupschedule -n "$BACKUP_NAMESPACE" --no-headers 2>/dev/null | wc -l || true)
 if [[ $BACKUP_SCHEDULE -gt 0 ]]; then
-    SCHEDULE_NAME=$(oc --context="$NEW_HUB_CONTEXT" get backupschedule -n open-cluster-management-backup -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-    PAUSED=$(oc --context="$NEW_HUB_CONTEXT" get backupschedule "$SCHEDULE_NAME" -n open-cluster-management-backup -o jsonpath='{.spec.paused}' 2>/dev/null)
+    SCHEDULE_NAME=$(oc --context="$NEW_HUB_CONTEXT" get backupschedule -n "$BACKUP_NAMESPACE" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+    PAUSED=$(oc --context="$NEW_HUB_CONTEXT" get backupschedule "$SCHEDULE_NAME" -n "$BACKUP_NAMESPACE" -o jsonpath='{.spec.paused}' 2>/dev/null)
     
     if [[ "$PAUSED" == "false" ]] || [[ -z "$PAUSED" ]]; then
         check_pass "BackupSchedule '$SCHEDULE_NAME' is enabled (not paused)"
@@ -249,12 +308,12 @@ if [[ $BACKUP_SCHEDULE -gt 0 ]]; then
     fi
     
     # Check for recent backups
-    RECENT_BACKUPS=$(oc --context="$NEW_HUB_CONTEXT" get backup -n open-cluster-management-backup --sort-by=.metadata.creationTimestamp --no-headers 2>/dev/null | tail -3 | wc -l)
+    RECENT_BACKUPS=$(oc --context="$NEW_HUB_CONTEXT" get backup -n "$BACKUP_NAMESPACE" --sort-by=.metadata.creationTimestamp --no-headers 2>/dev/null | tail -3 | wc -l || true)
     if [[ $RECENT_BACKUPS -gt 0 ]]; then
         # Get details of the latest backup in a single call
-        read -r LATEST_BACKUP LATEST_PHASE LATEST_TIME <<< "$(oc --context="$NEW_HUB_CONTEXT" get backup -n open-cluster-management-backup --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name} {.items[-1].status.phase} {.items[-1].metadata.creationTimestamp}' 2>/dev/null)"
+        read -r LATEST_BACKUP LATEST_PHASE LATEST_TIME <<< "$(oc --context="$NEW_HUB_CONTEXT" get backup -n "$BACKUP_NAMESPACE" --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name} {.items[-1].status.phase} {.items[-1].metadata.creationTimestamp}' 2>/dev/null)"
         
-        if [[ "$LATEST_PHASE" == "Completed" ]]; then
+        if [[ "$LATEST_PHASE" == "Completed" ]] || [[ "$LATEST_PHASE" == "Finished" ]]; then
             check_pass "Latest backup: '$LATEST_BACKUP' (Phase: $LATEST_PHASE, Created: $LATEST_TIME)"
         elif [[ "$LATEST_PHASE" == "InProgress" ]]; then
             check_warn "Latest backup: '$LATEST_BACKUP' is InProgress (Created: $LATEST_TIME)"
@@ -271,10 +330,10 @@ fi
 # Check 6: Verify ACM hub components
 section_header "6. Checking ACM Hub Components"
 
-MCH_COUNT=$(oc --context="$NEW_HUB_CONTEXT" get mch -n open-cluster-management --no-headers 2>/dev/null | wc -l)
+MCH_COUNT=$(oc --context="$NEW_HUB_CONTEXT" get mch -n "$ACM_NAMESPACE" --no-headers 2>/dev/null | wc -l || true)
 if [[ $MCH_COUNT -eq 1 ]]; then
-    MCH_NAME=$(oc --context="$NEW_HUB_CONTEXT" get mch -n open-cluster-management -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-    MCH_PHASE=$(oc --context="$NEW_HUB_CONTEXT" get mch "$MCH_NAME" -n open-cluster-management -o jsonpath='{.status.phase}' 2>/dev/null)
+    MCH_NAME=$(oc --context="$NEW_HUB_CONTEXT" get mch -n "$ACM_NAMESPACE" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+    MCH_PHASE=$(oc --context="$NEW_HUB_CONTEXT" get mch "$MCH_NAME" -n "$ACM_NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null)
     
     if [[ "$MCH_PHASE" == "Running" ]]; then
         check_pass "MultiClusterHub '$MCH_NAME' is Running"
@@ -286,8 +345,8 @@ else
 fi
 
 # Check ACM pods
-ACM_PODS_RUNNING=$(oc --context="$NEW_HUB_CONTEXT" get pods -n open-cluster-management --no-headers 2>/dev/null | grep -c "Running" || echo "0")
-ACM_PODS_TOTAL=$(oc --context="$NEW_HUB_CONTEXT" get pods -n open-cluster-management --no-headers 2>/dev/null | wc -l)
+ACM_PODS_RUNNING=$(oc --context="$NEW_HUB_CONTEXT" get pods -n "$ACM_NAMESPACE" --no-headers 2>/dev/null | grep -c "Running" || true)
+ACM_PODS_TOTAL=$(oc --context="$NEW_HUB_CONTEXT" get pods -n "$ACM_NAMESPACE" --no-headers 2>/dev/null | wc -l || true)
 
 if [[ $ACM_PODS_RUNNING -eq $ACM_PODS_TOTAL ]] && [[ $ACM_PODS_TOTAL -gt 0 ]]; then
     check_pass "All $ACM_PODS_TOTAL ACM pods are Running"
@@ -300,10 +359,10 @@ if [[ -n "$OLD_HUB_CONTEXT" ]]; then
     section_header "7. Comparing with Old Hub"
     
     # Check old hub cluster status
-    OLD_CLUSTERS=$(oc --context="$OLD_HUB_CONTEXT" get managedclusters --no-headers 2>/dev/null | grep -c -v local-cluster || echo "0")
+    OLD_CLUSTERS=$(oc --context="$OLD_HUB_CONTEXT" get managedclusters --no-headers 2>/dev/null | grep -c -v "$LOCAL_CLUSTER_NAME" || true)
     if [[ $OLD_CLUSTERS -gt 0 ]]; then
         OLD_UNKNOWN=$(oc --context="$OLD_HUB_CONTEXT" get managedclusters -o json 2>/dev/null | \
-            jq -r '.items[] | select(.metadata.name != "local-cluster") | select(.status.conditions[]? | select(.type=="ManagedClusterConditionAvailable" and .status!="True")) | .metadata.name' | wc -l)
+            jq -r --arg LOCAL "$LOCAL_CLUSTER_NAME" '.items[] | select(.metadata.name != $LOCAL) | select(.status.conditions[]? | select(.type=="ManagedClusterConditionAvailable" and .status!="True")) | .metadata.name' | wc -l)
         
         if [[ $OLD_UNKNOWN -eq $OLD_CLUSTERS ]]; then
             check_pass "All $OLD_CLUSTERS cluster(s) on old hub show as Unknown/Unavailable (expected)"
@@ -313,10 +372,10 @@ if [[ -n "$OLD_HUB_CONTEXT" ]]; then
     fi
     
     # Check if old hub BackupSchedule is paused
-    OLD_SCHEDULE=$(oc --context="$OLD_HUB_CONTEXT" get backupschedule -n open-cluster-management-backup --no-headers 2>/dev/null | wc -l)
+    OLD_SCHEDULE=$(oc --context="$OLD_HUB_CONTEXT" get backupschedule -n "$BACKUP_NAMESPACE" --no-headers 2>/dev/null | wc -l || true)
     if [[ $OLD_SCHEDULE -gt 0 ]]; then
-        OLD_SCHEDULE_NAME=$(oc --context="$OLD_HUB_CONTEXT" get backupschedule -n open-cluster-management-backup -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-        OLD_PAUSED=$(oc --context="$OLD_HUB_CONTEXT" get backupschedule "$OLD_SCHEDULE_NAME" -n open-cluster-management-backup -o jsonpath='{.spec.paused}' 2>/dev/null)
+        OLD_SCHEDULE_NAME=$(oc --context="$OLD_HUB_CONTEXT" get backupschedule -n "$BACKUP_NAMESPACE" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+        OLD_PAUSED=$(oc --context="$OLD_HUB_CONTEXT" get backupschedule "$OLD_SCHEDULE_NAME" -n "$BACKUP_NAMESPACE" -o jsonpath='{.spec.paused}' 2>/dev/null)
         
         if [[ "$OLD_PAUSED" == "true" ]]; then
             check_pass "Old hub BackupSchedule is paused (expected)"
@@ -326,7 +385,7 @@ if [[ -n "$OLD_HUB_CONTEXT" ]]; then
     fi
     
     # Check Thanos compactor on old hub
-    OLD_COMPACTOR=$(oc --context="$OLD_HUB_CONTEXT" get pods -n open-cluster-management-observability -l "app.kubernetes.io/name=thanos-compact" --no-headers 2>/dev/null | wc -l)
+    OLD_COMPACTOR=$(oc --context="$OLD_HUB_CONTEXT" get pods -n "$OBSERVABILITY_NAMESPACE" -l "app.kubernetes.io/name=thanos-compact" --no-headers 2>/dev/null | wc -l || true)
     if [[ $OLD_COMPACTOR -eq 0 ]]; then
         check_pass "Old hub Thanos compactor is stopped (expected)"
     else
@@ -338,7 +397,7 @@ fi
 section_header "8. Checking Auto-Import Status"
 
 DISABLED_AUTO_IMPORT=$(oc --context="$NEW_HUB_CONTEXT" get managedclusters -o json 2>/dev/null | \
-    jq -r '.items[] | select(.metadata.name != "local-cluster") | select(.metadata.annotations["import.open-cluster-management.io/disable-auto-import"] != null) | .metadata.name' | wc -l)
+    jq -r --arg LOCAL "$LOCAL_CLUSTER_NAME" '.items[] | select(.metadata.name != $LOCAL) | select(.metadata.annotations["import.open-cluster-management.io/disable-auto-import"] != null) | .metadata.name' 2>/dev/null | wc -l || true)
 
 if [[ $DISABLED_AUTO_IMPORT -eq 0 ]]; then
     check_pass "No clusters have disable-auto-import annotation on new hub (expected)"
@@ -357,6 +416,22 @@ echo -e "${GREEN}Passed:          $PASSED_CHECKS${NC}"
 echo -e "${RED}Failed:          $FAILED_CHECKS${NC}"
 echo -e "${YELLOW}Warnings:        $WARNING_CHECKS${NC}"
 echo ""
+
+if [[ $FAILED_CHECKS -gt 0 ]]; then
+    echo -e "${RED}Failed Checks:${NC}"
+    for msg in "${FAILED_MESSAGES[@]}"; do
+        echo -e "${RED}  - $msg${NC}"
+    done
+    echo ""
+fi
+
+if [[ $WARNING_CHECKS -gt 0 ]]; then
+    echo -e "${YELLOW}Warnings:${NC}"
+    for msg in "${WARNING_MESSAGES[@]}"; do
+        echo -e "${YELLOW}  - $msg${NC}"
+    done
+    echo ""
+fi
 
 if [[ $FAILED_CHECKS -eq 0 ]]; then
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
