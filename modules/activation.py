@@ -8,6 +8,7 @@ from lib.constants import BACKUP_NAMESPACE, RESTORE_POLL_INTERVAL, RESTORE_WAIT_
 from lib.kube_client import KubeClient
 from lib.utils import StateManager
 from lib.waiter import wait_for_condition
+from lib.exceptions import SwitchoverError, FatalError, TransientError
 
 logger = logging.getLogger("acm_switchover")
 
@@ -66,9 +67,13 @@ class SecondaryActivation:
             logger.info("Secondary hub activation completed successfully")
             return True
 
-        except Exception as e:
+        except SwitchoverError as e:
             logger.error(f"Secondary hub activation failed: {e}")
             self.state.add_error(str(e), "activation")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error during activation: {e}")
+            self.state.add_error(f"Unexpected: {str(e)}", "activation")
             return False
 
     def _verify_passive_sync(self):
@@ -84,14 +89,14 @@ class SecondaryActivation:
         )
 
         if not restore:
-            raise Exception("restore-acm-passive-sync not found on secondary hub")
+            raise FatalError("restore-acm-passive-sync not found on secondary hub")
 
         status = restore.get("status", {})
         phase = status.get("phase", "unknown")
         message = status.get("lastMessage", "")
 
         if phase != "Enabled":
-            raise Exception(
+            raise FatalError(
                 f"Passive sync restore not in Enabled state: {phase} - {message}"
             )
 
@@ -177,7 +182,7 @@ class SecondaryActivation:
             )
 
             if not restore:
-                raise Exception(f"Restore {restore_name} disappeared during wait")
+                raise FatalError(f"Restore {restore_name} disappeared during wait")
 
             status = restore.get("status", {})
             phase = status.get("phase", "unknown")
@@ -186,7 +191,7 @@ class SecondaryActivation:
             if phase == "Finished":
                 return True, message or "restore finished"
             if phase in ("Failed", "PartiallyFailed"):
-                raise Exception(f"Restore failed: {phase} - {message}")
+                raise FatalError(f"Restore failed: {phase} - {message}")
 
             return False, f"phase={phase} message={message}"
 
@@ -199,4 +204,4 @@ class SecondaryActivation:
         )
 
         if not completed:
-            raise Exception(f"Timeout waiting for restore to complete after {timeout}s")
+            raise FatalError(f"Timeout waiting for restore to complete after {timeout}s")

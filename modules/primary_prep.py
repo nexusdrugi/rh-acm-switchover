@@ -7,6 +7,7 @@ from typing import List
 
 from lib.kube_client import KubeClient
 from lib.utils import is_acm_version_ge, StateManager
+from lib.exceptions import SwitchoverError
 
 logger = logging.getLogger("acm_switchover")
 
@@ -65,9 +66,13 @@ class PrimaryPreparation:
             logger.info("Primary hub preparation completed successfully")
             return True
 
-        except Exception as e:
+        except SwitchoverError as e:
             logger.error(f"Primary hub preparation failed: {e}")
             self.state.add_error(str(e), "primary_preparation")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error during primary preparation: {e}")
+            self.state.add_error(f"Unexpected: {str(e)}", "primary_preparation")
             return False
 
     def _pause_backup_schedule(self):

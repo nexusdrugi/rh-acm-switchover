@@ -3,6 +3,13 @@ Library package for ACM switchover automation.
 """
 
 from .kube_client import KubeClient
+from .exceptions import (
+    SwitchoverError,
+    TransientError,
+    FatalError,
+    ValidationError,
+    ConfigurationError,
+)
 from .utils import (
     Phase,
     StateManager,
@@ -15,6 +22,11 @@ from .utils import (
 
 __all__ = [
     "KubeClient",
+    "SwitchoverError",
+    "TransientError",
+    "FatalError",
+    "ValidationError",
+    "ConfigurationError",
     "Phase",
     "StateManager",
     "setup_logging",

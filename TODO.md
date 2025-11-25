@@ -21,7 +21,7 @@ This document tracks the progress of reliability hardening tasks for the ACM Swi
 
 ## Medium Priority
 
-- [ ] **4. Refine Exception Handling** (Est: 3h)
+- [x] **4. Refine Exception Handling** (Est: 3h)
     - Define custom exception hierarchy in `lib/exceptions.py` (e.g., `SwitchoverError`, `TransientError`, `FatalError`).
     - Update `modules/*.py` to catch specific exceptions instead of generic `Exception`.
     - Ensure fatal errors stop execution immediately.
