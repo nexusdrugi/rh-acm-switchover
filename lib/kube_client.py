@@ -481,8 +481,10 @@ class KubeClient:
         while time.time() - start_time < timeout:
             pods = self.get_pods(namespace, label_selector)
 
-            if expected_count is not None and len(pods) != expected_count:
-                logger.debug(f"Waiting for {expected_count} pods, found {len(pods)}")
+            if expected_count is not None and len(pods) < expected_count:
+                logger.debug(
+                    "Waiting for %s pods, found %s", expected_count, len(pods)
+                )
                 time.sleep(5)
                 continue
 
@@ -502,8 +504,14 @@ class KubeClient:
                     logger.info(f"All {ready_count} pods ready in {namespace}")
                     return True
             else:
-                if ready_count == expected_count:
-                    logger.info(f"All {ready_count} pods ready in {namespace}")
+                if ready_count >= expected_count:
+                    logger.info(
+                        "Got %s/%s ready pods in %s (total pods: %s)",
+                        ready_count,
+                        expected_count,
+                        namespace,
+                        len(pods),
+                    )
                     return True
 
             logger.debug(f"{ready_count}/{len(pods)} pods ready in {namespace}")

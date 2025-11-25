@@ -23,7 +23,7 @@
 7. [x] **Handle Kubernetes list pagination in `lib/kube_client.list_custom_resources`**  
    - Loop on `metadata.continue` so large fleets don’t silently drop items, ensuring pre-flight and verification steps see every resource.
 
-8. [ ] **Loosen `wait_for_pods_ready` pod count handling**  
+8. [x] **Loosen `wait_for_pods_ready` pod count handling**  
    - Allow extra pods during rollouts (e.g., accept `len(pods) >= expected_count`) so transient replica mismatches don’t time out when the desired number of pods are already ready.
 
 9. [ ] **Port CLI/context prerequisite checks into Python preflight**  

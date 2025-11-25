@@ -297,6 +297,33 @@ class TestKubeClient:
         assert result is True
         assert mock_k8s_apis["core_api"].list_namespaced_pod.call_count >= 2
 
+    @patch("lib.kube_client.time.sleep")
+    def test_wait_for_pods_ready_allows_extra_pods(
+        self, mock_sleep, kube_client, mock_k8s_apis
+    ):
+        """When more pods than expected exist, success should still be reported."""
+        pod_ready = MagicMock()
+        pod_ready.to_dict.return_value = {
+            "metadata": {"name": "pod-ready"},
+            "status": {"conditions": [{"type": "Ready", "status": "True"}]},
+        }
+        pod_extra = MagicMock()
+        pod_extra.to_dict.return_value = {
+            "metadata": {"name": "pod-extra"},
+            "status": {"conditions": [{"type": "Ready", "status": "False"}]},
+        }
+
+        mock_k8s_apis["core_api"].list_namespaced_pod.return_value = MagicMock(
+            items=[pod_ready, pod_extra]
+        )
+
+        result = kube_client.wait_for_pods_ready(
+            "test-ns", "app=test", expected_count=1, timeout=5
+        )
+
+        assert result is True
+        mock_sleep.assert_not_called()
+
     def test_rollout_restart_deployment_dry_run(self, dry_run_client, mock_k8s_apis):
         """Test rollout restart deployment in dry-run mode."""
         result = dry_run_client.rollout_restart_deployment(
