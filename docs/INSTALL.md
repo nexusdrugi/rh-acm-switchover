@@ -271,6 +271,10 @@ rh-acm-switchover/
 ├── quick-start.sh             # Interactive wizard
 ├── requirements.txt           # Dependencies
 │
+├── container-bootstrap/       # Container build resources
+│   ├── Containerfile
+│   └── get-pip.py
+│
 ├── lib/                       # Core libraries
 │   ├── __init__.py
 │   ├── kube_client.py
@@ -285,8 +289,15 @@ rh-acm-switchover/
 │   ├── finalization.py
 │   └── decommission.py
 │
+├── scripts/                   # Helper scripts
+│   ├── constants.sh
+│   ├── preflight-check.sh
+│   └── postflight-check.sh
+│
 ├── docs/                      # Documentation
-│   └── ACM_SWITCHOVER_RUNBOOK.md
+│   ├── ACM_SWITCHOVER_RUNBOOK.md
+│   ├── CONTAINER_USAGE.md
+│   └── ...
 │
 ├── .state/                    # State files (created at runtime)
 │   └── switchover-state.json
@@ -309,49 +320,24 @@ export ACM_SWITCHOVER_STATE_DIR=/path/to/state
 export ACM_SWITCHOVER_DEBUG=1
 ```
 
-## Container Deployment (Advanced)
+## Container Deployment
 
-### Build Container Image
+For detailed instructions on building and running the tool as a container, please refer to [CONTAINER_USAGE.md](CONTAINER_USAGE.md).
 
-Create `Dockerfile`:
+The project includes a production-ready `Containerfile` in `container-bootstrap/` and supports:
+- Multi-stage builds (UBI 9 minimal base)
+- Multi-architecture support (amd64, arm64)
+- Pre-installed prerequisites (oc, kubectl, jq)
+- Non-root execution
 
-```dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-
-# Install kubectl
-RUN apt-get update && \
-    apt-get install -y curl && \
-    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && \
-    chmod +x kubectl && \
-    mv kubectl /usr/local/bin/ && \
-    apt-get clean
-
-# Copy application
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY . .
-
-# Make script executable
-RUN chmod +x acm_switchover.py
-
-ENTRYPOINT ["python", "acm_switchover.py"]
-```
-
-**Build and run:**
+### Quick Container Run
 
 ```bash
-# Build image
-docker build -t acm-switchover:latest .
-
-# Run with kubeconfig mounted
-docker run -v ~/.kube:/root/.kube:ro \
-  acm-switchover:latest \
-  --validate-only \
-  --primary-context primary-hub \
-  --secondary-context secondary-hub
+# Using the published image
+podman run -it --rm \
+  -v ~/.kube:/root/.kube:ro \
+  -v ./state:/var/lib/acm-switchover \
+  quay.io/tomazborstnar/acm-switchover:latest --help
 ```
 
 ## Kubernetes Job Deployment
