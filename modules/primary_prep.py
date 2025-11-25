@@ -5,9 +5,9 @@ Primary hub preparation module for ACM switchover.
 import logging
 from typing import List
 
-from lib.kube_client import KubeClient
-from lib.utils import is_acm_version_ge, StateManager
 from lib.exceptions import SwitchoverError
+from lib.kube_client import KubeClient
+from lib.utils import StateManager, is_acm_version_ge
 
 logger = logging.getLogger("acm_switchover")
 
@@ -59,9 +59,7 @@ class PrimaryPreparation:
                 else:
                     logger.info("Step already completed: scale_down_thanos")
             else:
-                logger.info(
-                    "Skipping Thanos compactor scaling (Observability not detected)"
-                )
+                logger.info("Skipping Thanos compactor scaling (Observability not detected)")
 
             logger.info("Primary hub preparation completed successfully")
             return True
@@ -154,19 +152,11 @@ class PrimaryPreparation:
             # Check if annotation already exists
             annotations = mc.get("metadata", {}).get("annotations", {})
             if "import.open-cluster-management.io/disable-auto-import" in annotations:
-                logger.debug(
-                    f"ManagedCluster {mc_name} already has disable-auto-import annotation"
-                )
+                logger.debug(f"ManagedCluster {mc_name} already has disable-auto-import annotation")
                 continue
 
             # Add annotation
-            patch = {
-                "metadata": {
-                    "annotations": {
-                        "import.open-cluster-management.io/disable-auto-import": ""
-                    }
-                }
-            }
+            patch = {"metadata": {"annotations": {"import.open-cluster-management.io/disable-auto-import": ""}}}
 
             self.primary.patch_managed_cluster(name=mc_name, patch=patch)
 

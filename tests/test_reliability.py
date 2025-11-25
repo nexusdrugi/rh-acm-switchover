@@ -2,8 +2,9 @@
 Tests for reliability features (retries, timeouts).
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 from kubernetes.client.rest import ApiException
 from urllib3.exceptions import HTTPError
 
@@ -13,10 +14,9 @@ from lib.kube_client import KubeClient, is_retryable_error
 @pytest.fixture
 def kube_client():
     """Fixture to provide a mocked KubeClient."""
-    with patch("kubernetes.config.load_kube_config"), \
-         patch("kubernetes.client.CoreV1Api"), \
-         patch("kubernetes.client.AppsV1Api"), \
-         patch("kubernetes.client.CustomObjectsApi"):
+    with patch("kubernetes.config.load_kube_config"), patch("kubernetes.client.CoreV1Api"), patch(
+        "kubernetes.client.AppsV1Api"
+    ), patch("kubernetes.client.CustomObjectsApi"):
         yield KubeClient(context="test-context")
 
 
@@ -56,7 +56,7 @@ def test_retry_logic_success_after_failure(kube_client):
 
         # Verify result
         assert result["metadata"]["name"] == "test"
-        
+
         # Verify retries occurred (3 calls total)
         assert mock_api.call_count == 3
 

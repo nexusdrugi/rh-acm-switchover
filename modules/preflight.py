@@ -5,8 +5,9 @@ Pre-flight validation module for ACM switchover.
 import logging
 from typing import Dict, Tuple
 
-from lib.kube_client import KubeClient
 from lib.exceptions import ValidationError
+from lib.kube_client import KubeClient
+
 from .preflight_validators import (
     BackupValidator,
     ClusterDeploymentValidator,
@@ -44,9 +45,7 @@ class PreflightValidator:
         self.cluster_deployment_validator = ClusterDeploymentValidator(self.reporter)
         self.passive_sync_validator = PassiveSyncValidator(self.reporter)
         self.observability_detector = ObservabilityDetector(self.reporter)
-        self.observability_prereq_validator = ObservabilityPrereqValidator(
-            self.reporter
-        )
+        self.observability_prereq_validator = ObservabilityPrereqValidator(self.reporter)
         self.tooling_validator = ToolingValidator(self.reporter)
 
     def validate_all(self) -> Tuple[bool, Dict[str, object]]:

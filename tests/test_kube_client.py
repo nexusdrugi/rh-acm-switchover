@@ -4,9 +4,9 @@ Modernized pytest tests with fixtures, markers, and parameterization.
 Tests cover KubeClient initialization, CRUD operations, and dry-run mode.
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
 from kubernetes.client.rest import ApiException
 
 from lib.kube_client import KubeClient
@@ -17,9 +17,7 @@ def mock_k8s_apis():
     """Mock Kubernetes API clients."""
     with patch("lib.kube_client.config.load_kube_config") as mock_config, patch(
         "lib.kube_client.client.CustomObjectsApi"
-    ) as mock_custom_cls, patch(
-        "lib.kube_client.client.CoreV1Api"
-    ) as mock_core_cls, patch(
+    ) as mock_custom_cls, patch("lib.kube_client.client.CoreV1Api") as mock_core_cls, patch(
         "lib.kube_client.client.AppsV1Api"
     ) as mock_apps_cls:
 
@@ -49,9 +47,7 @@ class TestKubeClient:
 
     def test_get_custom_resource(self, kube_client, mock_k8s_apis):
         """Test getting a custom resource successfully."""
-        mock_k8s_apis["custom_api"].get_namespaced_custom_object.return_value = {
-            "metadata": {"name": "test"}
-        }
+        mock_k8s_apis["custom_api"].get_namespaced_custom_object.return_value = {"metadata": {"name": "test"}}
 
         result = kube_client.get_custom_resource(
             "operator.open-cluster-management.io",
@@ -62,9 +58,7 @@ class TestKubeClient:
         )
 
         assert result is not None
-        mock_k8s_apis[
-            "custom_api"
-        ].get_namespaced_custom_object.assert_called_once_with(
+        mock_k8s_apis["custom_api"].get_namespaced_custom_object.assert_called_once_with(
             group="operator.open-cluster-management.io",
             version="v1",
             namespace="test-ns",
@@ -74,9 +68,7 @@ class TestKubeClient:
 
     def test_get_custom_resource_not_found(self, kube_client, mock_k8s_apis):
         """Test getting a non-existent custom resource returns None."""
-        mock_k8s_apis["custom_api"].get_namespaced_custom_object.side_effect = (
-            ApiException(status=404)
-        )
+        mock_k8s_apis["custom_api"].get_namespaced_custom_object.side_effect = ApiException(status=404)
 
         result = kube_client.get_custom_resource(
             "operator.open-cluster-management.io",
@@ -123,9 +115,7 @@ class TestKubeClient:
 
     def test_patch_custom_resource_normal(self, kube_client, mock_k8s_apis):
         """Test patching a custom resource in normal mode."""
-        mock_k8s_apis["custom_api"].patch_namespaced_custom_object.return_value = {
-            "result": True
-        }
+        mock_k8s_apis["custom_api"].patch_namespaced_custom_object.return_value = {"result": True}
 
         result = kube_client.patch_custom_resource(
             "cluster.open-cluster-management.io",
@@ -186,9 +176,7 @@ class TestKubeClient:
         """Test scaling deployment in normal mode."""
         response = MagicMock()
         response.to_dict.return_value = {"status": "scaled"}
-        mock_k8s_apis["apps_api"].patch_namespaced_deployment_scale.return_value = (
-            response
-        )
+        mock_k8s_apis["apps_api"].patch_namespaced_deployment_scale.return_value = response
 
         result = kube_client.scale_deployment(
             namespace="test-ns",
@@ -225,9 +213,7 @@ class TestKubeClient:
         """Test scaling statefulset."""
         response = MagicMock()
         response.to_dict.return_value = {"status": "scaled"}
-        mock_k8s_apis["apps_api"].patch_namespaced_stateful_set_scale.return_value = (
-            response
-        )
+        mock_k8s_apis["apps_api"].patch_namespaced_stateful_set_scale.return_value = response
 
         result = kube_client.scale_statefulset(
             namespace="test-ns",
@@ -236,9 +222,7 @@ class TestKubeClient:
         )
 
         assert result == {"status": "scaled"}
-        mock_k8s_apis[
-            "apps_api"
-        ].patch_namespaced_stateful_set_scale.assert_called_once()
+        mock_k8s_apis["apps_api"].patch_namespaced_stateful_set_scale.assert_called_once()
 
     def test_namespace_exists(self, kube_client, mock_k8s_apis):
         """Test checking if namespace exists."""
@@ -261,15 +245,11 @@ class TestKubeClient:
         """Test checking if secret exists."""
         mock_k8s_apis["core_api"].read_namespaced_secret.return_value = MagicMock()
         assert kube_client.secret_exists("ns", "secret") is True
-        mock_k8s_apis["core_api"].read_namespaced_secret.assert_called_once_with(
-            name="secret", namespace="ns"
-        )
+        mock_k8s_apis["core_api"].read_namespaced_secret.assert_called_once_with(name="secret", namespace="ns")
 
     def test_secret_not_exists(self, kube_client, mock_k8s_apis):
         """Test checking if secret does not exist."""
-        mock_k8s_apis["core_api"].read_namespaced_secret.side_effect = ApiException(
-            status=404
-        )
+        mock_k8s_apis["core_api"].read_namespaced_secret.side_effect = ApiException(status=404)
         assert kube_client.secret_exists("ns", "secret") is False
 
     def test_get_route_host(self, kube_client, mock_k8s_apis):
@@ -282,9 +262,7 @@ class TestKubeClient:
 
     def test_get_route_host_not_found(self, kube_client, mock_k8s_apis):
         """Test route host returns None when route missing."""
-        mock_k8s_apis["custom_api"].get_namespaced_custom_object.side_effect = (
-            ApiException(status=404)
-        )
+        mock_k8s_apis["custom_api"].get_namespaced_custom_object.side_effect = ApiException(status=404)
         assert kube_client.get_route_host("ns", "grafana") is None
 
     def test_get_pods(self, kube_client, mock_k8s_apis):
@@ -328,9 +306,7 @@ class TestKubeClient:
         assert mock_k8s_apis["core_api"].list_namespaced_pod.call_count >= 2
 
     @patch("lib.kube_client.time.sleep")
-    def test_wait_for_pods_ready_allows_extra_pods(
-        self, mock_sleep, kube_client, mock_k8s_apis
-    ):
+    def test_wait_for_pods_ready_allows_extra_pods(self, mock_sleep, kube_client, mock_k8s_apis):
         """When more pods than expected exist, success should still be reported."""
         pod_ready = MagicMock()
         pod_ready.to_dict.return_value = {
@@ -343,13 +319,9 @@ class TestKubeClient:
             "status": {"conditions": [{"type": "Ready", "status": "False"}]},
         }
 
-        mock_k8s_apis["core_api"].list_namespaced_pod.return_value = MagicMock(
-            items=[pod_ready, pod_extra]
-        )
+        mock_k8s_apis["core_api"].list_namespaced_pod.return_value = MagicMock(items=[pod_ready, pod_extra])
 
-        result = kube_client.wait_for_pods_ready(
-            "test-ns", "app=test", expected_count=1, timeout=5
-        )
+        result = kube_client.wait_for_pods_ready("test-ns", "app=test", expected_count=1, timeout=5)
 
         assert result is True
         mock_sleep.assert_not_called()

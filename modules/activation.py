@@ -5,10 +5,10 @@ Secondary hub activation module for ACM switchover.
 import logging
 
 from lib.constants import BACKUP_NAMESPACE, RESTORE_POLL_INTERVAL, RESTORE_WAIT_TIMEOUT
+from lib.exceptions import FatalError, SwitchoverError, TransientError
 from lib.kube_client import KubeClient
 from lib.utils import StateManager
 from lib.waiter import wait_for_condition
-from lib.exceptions import SwitchoverError, FatalError, TransientError
 
 logger = logging.getLogger("acm_switchover")
 
@@ -96,9 +96,7 @@ class SecondaryActivation:
         message = status.get("lastMessage", "")
 
         if phase != "Enabled":
-            raise FatalError(
-                f"Passive sync restore not in Enabled state: {phase} - {message}"
-            )
+            raise FatalError(f"Passive sync restore not in Enabled state: {phase} - {message}")
 
         logger.info(f"Passive sync verified: {message}")
 
@@ -166,11 +164,7 @@ class SecondaryActivation:
     def _wait_for_restore_completion(self, timeout: int = RESTORE_WAIT_TIMEOUT):
         """Wait for restore to complete."""
 
-        restore_name = (
-            "restore-acm-passive-sync"
-            if self.method == "passive"
-            else "restore-acm-full"
-        )
+        restore_name = "restore-acm-passive-sync" if self.method == "passive" else "restore-acm-full"
 
         def _poll_restore():
             restore = self.secondary.get_custom_resource(

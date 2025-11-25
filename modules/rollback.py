@@ -7,6 +7,7 @@ import logging
 from lib.constants import BACKUP_NAMESPACE, OBSERVABILITY_NAMESPACE
 from lib.kube_client import KubeClient
 from lib.utils import StateManager
+
 from .backup_schedule import BackupScheduleManager
 
 logger = logging.getLogger("acm_switchover")
@@ -28,9 +29,7 @@ class Rollback:
         self.state = state_manager
         self.acm_version = acm_version
         self.has_observability = has_observability
-        self.backup_manager = BackupScheduleManager(
-            primary_client, state_manager, "primary hub"
-        )
+        self.backup_manager = BackupScheduleManager(primary_client, state_manager, "primary hub")
 
     def rollback(self) -> bool:
         """Execute rollback to primary hub."""
@@ -45,9 +44,7 @@ class Rollback:
 
             self._unpause_backup_schedule()
 
-            logger.info(
-                "Rollback completed. Waiting for clusters to reconnect to primary..."
-            )
+            logger.info("Rollback completed. Waiting for clusters to reconnect to primary...")
             logger.info("Allow 5-10 minutes for ManagedClusters to reconnect.")
 
             return True
@@ -87,21 +84,13 @@ class Rollback:
 
             annotations = mc.get("metadata", {}).get("annotations", {})
             if "import.open-cluster-management.io/disable-auto-import" in annotations:
-                patch = {
-                    "metadata": {
-                        "annotations": {
-                            "import.open-cluster-management.io/disable-auto-import": None
-                        }
-                    }
-                }
+                patch = {"metadata": {"annotations": {"import.open-cluster-management.io/disable-auto-import": None}}}
 
                 self.primary.patch_managed_cluster(name=mc_name, patch=patch)
 
                 count += 1
 
-        logger.info(
-            "Removed disable-auto-import annotation from %s ManagedCluster(s)", count
-        )
+        logger.info("Removed disable-auto-import annotation from %s ManagedCluster(s)", count)
 
     def _restart_thanos_compactor(self) -> None:
         logger.info("Restarting Thanos compactor...")

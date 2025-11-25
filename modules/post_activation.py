@@ -119,14 +119,11 @@ class PostActivationVerification:
                 conditions = mc.get("status", {}).get("conditions", [])
 
                 is_available = any(
-                    c.get("type") == "ManagedClusterConditionAvailable"
-                    and c.get("status") == "True"
+                    c.get("type") == "ManagedClusterConditionAvailable" and c.get("status") == "True"
                     for c in conditions
                 )
                 is_joined = any(
-                    c.get("type") == "ManagedClusterJoined"
-                    and c.get("status") == "True"
-                    for c in conditions
+                    c.get("type") == "ManagedClusterJoined" and c.get("status") == "True" for c in conditions
                 )
 
                 if is_available:
@@ -146,14 +143,8 @@ class PostActivationVerification:
             if total_clusters == 0:
                 return False, "No non-local ManagedClusters found"
 
-            is_ready = (
-                available_clusters == total_clusters
-                and joined_clusters == total_clusters
-            )
-            detail = (
-                f"available={available_clusters}/{total_clusters}, "
-                f"joined={joined_clusters}/{total_clusters}"
-            )
+            is_ready = available_clusters == total_clusters and joined_clusters == total_clusters
+            detail = f"available={available_clusters}/{total_clusters}, " f"joined={joined_clusters}/{total_clusters}"
             return is_ready, detail
 
         success = wait_for_condition(
@@ -198,9 +189,7 @@ class PostActivationVerification:
                     label_selector="app.kubernetes.io/name=observatorium-api",
                 )
                 start_times = [
-                    pod.get("status", {}).get("startTime")
-                    for pod in pods
-                    if pod.get("status", {}).get("startTime")
+                    pod.get("status", {}).get("startTime") for pod in pods if pod.get("status", {}).get("startTime")
                 ]
                 if start_times:
                     logger.info(
@@ -247,10 +236,7 @@ class PostActivationVerification:
             # Check ready condition
             conditions = pod.get("status", {}).get("conditions", [])
             for condition in conditions:
-                if (
-                    condition.get("type") == "Ready"
-                    and condition.get("status") == "True"
-                ):
+                if condition.get("type") == "Ready" and condition.get("status") == "True":
                     ready_pods += 1
                     break
 
@@ -264,38 +250,25 @@ class PostActivationVerification:
                 if waiting_state:
                     reason = waiting_state.get("reason", "waiting")
                     if reason in critical_waiting_reasons:
-                        pod_errors.append(
-                            f"{container_name} waiting ({reason})"
-                        )
+                        pod_errors.append(f"{container_name} waiting ({reason})")
 
                 terminated_state = state.get("terminated")
                 if terminated_state:
                     reason = terminated_state.get("reason", "terminated")
                     exit_code = terminated_state.get("exitCode")
-                    if (
-                        reason in critical_terminated_reasons
-                        or (exit_code is not None and exit_code != 0)
-                    ):
-                        pod_errors.append(
-                            f"{container_name} terminated ({reason}, exit={exit_code})"
-                        )
+                    if reason in critical_terminated_reasons or (exit_code is not None and exit_code != 0):
+                        pod_errors.append(f"{container_name} terminated ({reason}, exit={exit_code})")
 
             if pod_errors:
                 error_pods.append(f"{pod_name}: " + "; ".join(pod_errors))
 
-        logger.info(
-            f"Observability pods: {running_pods}/{len(pods)} running, "
-            f"{ready_pods}/{len(pods)} ready"
-        )
+        logger.info(f"Observability pods: {running_pods}/{len(pods)} running, " f"{ready_pods}/{len(pods)} ready")
 
         if error_pods:
             logger.warning(f"Pods in error state: {', '.join(error_pods)}")
 
         if ready_pods < len(pods) * 0.8:  # Allow 20% tolerance
-            logger.warning(
-                f"Only {ready_pods}/{len(pods)} pods ready. "
-                "Some pods may still be starting."
-            )
+            logger.warning(f"Only {ready_pods}/{len(pods)} pods ready. " "Some pods may still be starting.")
 
     def _verify_metrics_collection(self):
         """Verify metrics collection is working (informational)."""
@@ -327,9 +300,7 @@ class PostActivationVerification:
     def _log_grafana_route(self):
         """Log Grafana route availability to help operators verify UI."""
         try:
-            host = self.secondary.get_route_host(
-                OBSERVABILITY_NAMESPACE, "grafana"
-            )
+            host = self.secondary.get_route_host(OBSERVABILITY_NAMESPACE, "grafana")
             if host:
                 logger.info(
                     "Grafana route detected: https://%s (namespace: %s)",
@@ -361,9 +332,6 @@ class PostActivationVerification:
                 flagged.append(mc_name or "unknown")
 
         if flagged:
-            raise Exception(
-                "disable-auto-import annotation still present on: "
-                + ", ".join(flagged)
-            )
+            raise Exception("disable-auto-import annotation still present on: " + ", ".join(flagged))
 
         logger.info("All ManagedClusters cleared disable-auto-import annotation")

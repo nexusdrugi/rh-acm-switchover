@@ -3,10 +3,11 @@
 Tests cover SecondaryActivation class for activating the secondary hub.
 """
 
-import pytest
 import sys
 from pathlib import Path
 from unittest.mock import Mock, patch
+
+import pytest
 
 # Add parent to path to import modules directly
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -68,9 +69,7 @@ class TestSecondaryActivation:
         assert act.method == "passive"
 
     @patch("modules.activation.wait_for_condition")
-    def test_activate_passive_success(
-        self, mock_wait, activation_passive, mock_secondary_client, mock_state_manager
-    ):
+    def test_activate_passive_success(self, mock_wait, activation_passive, mock_secondary_client, mock_state_manager):
         """Test successful passive activation."""
         mock_wait.return_value = True
 
@@ -111,9 +110,7 @@ class TestSecondaryActivation:
         assert "restore-acm-passive-sync" in mock_wait.call_args[0][0]
 
     @patch("modules.activation.wait_for_condition")
-    def test_activate_full_success(
-        self, mock_wait, activation_full, mock_secondary_client
-    ):
+    def test_activate_full_success(self, mock_wait, activation_full, mock_secondary_client):
         """Test successful full activation."""
         mock_wait.return_value = True
 
@@ -134,9 +131,7 @@ class TestSecondaryActivation:
         mock_wait.assert_called_once()
         assert "restore-acm-full" in mock_wait.call_args[0][0]
 
-    def test_verify_passive_sync_failure(
-        self, activation_passive, mock_secondary_client
-    ):
+    def test_verify_passive_sync_failure(self, activation_passive, mock_secondary_client):
         """Test failure when passive sync is not ready."""
         # Mock restore not found
         mock_secondary_client.get_custom_resource.return_value = None
@@ -145,29 +140,21 @@ class TestSecondaryActivation:
 
         assert result is False
 
-    def test_verify_passive_sync_wrong_phase(
-        self, activation_passive, mock_secondary_client
-    ):
+    def test_verify_passive_sync_wrong_phase(self, activation_passive, mock_secondary_client):
         """Test failure when passive sync is in wrong phase."""
-        mock_secondary_client.get_custom_resource.return_value = {
-            "status": {"phase": "Failed"}
-        }
+        mock_secondary_client.get_custom_resource.return_value = {"status": {"phase": "Failed"}}
 
         result = activation_passive.activate()
 
         assert result is False
 
     @patch("modules.activation.wait_for_condition")
-    def test_wait_for_restore_timeout(
-        self, mock_wait, activation_passive, mock_secondary_client
-    ):
+    def test_wait_for_restore_timeout(self, mock_wait, activation_passive, mock_secondary_client):
         """Test timeout waiting for restore."""
         mock_wait.return_value = False  # Timeout
 
         # Mock verify success so we get to the wait step
-        mock_secondary_client.get_custom_resource.return_value = {
-            "status": {"phase": "Enabled"}
-        }
+        mock_secondary_client.get_custom_resource.return_value = {"status": {"phase": "Enabled"}}
 
         result = activation_passive.activate()
 
@@ -180,9 +167,7 @@ class TestSecondaryActivation:
         # OR we can trust wait_for_condition tests and just verify we pass the right callback.
         # Let's try to run it with a mocked wait_for_condition that executes the callback.
 
-        mock_secondary_client.get_custom_resource.return_value = {
-            "status": {"phase": "Finished"}
-        }
+        mock_secondary_client.get_custom_resource.return_value = {"status": {"phase": "Finished"}}
 
         with patch("modules.activation.wait_for_condition") as mock_wait:
             # Define side effect to execute the callback passed to wait_for_condition
@@ -192,9 +177,7 @@ class TestSecondaryActivation:
             mock_wait.side_effect = side_effect
 
             # We need to bypass the earlier steps to get to wait
-            activation_passive.state.is_step_completed.side_effect = (
-                lambda step: step != "wait_restore_completion"
-            )
+            activation_passive.state.is_step_completed.side_effect = lambda step: step != "wait_restore_completion"
 
             activation_passive._wait_for_restore_completion()
 

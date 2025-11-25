@@ -9,6 +9,7 @@ from typing import Optional
 from lib.constants import ACM_NAMESPACE, BACKUP_NAMESPACE, OBSERVABILITY_NAMESPACE
 from lib.kube_client import KubeClient
 from lib.utils import StateManager
+
 from .backup_schedule import BackupScheduleManager
 
 logger = logging.getLogger("acm_switchover")
@@ -105,9 +106,7 @@ class Finalization:
             namespace=BACKUP_NAMESPACE,
         )
 
-        initial_backup_names = {
-            b.get("metadata", {}).get("name") for b in initial_backups
-        }
+        initial_backup_names = {b.get("metadata", {}).get("name") for b in initial_backups}
 
         logger.info(f"Found {len(initial_backups)} existing backup(s)")
         logger.info("Waiting for new backup to appear (this may take 5-10 minutes)...")
@@ -122,9 +121,7 @@ class Finalization:
                 namespace=BACKUP_NAMESPACE,
             )
 
-            current_backup_names = {
-                b.get("metadata", {}).get("name") for b in current_backups
-            }
+            current_backup_names = {b.get("metadata", {}).get("name") for b in current_backups}
 
             # Check for new backups
             new_backups = current_backup_names - initial_backup_names
@@ -135,11 +132,7 @@ class Finalization:
                 # Verify at least one is in progress or completed
                 for backup_name in new_backups:
                     backup = next(
-                        (
-                            b
-                            for b in current_backups
-                            if b.get("metadata", {}).get("name") == backup_name
-                        ),
+                        (b for b in current_backups if b.get("metadata", {}).get("name") == backup_name),
                         None,
                     )
 
@@ -156,8 +149,7 @@ class Finalization:
             time.sleep(30)
 
         logger.warning(
-            f"No new backups detected after {timeout}s. "
-            "BackupSchedule may take time to create first backup."
+            f"No new backups detected after {timeout}s. " "BackupSchedule may take time to create first backup."
         )
 
     def _verify_backup_schedule_enabled(self):
@@ -209,9 +201,7 @@ class Finalization:
         phase = mch.get("status", {}).get("phase", "unknown")
 
         if phase != "Running":
-            raise RuntimeError(
-                f"MultiClusterHub {mch_name} is in phase '{phase}', expected Running"
-            )
+            raise RuntimeError(f"MultiClusterHub {mch_name} is in phase '{phase}', expected Running")
 
         pods = self.secondary.get_pods(namespace=ACM_NAMESPACE)
         non_running = [
@@ -221,9 +211,7 @@ class Finalization:
         ]
 
         if non_running:
-            raise RuntimeError(
-                "ACM namespace still has non-running pods: " + ", ".join(non_running)
-            )
+            raise RuntimeError("ACM namespace still has non-running pods: " + ", ".join(non_running))
 
         logger.info("MultiClusterHub %s is Running and all pods are healthy", mch_name)
 
@@ -248,9 +236,7 @@ class Finalization:
 
             conditions = cluster.get("status", {}).get("conditions", [])
             available = any(
-                c.get("type") == "ManagedClusterConditionAvailable"
-                and c.get("status") == "True"
-                for c in conditions
+                c.get("type") == "ManagedClusterConditionAvailable" and c.get("status") == "True" for c in conditions
             )
             if available:
                 still_available.append(name or "unknown")

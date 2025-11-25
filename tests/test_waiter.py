@@ -3,9 +3,11 @@
 Tests generic wait/poll utilities.
 """
 
-import pytest
 import logging
-from unittest.mock import Mock, patch, call
+from unittest.mock import Mock, call, patch
+
+import pytest
+
 from lib.waiter import wait_for_condition
 
 
@@ -27,9 +29,7 @@ class TestWaitForCondition:
         def condition():
             return True, "done"
 
-        result = wait_for_condition(
-            description="test wait", condition_fn=condition, logger=mock_logger
-        )
+        result = wait_for_condition(description="test wait", condition_fn=condition, logger=mock_logger)
 
         assert result is True
         mock_logger.info.assert_called_with("%s complete: %s", "test wait", "done")
@@ -99,6 +99,4 @@ class TestWaitForCondition:
         )
 
         assert result is True
-        mock_logger.info.assert_called_with(
-            "%s complete: %s", "test last chance", "just in time"
-        )
+        mock_logger.info.assert_called_with("%s complete: %s", "test last chance", "just in time")

@@ -44,9 +44,7 @@ class StateManager:
                 with open(self.state_file, "r", encoding="utf-8") as f:
                     return json.load(f)
             except json.JSONDecodeError as e:
-                logging.warning(
-                    "Corrupted state file %s: %s, starting fresh", self.state_file, e
-                )
+                logging.warning("Corrupted state file %s: %s, starting fresh", self.state_file, e)
             except OSError as e:
                 logging.error("Failed to read state file %s: %s", self.state_file, e)
 
@@ -92,9 +90,7 @@ class StateManager:
     def mark_step_completed(self, step_name: str) -> None:
         """Mark a step as completed."""
         if not self.is_step_completed(step_name):
-            self.state["completed_steps"].append(
-                {"name": step_name, "timestamp": _utc_timestamp()}
-            )
+            self.state["completed_steps"].append({"name": step_name, "timestamp": _utc_timestamp()})
             self.save_state()
 
     def is_step_completed(self, step_name: str) -> bool:
@@ -141,9 +137,7 @@ class StateManager:
             self.save_state()
             return Phase.INIT
 
-    def ensure_contexts(
-        self, primary_context: str, secondary_context: Optional[str]
-    ) -> None:
+    def ensure_contexts(self, primary_context: str, secondary_context: Optional[str]) -> None:
         """Ensure stored contexts match the ones provided on the CLI."""
         stored = self.state.get("contexts") or {}
         desired = {"primary": primary_context, "secondary": secondary_context}

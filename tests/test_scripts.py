@@ -8,11 +8,11 @@ These tests run quickly without requiring cluster access.
 """
 
 import os
+import re
 import subprocess
 from pathlib import Path
-import re
-import pytest
 
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS_DIR = REPO_ROOT / "scripts"

@@ -3,10 +3,11 @@
 Tests cover Rollback class for reverting changes to primary hub.
 """
 
-import pytest
 import sys
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
 
 # Add parent to path to import modules directly
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -46,9 +47,7 @@ def mock_backup_manager():
 
 
 @pytest.fixture
-def rollback_with_obs(
-    mock_primary_client, mock_secondary_client, mock_state_manager, mock_backup_manager
-):
+def rollback_with_obs(mock_primary_client, mock_secondary_client, mock_state_manager, mock_backup_manager):
     """Create Rollback instance with observability."""
     return Rollback(
         primary_client=mock_primary_client,
@@ -60,9 +59,7 @@ def rollback_with_obs(
 
 
 @pytest.fixture
-def rollback_no_obs(
-    mock_primary_client, mock_secondary_client, mock_state_manager, mock_backup_manager
-):
+def rollback_no_obs(mock_primary_client, mock_secondary_client, mock_state_manager, mock_backup_manager):
     """Create Rollback instance without observability."""
     return Rollback(
         primary_client=mock_primary_client,
@@ -77,9 +74,7 @@ def rollback_no_obs(
 class TestRollback:
     """Tests for Rollback class."""
 
-    def test_initialization(
-        self, mock_primary_client, mock_secondary_client, mock_state_manager
-    ):
+    def test_initialization(self, mock_primary_client, mock_secondary_client, mock_state_manager):
         """Test Rollback initialization."""
         rb = Rollback(
             primary_client=mock_primary_client,
@@ -109,9 +104,7 @@ class TestRollback:
             {
                 "metadata": {
                     "name": "cluster1",
-                    "annotations": {
-                        "import.open-cluster-management.io/disable-auto-import": "true"
-                    },
+                    "annotations": {"import.open-cluster-management.io/disable-auto-import": "true"},
                 }
             }
         ]
@@ -119,9 +112,7 @@ class TestRollback:
             {
                 "metadata": {
                     "name": "cluster1",
-                    "annotations": {
-                        "import.open-cluster-management.io/disable-auto-import": "true"
-                    },
+                    "annotations": {"import.open-cluster-management.io/disable-auto-import": "true"},
                 }
             }
         ]
@@ -152,9 +143,7 @@ class TestRollback:
         # Verify backup schedule unpaused
         mock_backup_manager.ensure_enabled.assert_called_with("2.12.0")
 
-    def test_rollback_success_without_observability(
-        self, rollback_no_obs, mock_primary_client
-    ):
+    def test_rollback_success_without_observability(self, rollback_no_obs, mock_primary_client):
         """Test successful rollback without observability."""
         mock_primary_client.list_custom_resources.return_value = []
         mock_primary_client.list_managed_clusters.return_value = []
@@ -165,25 +154,19 @@ class TestRollback:
         # Should not scale Thanos
         mock_primary_client.scale_statefulset.assert_not_called()
 
-    def test_enable_auto_import_skips_local_cluster(
-        self, rollback_no_obs, mock_primary_client
-    ):
+    def test_enable_auto_import_skips_local_cluster(self, rollback_no_obs, mock_primary_client):
         """Test that auto-import enabling skips local-cluster."""
         mock_primary_client.list_custom_resources.return_value = [
             {
                 "metadata": {
                     "name": "local-cluster",
-                    "annotations": {
-                        "import.open-cluster-management.io/disable-auto-import": "true"
-                    },
+                    "annotations": {"import.open-cluster-management.io/disable-auto-import": "true"},
                 }
             },
             {
                 "metadata": {
                     "name": "remote-cluster",
-                    "annotations": {
-                        "import.open-cluster-management.io/disable-auto-import": "true"
-                    },
+                    "annotations": {"import.open-cluster-management.io/disable-auto-import": "true"},
                 }
             },
         ]
@@ -191,17 +174,13 @@ class TestRollback:
             {
                 "metadata": {
                     "name": "local-cluster",
-                    "annotations": {
-                        "import.open-cluster-management.io/disable-auto-import": "true"
-                    },
+                    "annotations": {"import.open-cluster-management.io/disable-auto-import": "true"},
                 }
             },
             {
                 "metadata": {
                     "name": "remote-cluster",
-                    "annotations": {
-                        "import.open-cluster-management.io/disable-auto-import": "true"
-                    },
+                    "annotations": {"import.open-cluster-management.io/disable-auto-import": "true"},
                 }
             },
         ]
@@ -213,9 +192,7 @@ class TestRollback:
         args = mock_primary_client.patch_managed_cluster.call_args[1]
         assert args["name"] == "remote-cluster"
 
-    def test_enable_auto_import_skips_clean_clusters(
-        self, rollback_no_obs, mock_primary_client
-    ):
+    def test_enable_auto_import_skips_clean_clusters(self, rollback_no_obs, mock_primary_client):
         """Test that auto-import enabling skips clusters without the annotation."""
         mock_primary_client.list_custom_resources.return_value = [
             {"metadata": {"name": "clean-cluster", "annotations": {}}}
@@ -230,9 +207,7 @@ class TestRollback:
 
     def test_rollback_failure_handling(self, rollback_with_obs, mock_secondary_client):
         """Test rollback failure handling."""
-        mock_secondary_client.delete_custom_resource.side_effect = Exception(
-            "API Error"
-        )
+        mock_secondary_client.delete_custom_resource.side_effect = Exception("API Error")
 
         result = rollback_with_obs.rollback()
 

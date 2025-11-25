@@ -3,11 +3,12 @@
 Tests argument parsing and basic entry point logic.
 """
 
-import pytest
-import sys
 import argparse
+import sys
 from pathlib import Path
 from unittest.mock import Mock, patch
+
+import pytest
 
 # Add parent to path to import modules directly
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -27,9 +28,7 @@ class TestArgParsing:
 
     def test_validate_only_mode(self):
         """Test parsing validate-only mode."""
-        with patch(
-            "sys.argv", ["script.py", "--primary-context", "p1", "--validate-only"]
-        ):
+        with patch("sys.argv", ["script.py", "--primary-context", "p1", "--validate-only"]):
             args = parse_args()
             assert args.validate_only is True
             assert args.dry_run is False
@@ -60,9 +59,7 @@ class TestArgParsing:
 
     def test_decommission_mode(self):
         """Test parsing decommission mode."""
-        with patch(
-            "sys.argv", ["script.py", "--primary-context", "p1", "--decommission"]
-        ):
+        with patch("sys.argv", ["script.py", "--primary-context", "p1", "--decommission"]):
             args = parse_args()
             assert args.decommission is True
 
@@ -77,9 +74,7 @@ class TestArgParsing:
 
     def test_method_selection(self):
         """Test method selection argument."""
-        with patch(
-            "sys.argv", ["script.py", "--primary-context", "p1", "--method", "full"]
-        ):
+        with patch("sys.argv", ["script.py", "--primary-context", "p1", "--method", "full"]):
             args = parse_args()
             assert args.method == "full"
 

@@ -9,13 +9,13 @@ Test categories:
 """
 
 import os
-import subprocess
-from pathlib import Path
 import re
-import tempfile
 import stat
-import pytest
+import subprocess
+import tempfile
+from pathlib import Path
 
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS_DIR = REPO_ROOT / "scripts"
@@ -447,9 +447,7 @@ def test_preflight_success_passive_method(mock_oc_success):
     assert code == 0, f"Expected exit 0, got {code}. Output:\n{out}"
     assert "ALL CRITICAL CHECKS PASSED" in out
     assert "Failed:          0" in out
-    assert (
-        "Passive sync" in out.lower() or "Method 1" in out
-    )  # Should check passive sync
+    assert "Passive sync" in out.lower() or "Method 1" in out  # Should check passive sync
     assert "Observability namespace exists" in out
     assert "MultiClusterObservability CR found" in out
     assert "'thanos-object-storage' secret exists" in out

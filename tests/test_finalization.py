@@ -3,11 +3,12 @@
 Tests cover Finalization class for completing the switchover.
 """
 
-import pytest
 import sys
 import time
 from pathlib import Path
-from unittest.mock import Mock, patch, call
+from unittest.mock import Mock, call, patch
+
+import pytest
 
 # Add parent to path to import modules directly
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -49,9 +50,7 @@ def finalization(mock_secondary_client, mock_state_manager, mock_backup_manager)
 
 
 @pytest.fixture
-def finalization_with_primary(
-    mock_secondary_client, mock_state_manager, mock_backup_manager
-):
+def finalization_with_primary(mock_secondary_client, mock_state_manager, mock_backup_manager):
     """Create Finalization instance with primary client."""
     primary = Mock()
     fin = Finalization(
@@ -98,9 +97,7 @@ class TestFinalization:
             [{"metadata": {"name": "schedule"}, "spec": {"paused": False}}],
             [],  # Initial backups
             [],  # Loop iteration 1
-            [
-                {"metadata": {"name": "backup-1"}, "status": {"phase": "InProgress"}}
-            ],  # Loop iteration 2 - new backup
+            [{"metadata": {"name": "backup-1"}, "status": {"phase": "InProgress"}}],  # Loop iteration 2 - new backup
         ]
 
         mock_secondary_client.get_custom_resource.return_value = {
@@ -127,9 +124,7 @@ class TestFinalization:
             ]
         )
 
-    def test_finalize_skips_completed_steps(
-        self, finalization, mock_state_manager, mock_backup_manager
-    ):
+    def test_finalize_skips_completed_steps(self, finalization, mock_state_manager, mock_backup_manager):
         """Test that completed steps are skipped."""
         mock_state_manager.is_step_completed.return_value = True
 
@@ -141,9 +136,7 @@ class TestFinalization:
         # but we can infer from lack of client calls if we didn't mock list_custom_resources
 
     @patch("modules.finalization.time")
-    def test_verify_new_backups_success(
-        self, mock_time, finalization, mock_secondary_client
-    ):
+    def test_verify_new_backups_success(self, mock_time, finalization, mock_secondary_client):
         """Test backup verification logic finding a new backup."""
         mock_time.time.return_value = 0
 
@@ -162,9 +155,7 @@ class TestFinalization:
         assert mock_secondary_client.list_custom_resources.call_count == 3
 
     @patch("modules.finalization.time")
-    def test_verify_new_backups_timeout(
-        self, mock_time, finalization, mock_secondary_client
-    ):
+    def test_verify_new_backups_timeout(self, mock_time, finalization, mock_secondary_client):
         """Test backup verification timeout."""
         # Mock time to simulate timeout
         # Start at 0, then check > timeout
@@ -185,9 +176,7 @@ class TestFinalization:
 
         assert result is False
 
-    def test_verify_backup_schedule_enabled_failure(
-        self, finalization, mock_secondary_client
-    ):
+    def test_verify_backup_schedule_enabled_failure(self, finalization, mock_secondary_client):
         """Backup schedule verification should fail when paused."""
         mock_secondary_client.list_custom_resources.return_value = [
             {"metadata": {"name": "schedule"}, "spec": {"paused": True}}
@@ -196,9 +185,7 @@ class TestFinalization:
         with pytest.raises(RuntimeError):
             finalization._verify_backup_schedule_enabled()
 
-    def test_verify_multiclusterhub_health_failure(
-        self, finalization, mock_secondary_client
-    ):
+    def test_verify_multiclusterhub_health_failure(self, finalization, mock_secondary_client):
         """MCH verification should fail when not running."""
         mock_secondary_client.get_custom_resource.return_value = {
             "metadata": {"name": "multiclusterhub"},
@@ -211,20 +198,14 @@ class TestFinalization:
         with pytest.raises(RuntimeError):
             finalization._verify_multiclusterhub_health()
 
-    def test_verify_old_hub_state(
-        self, finalization_with_primary, mock_secondary_client
-    ):
+    def test_verify_old_hub_state(self, finalization_with_primary, mock_secondary_client):
         """Old hub checks should inspect clusters, backups, and observability pods."""
         fin, primary = finalization_with_primary
         primary.list_custom_resources.side_effect = [
             [
                 {
                     "metadata": {"name": "cluster1"},
-                    "status": {
-                        "conditions": [
-                            {"type": "ManagedClusterConditionAvailable", "status": "False"}
-                        ]
-                    },
+                    "status": {"conditions": [{"type": "ManagedClusterConditionAvailable", "status": "False"}]},
                 }
             ],
             [{"metadata": {"name": "schedule"}, "spec": {"paused": True}}],

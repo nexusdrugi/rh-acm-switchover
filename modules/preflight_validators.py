@@ -293,10 +293,7 @@ class HubComponentValidator:
                 dpa = dpas[0]
                 dpa_name = dpa.get("metadata", {}).get("name", "unknown")
                 conditions = dpa.get("status", {}).get("conditions", [])
-                reconciled = any(
-                    c.get("type") == "Reconciled" and c.get("status") == "True"
-                    for c in conditions
-                )
+                reconciled = any(c.get("type") == "Reconciled" and c.get("status") == "True" for c in conditions)
 
                 if reconciled:
                     self.reporter.add_result(
@@ -362,9 +359,7 @@ class BackupValidator:
             phase = latest_backup.get("status", {}).get("phase", "unknown")
 
             in_progress = [
-                b.get("metadata", {}).get("name")
-                for b in backups
-                if b.get("status", {}).get("phase") == "InProgress"
+                b.get("metadata", {}).get("name") for b in backups if b.get("status", {}).get("phase") == "InProgress"
             ]
 
             if in_progress:
@@ -565,9 +560,7 @@ class ObservabilityPrereqValidator:
         if not secondary.namespace_exists(OBSERVABILITY_NAMESPACE):
             return
 
-        if secondary.secret_exists(
-            OBSERVABILITY_NAMESPACE, THANOS_OBJECT_STORAGE_SECRET
-        ):
+        if secondary.secret_exists(OBSERVABILITY_NAMESPACE, THANOS_OBJECT_STORAGE_SECRET):
             self.reporter.add_result(
                 "Observability object storage secret",
                 True,

@@ -32,13 +32,13 @@ from lib import (
 )
 from lib.constants import EXIT_FAILURE, EXIT_INTERRUPT, EXIT_SUCCESS
 from modules import (
+    Decommission,
+    Finalization,
+    PostActivationVerification,
     PreflightValidator,
     PrimaryPreparation,
-    SecondaryActivation,
-    PostActivationVerification,
-    Finalization,
     Rollback,
-    Decommission,
+    SecondaryActivation,
 )
 
 PhaseHandler = Callable[
@@ -75,9 +75,7 @@ Examples:
     )
 
     # Context arguments
-    parser.add_argument(
-        "--primary-context", required=True, help="Kubernetes context for primary hub"
-    )
+    parser.add_argument("--primary-context", required=True, help="Kubernetes context for primary hub")
     parser.add_argument(
         "--secondary-context",
         help="Kubernetes context for secondary hub (required for switchover/rollback)",
@@ -95,12 +93,8 @@ Examples:
         action="store_true",
         help="Show planned actions without executing them",
     )
-    mode_group.add_argument(
-        "--rollback", action="store_true", help="Rollback to primary hub"
-    )
-    mode_group.add_argument(
-        "--decommission", action="store_true", help="Decommission old hub (interactive)"
-    )
+    mode_group.add_argument("--rollback", action="store_true", help="Rollback to primary hub")
+    mode_group.add_argument("--decommission", action="store_true", help="Decommission old hub (interactive)")
 
     # Switchover options
     parser.add_argument(
@@ -115,8 +109,7 @@ Examples:
         "--state-file",
         default=None,
         help=(
-            "Path to state file for idempotent execution "
-            "(defaults to .state/switchover-<primary>__<secondary>.json)"
+            "Path to state file for idempotent execution " "(defaults to .state/switchover-<primary>__<secondary>.json)"
         ),
     )
     parser.add_argument(
@@ -138,9 +131,7 @@ Examples:
     )
 
     # Logging
-    parser.add_argument(
-        "--verbose", "-v", action="store_true", help="Enable verbose logging"
-    )
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
     parser.add_argument(
         "--log-format",
         choices=["text", "json"],
@@ -154,9 +145,7 @@ Examples:
 def validate_args(args):
     """Validate argument combinations."""
     if not args.decommission and not args.secondary_context:
-        print(
-            "Error: --secondary-context is required for switchover/rollback operations"
-        )
+        print("Error: --secondary-context is required for switchover/rollback operations")
         sys.exit(1)
 
 
@@ -240,12 +229,8 @@ def _run_phase_preflight(
         config["secondary_observability_detected"],
     )
 
-    primary_obs_enabled = (
-        config["primary_observability_detected"] and not args.skip_observability_checks
-    )
-    secondary_obs_enabled = (
-        config["secondary_observability_detected"] and not args.skip_observability_checks
-    )
+    primary_obs_enabled = config["primary_observability_detected"] and not args.skip_observability_checks
+    secondary_obs_enabled = config["secondary_observability_detected"] and not args.skip_observability_checks
 
     state.set_config("primary_has_observability", primary_obs_enabled)
     state.set_config("secondary_has_observability", secondary_obs_enabled)
@@ -377,9 +362,7 @@ def run_rollback(
     logger.warning("ROLLBACK MODE")
     logger.warning("=" * 60)
 
-    if not confirm_action(
-        "\nAre you sure you want to rollback to the primary hub?", default=False
-    ):
+    if not confirm_action("\nAre you sure you want to rollback to the primary hub?", default=False):
         logger.info("Rollback cancelled by user")
         return False
 
@@ -395,9 +378,7 @@ def run_rollback(
 
     if rollback.rollback():
         logger.info("\n✓ Rollback completed successfully!")
-        logger.info(
-            "Allow 5-10 minutes for ManagedClusters to reconnect to primary hub"
-        )
+        logger.info("Allow 5-10 minutes for ManagedClusters to reconnect to primary hub")
         state.reset()
         return True
     else:
@@ -412,9 +393,7 @@ def run_decommission(
     logger: logging.Logger,
 ):
     """Execute decommission of old hub."""
-    decom = Decommission(
-        primary, state.get_config("primary_has_observability", False)
-    )
+    decom = Decommission(primary, state.get_config("primary_has_observability", False))
 
     logger.info("Starting decommission workflow")
 
@@ -520,9 +499,7 @@ def _sanitize_context_identifier(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]", "_", value)
 
 
-def _resolve_state_file(
-    requested_path: Optional[str], primary_ctx: str, secondary_ctx: Optional[str]
-) -> str:
+def _resolve_state_file(requested_path: Optional[str], primary_ctx: str, secondary_ctx: Optional[str]) -> str:
     """Derive the state file path based on contexts unless user provided one."""
     if requested_path and requested_path != DEFAULT_STATE_FILE:
         return requested_path

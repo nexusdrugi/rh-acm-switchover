@@ -9,12 +9,12 @@ from typing import Any, Dict, List, Optional
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 from tenacity import (
+    before_sleep_log,
     retry,
+    retry_if_exception,
+    retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
-    retry_if_exception_type,
-    retry_if_exception,
-    before_sleep_log,
 )
 from urllib3.exceptions import HTTPError
 
@@ -83,15 +83,13 @@ class KubeClient:
         self.core_v1 = client.CoreV1Api()
         self.apps_v1 = client.AppsV1Api()
         self.custom_api = client.CustomObjectsApi()
-        
+
         # Set timeout on API clients
         self.core_v1.api_client.configuration.timeout = request_timeout
         self.apps_v1.api_client.configuration.timeout = request_timeout
         self.custom_api.api_client.configuration.timeout = request_timeout
 
-        logger.info(
-            f"Initialized Kubernetes client for context: {context or 'default'} (timeout: {request_timeout}s)"
-        )
+        logger.info(f"Initialized Kubernetes client for context: {context or 'default'} (timeout: {request_timeout}s)")
 
     @retry_api_call
     def get_namespace(self, name: str) -> Optional[Dict]:
@@ -317,9 +315,7 @@ class KubeClient:
     ) -> Dict:
         """Create a custom resource."""
         if self.dry_run:
-            logger.info(
-                f"[DRY-RUN] Would create {plural}: {body.get('metadata', {}).get('name')}"
-            )
+            logger.info(f"[DRY-RUN] Would create {plural}: {body.get('metadata', {}).get('name')}")
             return body
 
         try:
@@ -366,9 +362,7 @@ class KubeClient:
                     name=name,
                 )
             else:
-                self.custom_api.delete_cluster_custom_object(
-                    group=group, version=version, plural=plural, name=name
-                )
+                self.custom_api.delete_cluster_custom_object(group=group, version=version, plural=plural, name=name)
             return True
         except ApiException as e:
             if e.status == 404:
@@ -400,16 +394,12 @@ class KubeClient:
     def scale_deployment(self, name: str, namespace: str, replicas: int) -> Dict:
         """Scale a deployment."""
         if self.dry_run:
-            logger.info(
-                f"[DRY-RUN] Would scale deployment {namespace}/{name} to {replicas} replicas"
-            )
+            logger.info(f"[DRY-RUN] Would scale deployment {namespace}/{name} to {replicas} replicas")
             return {}
 
         try:
             body = {"spec": {"replicas": replicas}}
-            result = self.apps_v1.patch_namespaced_deployment_scale(
-                name=name, namespace=namespace, body=body
-            )
+            result = self.apps_v1.patch_namespaced_deployment_scale(name=name, namespace=namespace, body=body)
             return result.to_dict()
         except ApiException as e:
             if is_retryable_error(e):
@@ -421,16 +411,12 @@ class KubeClient:
     def scale_statefulset(self, name: str, namespace: str, replicas: int) -> Dict:
         """Scale a statefulset."""
         if self.dry_run:
-            logger.info(
-                f"[DRY-RUN] Would scale statefulset {namespace}/{name} to {replicas} replicas"
-            )
+            logger.info(f"[DRY-RUN] Would scale statefulset {namespace}/{name} to {replicas} replicas")
             return {}
 
         try:
             body = {"spec": {"replicas": replicas}}
-            result = self.apps_v1.patch_namespaced_stateful_set_scale(
-                name=name, namespace=namespace, body=body
-            )
+            result = self.apps_v1.patch_namespaced_stateful_set_scale(name=name, namespace=namespace, body=body)
             return result.to_dict()
         except ApiException as e:
             if is_retryable_error(e):
@@ -447,18 +433,8 @@ class KubeClient:
 
         try:
             now = time.strftime("%Y%m%d%H%M%S")
-            body = {
-                "spec": {
-                    "template": {
-                        "metadata": {
-                            "annotations": {"kubectl.kubernetes.io/restartedAt": now}
-                        }
-                    }
-                }
-            }
-            result = self.apps_v1.patch_namespaced_deployment(
-                name=name, namespace=namespace, body=body
-            )
+            body = {"spec": {"template": {"metadata": {"annotations": {"kubectl.kubernetes.io/restartedAt": now}}}}}
+            result = self.apps_v1.patch_namespaced_deployment(name=name, namespace=namespace, body=body)
             return result.to_dict()
         except ApiException as e:
             if is_retryable_error(e):
@@ -467,14 +443,10 @@ class KubeClient:
             raise
 
     @retry_api_call
-    def get_pods(
-        self, namespace: str, label_selector: Optional[str] = None
-    ) -> List[Dict]:
+    def get_pods(self, namespace: str, label_selector: Optional[str] = None) -> List[Dict]:
         """List pods in a namespace."""
         try:
-            result = self.core_v1.list_namespaced_pod(
-                namespace=namespace, label_selector=label_selector
-            )
+            result = self.core_v1.list_namespaced_pod(namespace=namespace, label_selector=label_selector)
             return [pod.to_dict() for pod in result.items]
         except ApiException as e:
             if e.status == 404:
@@ -516,9 +488,7 @@ class KubeClient:
             pods = self.get_pods(namespace, label_selector)
 
             if expected_count is not None and len(pods) < expected_count:
-                logger.debug(
-                    "Waiting for %s pods, found %s", expected_count, len(pods)
-                )
+                logger.debug("Waiting for %s pods, found %s", expected_count, len(pods))
                 time.sleep(5)
                 continue
 
@@ -526,10 +496,7 @@ class KubeClient:
             for pod in pods:
                 conditions = pod.get("status", {}).get("conditions", [])
                 for condition in conditions:
-                    if (
-                        condition.get("type") == "Ready"
-                        and condition.get("status") == "True"
-                    ):
+                    if condition.get("type") == "Ready" and condition.get("status") == "True":
                         ready_count += 1
                         break
 

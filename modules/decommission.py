@@ -51,9 +51,7 @@ class Decommission:
         try:
             # Step 12.1-12.2: Delete MultiClusterObservability
             if self.has_observability:
-                if not interactive or confirm_action(
-                    "\nDelete MultiClusterObservability resource?", default=False
-                ):
+                if not interactive or confirm_action("\nDelete MultiClusterObservability resource?", default=False):
                     self._delete_observability()
                 else:
                     logger.info("Skipped: Delete MultiClusterObservability")
@@ -218,7 +216,4 @@ class Decommission:
                 DECOMMISSION_POD_TIMEOUT,
             )
 
-        logger.info(
-            "Decommission complete. Backup data in object storage remains "
-            "available for the new hub."
-        )
+        logger.info("Decommission complete. Backup data in object storage remains " "available for the new hub.")

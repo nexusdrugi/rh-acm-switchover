@@ -4,17 +4,18 @@ Modernized pytest tests with fixtures, markers, and comprehensive coverage
 of validation reporters and validators.
 """
 
-import pytest
 from unittest.mock import Mock, patch
 
+import pytest
+
+from lib.constants import ACM_NAMESPACE, BACKUP_NAMESPACE
 from modules.preflight_validators import (
-    ValidationReporter,
     NamespaceValidator,
     ObservabilityDetector,
-    ToolingValidator,
     ObservabilityPrereqValidator,
+    ToolingValidator,
+    ValidationReporter,
 )
-from lib.constants import ACM_NAMESPACE, BACKUP_NAMESPACE
 
 
 @pytest.fixture
@@ -80,9 +81,7 @@ class TestValidationReporter:
         reporter.print_summary()
 
         # Verify info log calls
-        assert any(
-            "2/2 checks passed" in str(call) for call in mock_logger.info.call_args_list
-        )
+        assert any("2/2 checks passed" in str(call) for call in mock_logger.info.call_args_list)
 
     @patch("modules.preflight_validators.logger")
     def test_print_summary_with_failures(self, mock_logger, reporter):
@@ -173,9 +172,7 @@ class TestObservabilityDetector:
             (False, False, "not detected (optional component)"),
         ],
     )
-    def test_detect_reports_per_hub_presence(
-        self, reporter, primary_has, secondary_has, expected_message
-    ):
+    def test_detect_reports_per_hub_presence(self, reporter, primary_has, secondary_has, expected_message):
         primary = Mock()
         secondary = Mock()
         primary.namespace_exists.return_value = primary_has
@@ -195,6 +192,7 @@ class TestToolingValidator:
     @patch("modules.preflight_validators.shutil.which")
     def test_tooling_validator_success(self, mock_which, reporter):
         """Succeeds when oc or kubectl and jq are present."""
+
         def fake_which(binary):
             if binary in ("oc", "jq"):
                 return f"/usr/bin/{binary}"
