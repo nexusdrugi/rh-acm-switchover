@@ -28,7 +28,7 @@ This document tracks the progress of reliability hardening tasks for the ACM Swi
 
 ## Low Priority
 
-- [ ] **5. Structured Logging** (Est: 2h)
+- [x] **5. Structured Logging** (Est: 2h)
     - Update `lib/utils.py` to support JSON logging via `--log-format=json`.
     - Add context to log messages (cluster, resource, phase).
 
