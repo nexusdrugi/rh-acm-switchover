@@ -34,10 +34,10 @@ This document tracks the progress of reliability hardening tasks for the ACM Swi
 
 ## Documentation Updates (Post-Implementation)
 
-- [ ] Update `requirements.txt` with `tenacity`.
-- [ ] Update `ARCHITECTURE.md` to reflect:
+- [x] Update `requirements.txt` with `tenacity`.
+- [x] Update `ARCHITECTURE.md` to reflect:
     - New exception handling strategy.
     - Retry logic in Kubernetes Client component.
     - Updated Mermaid diagrams if component interactions change.
-- [ ] Update `PRD.md` (Reliability NFRs).
-- [ ] Update `USAGE.md` (new flags like `--log-format` if added).
+- [x] Update `PRD.md` (Reliability NFRs).
+- [x] Update `USAGE.md` (new flags like `--log-format` if added).
