@@ -20,7 +20,7 @@
 6. [x] **Harden `StateManager.get_current_phase`**  
    - Catch `ValueError` when unknown strings are stored and fall back to `Phase.INIT` (or instruct the user to reset), instead of crashing.
 
-7. [ ] **Handle Kubernetes list pagination in `lib/kube_client.list_custom_resources`**  
+7. [x] **Handle Kubernetes list pagination in `lib/kube_client.list_custom_resources`**  
    - Loop on `metadata.continue` so large fleets don’t silently drop items, ensuring pre-flight and verification steps see every resource.
 
 8. [ ] **Loosen `wait_for_pods_ready` pod count handling**  

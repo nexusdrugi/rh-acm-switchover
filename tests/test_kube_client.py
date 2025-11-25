@@ -199,6 +199,28 @@ class TestKubeClient:
         assert result == {"status": "scaled"}
         mock_k8s_apis["apps_api"].patch_namespaced_deployment_scale.assert_called_once()
 
+    def test_list_custom_resources_pagination(self, kube_client, mock_k8s_apis):
+        """Ensure list_custom_resources follows continue tokens."""
+        mock_k8s_apis["custom_api"].list_cluster_custom_object.side_effect = [
+            {
+                "items": [{"metadata": {"name": "item1"}}],
+                "metadata": {"continue": "token"},
+            },
+            {
+                "items": [{"metadata": {"name": "item2"}}],
+                "metadata": {},
+            },
+        ]
+
+        results = kube_client.list_custom_resources(
+            "cluster.open-cluster-management.io",
+            "v1",
+            "managedclusters",
+        )
+
+        assert [item["metadata"]["name"] for item in results] == ["item1", "item2"]
+        assert mock_k8s_apis["custom_api"].list_cluster_custom_object.call_count == 2
+
     def test_scale_statefulset(self, kube_client, mock_k8s_apis):
         """Test scaling statefulset."""
         response = MagicMock()

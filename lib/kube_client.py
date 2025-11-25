@@ -184,29 +184,44 @@ class KubeClient:
         Returns:
             List of resource dicts
         """
-        try:
-            if namespace:
-                result = self.custom_api.list_namespaced_custom_object(
-                    group=group,
-                    version=version,
-                    namespace=namespace,
-                    plural=plural,
-                    label_selector=label_selector,
-                )
-            else:
-                result = self.custom_api.list_cluster_custom_object(
-                    group=group,
-                    version=version,
-                    plural=plural,
-                    label_selector=label_selector,
-                )
-            return result.get("items", [])
-        except ApiException as e:
-            if e.status == 404:
-                return []
-            if is_retryable_error(e):
+        items: List[Dict] = []
+        continue_token: Optional[str] = None
+
+        while True:
+            try:
+                if namespace:
+                    result = self.custom_api.list_namespaced_custom_object(
+                        group=group,
+                        version=version,
+                        namespace=namespace,
+                        plural=plural,
+                        label_selector=label_selector,
+                        _continue=continue_token,
+                    )
+                else:
+                    result = self.custom_api.list_cluster_custom_object(
+                        group=group,
+                        version=version,
+                        plural=plural,
+                        label_selector=label_selector,
+                        _continue=continue_token,
+                    )
+            except ApiException as e:
+                if e.status == 404:
+                    return []
+                if is_retryable_error(e):
+                    raise
                 raise
-            raise
+
+            items.extend(result.get("items", []))
+
+            metadata = result.get("metadata") or {}
+            continue_token = metadata.get("continue")
+
+            if not continue_token:
+                break
+
+        return items
 
     @retry_api_call
     def patch_custom_resource(
