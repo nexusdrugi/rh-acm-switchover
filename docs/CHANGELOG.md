@@ -7,8 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2025-11-19
+
+### Changed
+
+#### Directory Structure
+
+- Moved container build files (`Containerfile`, `get-pip.py`, `.containerignore`) to `container-bootstrap/` directory to declutter root.
+- Moved container documentation to `docs/` folder.
+
+#### Scripts
+
+- Refactored `scripts/preflight-check.sh` and `scripts/postflight-check.sh` to use shared configuration from `scripts/constants.sh`.
+- Improved maintainability by centralizing color codes and common variables.
+
+#### Testing
+
+- Updated `tests/test_scripts_integration.py` to support dynamic restore finding and better observability mocking.
+- Enhanced test coverage for script integration.
+
+#### Documentation
+
+- Updated `scripts/README.md` with corrected Mermaid diagrams for preflight and postflight workflows.
+- Updated `docs/CONTAINER_USAGE.md` to reflect new build context location.
+- Updated `.github/workflows/container-build.yml` to use `container-bootstrap/` context.
+
 ### Added
-- Initial release of ACM Switchover Automation tool
+
+- `scripts/constants.sh` for shared script variables.
+- `container-bootstrap/` directory for container build artifacts.
 
 ## [1.0.0] - 2025-11-18
 

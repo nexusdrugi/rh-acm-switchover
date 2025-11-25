@@ -33,6 +33,7 @@ Automated validation scripts to ensure safe and successful switchovers:
 
 - **[Pre-flight Validation](scripts/preflight-check.sh)** - Verify all prerequisites before switchover
 - **[Post-flight Validation](scripts/postflight-check.sh)** - Confirm switchover completed successfully
+- **[Shared Configuration](scripts/constants.sh)** - Centralized configuration for validation scripts
 
 See [scripts/README.md](scripts/README.md) for detailed usage and workflow diagrams.
 
