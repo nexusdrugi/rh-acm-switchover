@@ -266,18 +266,18 @@ jobs:
     - name: Validate state file structure
       run: |
         python -c "
-import json
-from lib.utils import StateManager
-state = StateManager('/tmp/test-state.json')
-state.save_state()
-with open('/tmp/test-state.json', 'r') as f:
-    data = json.load(f)
-    assert 'current_phase' in data
-    assert 'completed_steps' in data
-    assert 'config' in data
-    assert 'errors' in data
-print('✓ State file structure valid')
-"
+        import json
+        from lib.utils import StateManager
+        state = StateManager('/tmp/test-state.json')
+        state.save_state()
+        with open('/tmp/test-state.json', 'r') as f:
+            data = json.load(f)
+            assert 'current_phase' in data
+            assert 'completed_steps' in data
+            assert 'config' in data
+            assert 'errors' in data
+        print('State file structure valid')
+        "
 
   build-container:
     name: Container Build Test
