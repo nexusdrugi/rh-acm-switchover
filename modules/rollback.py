@@ -31,9 +31,7 @@ class Rollback:
         self.acm_version = acm_version
         self.has_observability = has_observability
         self.dry_run = dry_run
-        self.backup_manager = BackupScheduleManager(
-            primary_client, state_manager, "primary hub", dry_run=dry_run
-        )
+        self.backup_manager = BackupScheduleManager(primary_client, state_manager, "primary hub", dry_run=dry_run)
 
     def rollback(self) -> bool:
         """Execute rollback to primary hub."""

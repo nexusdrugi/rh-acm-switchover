@@ -578,8 +578,7 @@ class ManagedClusterBackupValidator:
                 # Check if cluster is joined (has Joined condition = True)
                 conditions = mc.get("status", {}).get("conditions", [])
                 is_joined = any(
-                    c.get("type") == "ManagedClusterJoined" and c.get("status") == "True"
-                    for c in conditions
+                    c.get("type") == "ManagedClusterJoined" and c.get("status") == "True" for c in conditions
                 )
                 if is_joined:
                     joined_clusters.append(mc_name)

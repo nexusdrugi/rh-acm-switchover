@@ -38,7 +38,19 @@ class TestArgParsing:
 
     def test_validate_only_mode(self):
         """Test parsing validate-only mode."""
-        with patch("sys.argv", ["script.py", "--primary-context", "p1", "--old-hub-action", "secondary", "--method", "passive", "--validate-only"]):
+        with patch(
+            "sys.argv",
+            [
+                "script.py",
+                "--primary-context",
+                "p1",
+                "--old-hub-action",
+                "secondary",
+                "--method",
+                "passive",
+                "--validate-only",
+            ],
+        ):
             args = parse_args()
             assert args.validate_only is True
             assert args.dry_run is False
@@ -47,7 +59,10 @@ class TestArgParsing:
 
     def test_dry_run_mode(self):
         """Test parsing dry-run mode."""
-        with patch("sys.argv", ["script.py", "--primary-context", "p1", "--old-hub-action", "none", "--method", "passive", "--dry-run"]):
+        with patch(
+            "sys.argv",
+            ["script.py", "--primary-context", "p1", "--old-hub-action", "none", "--method", "passive", "--dry-run"],
+        ):
             args = parse_args()
             assert args.dry_run is True
             assert args.validate_only is False
@@ -75,7 +90,19 @@ class TestArgParsing:
 
     def test_decommission_mode(self):
         """Test parsing decommission mode."""
-        with patch("sys.argv", ["script.py", "--primary-context", "p1", "--old-hub-action", "none", "--method", "passive", "--decommission"]):
+        with patch(
+            "sys.argv",
+            [
+                "script.py",
+                "--primary-context",
+                "p1",
+                "--old-hub-action",
+                "none",
+                "--method",
+                "passive",
+                "--decommission",
+            ],
+        ):
             args = parse_args()
             assert args.decommission is True
 
@@ -83,14 +110,26 @@ class TestArgParsing:
         """Test that mutually exclusive flags raise error."""
         with patch(
             "sys.argv",
-            ["script.py", "--primary-context", "p1", "--old-hub-action", "none", "--method", "passive", "--dry-run", "--validate-only"],
+            [
+                "script.py",
+                "--primary-context",
+                "p1",
+                "--old-hub-action",
+                "none",
+                "--method",
+                "passive",
+                "--dry-run",
+                "--validate-only",
+            ],
         ):
             with pytest.raises(SystemExit):
                 parse_args()
 
     def test_method_selection(self):
         """Test method selection argument."""
-        with patch("sys.argv", ["script.py", "--primary-context", "p1", "--old-hub-action", "decommission", "--method", "full"]):
+        with patch(
+            "sys.argv", ["script.py", "--primary-context", "p1", "--old-hub-action", "decommission", "--method", "full"]
+        ):
             args = parse_args()
             assert args.method == "full"
             assert args.old_hub_action == "decommission"
@@ -99,12 +138,17 @@ class TestArgParsing:
         """Test method only accepts valid choices."""
         # Valid choices
         for method in ["passive", "full"]:
-            with patch("sys.argv", ["script.py", "--primary-context", "p1", "--old-hub-action", "secondary", "--method", method]):
+            with patch(
+                "sys.argv",
+                ["script.py", "--primary-context", "p1", "--old-hub-action", "secondary", "--method", method],
+            ):
                 args = parse_args()
                 assert args.method == method
 
         # Invalid choice
-        with patch("sys.argv", ["script.py", "--primary-context", "p1", "--old-hub-action", "secondary", "--method", "invalid"]):
+        with patch(
+            "sys.argv", ["script.py", "--primary-context", "p1", "--old-hub-action", "secondary", "--method", "invalid"]
+        ):
             with pytest.raises(SystemExit):
                 parse_args()
 
@@ -112,11 +156,15 @@ class TestArgParsing:
         """Test old-hub-action only accepts valid choices."""
         # Valid choices
         for action in ["secondary", "decommission", "none"]:
-            with patch("sys.argv", ["script.py", "--primary-context", "p1", "--old-hub-action", action, "--method", "passive"]):
+            with patch(
+                "sys.argv", ["script.py", "--primary-context", "p1", "--old-hub-action", action, "--method", "passive"]
+            ):
                 args = parse_args()
                 assert args.old_hub_action == action
 
         # Invalid choice
-        with patch("sys.argv", ["script.py", "--primary-context", "p1", "--old-hub-action", "invalid", "--method", "passive"]):
+        with patch(
+            "sys.argv", ["script.py", "--primary-context", "p1", "--old-hub-action", "invalid", "--method", "passive"]
+        ):
             with pytest.raises(SystemExit):
                 parse_args()

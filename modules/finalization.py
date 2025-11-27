@@ -117,27 +117,27 @@ class Finalization:
 
     def _enable_backup_schedule(self):
         """Enable BackupSchedule on new hub (version-aware).
-        
+
         Important: Before creating the BackupSchedule, we must delete any active
         restore resources. ACM will not allow a BackupSchedule to run while a
         restore is active (to prevent data corruption).
         """
         logger.info("Enabling BackupSchedule on new hub...")
-        
+
         # First, delete any active restore resources
         self._cleanup_restore_resources()
-        
+
         # Now create/enable the BackupSchedule
         self.backup_manager.ensure_enabled(self.acm_version)
 
     def _cleanup_restore_resources(self):
         """Delete restore resources before enabling BackupSchedule.
-        
+
         ACM backup operator won't allow BackupSchedule to be active while
         a Restore resource exists. We need to clean them up first.
         """
         restore_names = [RESTORE_PASSIVE_SYNC_NAME, RESTORE_FULL_NAME]
-        
+
         for restore_name in restore_names:
             try:
                 existing = self.secondary.get_custom_resource(
@@ -147,7 +147,7 @@ class Finalization:
                     name=restore_name,
                     namespace=BACKUP_NAMESPACE,
                 )
-                
+
                 if existing:
                     logger.info(f"Deleting restore resource: {restore_name}")
                     self.secondary.delete_custom_resource(
@@ -301,7 +301,7 @@ class Finalization:
     def _handle_old_hub(self):
         """
         Handle the old primary hub based on --old-hub-action setting.
-        
+
         Options:
         - 'secondary': Set up passive sync restore for failback capability (default)
         - 'decommission': Remove ACM components from old hub
@@ -331,7 +331,7 @@ class Finalization:
     def _decommission_old_hub(self):
         """
         Decommission the old primary hub by removing ACM components.
-        
+
         This is run non-interactively as part of the switchover finalization.
         """
         if not self.primary:
@@ -348,7 +348,7 @@ class Finalization:
         logger.warning("=" * 60)
 
         decom = Decommission(self.primary, self.primary_has_observability, dry_run=self.dry_run)
-        
+
         # Run decommission non-interactively since we're in automated mode
         if decom.decommission(interactive=False):
             logger.info("Old hub decommissioned successfully")
@@ -359,11 +359,11 @@ class Finalization:
     def _setup_old_hub_as_secondary(self):
         """
         Set up the old primary hub as a new secondary with passive sync restore.
-        
+
         After switchover, the old primary should:
         1. NOT have a BackupSchedule (already handled by primary_prep)
         2. HAVE a passive sync restore to continuously receive backups from new primary
-        
+
         This ensures the old hub is ready for a future failback if needed.
         """
         if not self.primary:
@@ -423,7 +423,7 @@ class Finalization:
     def _fix_backup_schedule_collision(self):
         """
         Fix BackupSchedule collision by recreating it.
-        
+
         After switchover, the new primary's BackupSchedule may show "BackupCollision"
         because it detects old backups from the previous primary in storage.
         Recreating the BackupSchedule resets this state.
@@ -447,7 +447,7 @@ class Finalization:
         schedule = schedules[0]
         schedule_name = schedule.get("metadata", {}).get("name", BACKUP_SCHEDULE_DEFAULT_NAME)
         phase = schedule.get("status", {}).get("phase", "")
-        
+
         if phase != "BackupCollision":
             logger.info(f"BackupSchedule {schedule_name} is healthy (phase: {phase})")
             return
@@ -467,7 +467,7 @@ class Finalization:
                 namespace=BACKUP_NAMESPACE,
             )
             logger.info(f"Deleted old BackupSchedule {schedule_name}")
-            
+
             # Wait a moment for deletion
             time.sleep(5)
 

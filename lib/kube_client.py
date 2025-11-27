@@ -306,7 +306,7 @@ class KubeClient:
                     group=group, version=version, plural=plural, name=name, body=patch
                 )
                 logger.debug(f"KUBE_CLIENT: patch_cluster_custom_object returned successfully")
-            
+
             logger.debug(f"KUBE_CLIENT: Patch result keys: {list(result.keys()) if result else 'None'}")
             return result
         except ApiException as e:
