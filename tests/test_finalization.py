@@ -92,9 +92,10 @@ class TestFinalization:
         # Mock time to avoid loops
         mock_time.time.side_effect = [0, 1, 2, 3]
 
-        # Mock list responses: schedule, initial backups, loop 1, loop 2
+        # Mock list responses: schedule verification, collision check, initial backups, loop 1, loop 2
         mock_secondary_client.list_custom_resources.side_effect = [
-            [{"metadata": {"name": "schedule"}, "spec": {"paused": False}}],
+            [{"metadata": {"name": "schedule"}, "spec": {"paused": False}}],  # verify_backup_schedule_enabled
+            [{"metadata": {"name": "schedule"}, "spec": {}, "status": {"phase": "Enabled"}}],  # fix_backup_collision
             [],  # Initial backups
             [],  # Loop iteration 1
             [{"metadata": {"name": "backup-1"}, "status": {"phase": "InProgress"}}],  # Loop iteration 2 - new backup
@@ -112,15 +113,17 @@ class TestFinalization:
 
         assert result is True
 
-        # Verify steps
+        # Verify steps (now 6 steps with collision fix and old hub handling)
         mock_backup_manager.ensure_enabled.assert_called_with("2.12.0")
-        assert mock_state_manager.mark_step_completed.call_count == 4
+        assert mock_state_manager.mark_step_completed.call_count == 6
         mock_state_manager.mark_step_completed.assert_has_calls(
             [
                 call("enable_backup_schedule"),
                 call("verify_backup_schedule_enabled"),
+                call("fix_backup_collision"),
                 call("verify_new_backups"),
                 call("verify_mch_health"),
+                call("handle_old_hub"),
             ]
         )
 

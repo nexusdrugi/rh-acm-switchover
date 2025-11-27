@@ -11,6 +11,7 @@ from lib.kube_client import KubeClient
 from lib.utils import StateManager
 
 from .backup_schedule import BackupScheduleManager
+from .decommission import Decommission
 
 logger = logging.getLogger("acm_switchover")
 
@@ -26,6 +27,7 @@ class Finalization:
         primary_client: Optional[KubeClient] = None,
         primary_has_observability: bool = False,
         dry_run: bool = False,
+        old_hub_action: str = "secondary",
     ):
         self.secondary = secondary_client
         self.state = state_manager
@@ -33,10 +35,12 @@ class Finalization:
         self.primary = primary_client
         self.primary_has_observability = primary_has_observability
         self.dry_run = dry_run
+        self.old_hub_action = old_hub_action  # "secondary", "decommission", or "none"
         self.backup_manager = BackupScheduleManager(
             secondary_client,
             state_manager,
             "secondary hub",
+            dry_run=dry_run,
         )
 
     def finalize(self) -> bool:
@@ -62,6 +66,13 @@ class Finalization:
             else:
                 logger.info("Step already completed: verify_backup_schedule_enabled")
 
+            # Fix BackupSchedule collision if detected
+            if not self.state.is_step_completed("fix_backup_collision"):
+                self._fix_backup_schedule_collision()
+                self.state.mark_step_completed("fix_backup_collision")
+            else:
+                logger.info("Step already completed: fix_backup_collision")
+
             # Verify new backups are being created
             if not self.state.is_step_completed("verify_new_backups"):
                 self._verify_new_backups()
@@ -75,7 +86,14 @@ class Finalization:
             else:
                 logger.info("Step already completed: verify_mch_health")
 
-            if self.primary:
+            # Handle old primary hub based on --old-hub-action
+            if not self.state.is_step_completed("handle_old_hub"):
+                self._handle_old_hub()
+                self.state.mark_step_completed("handle_old_hub")
+            else:
+                logger.info("Step already completed: handle_old_hub")
+
+            if self.primary and self.old_hub_action != "decommission":
                 self._verify_old_hub_state()
 
             logger.info("Finalization completed successfully")
@@ -268,6 +286,203 @@ class Finalization:
             raise RuntimeError("ACM namespace still has non-running pods: " + ", ".join(non_running))
 
         logger.info("MultiClusterHub %s is Running and all pods are healthy", mch_name)
+
+    def _handle_old_hub(self):
+        """
+        Handle the old primary hub based on --old-hub-action setting.
+        
+        Options:
+        - 'secondary': Set up passive sync restore for failback capability (default)
+        - 'decommission': Remove ACM components from old hub
+        - 'none': Leave old hub unchanged (manual handling required)
+        """
+        if not self.primary:
+            logger.debug("No primary client available, skipping old hub handling")
+            return
+
+        if self.old_hub_action == "none":
+            logger.info("Old hub action is 'none' - leaving old primary hub unchanged")
+            logger.info("NOTE: You will need to manually configure the old hub")
+            return
+
+        if self.old_hub_action == "secondary":
+            logger.info("Setting up old primary hub as new secondary (for failback capability)...")
+            self._setup_old_hub_as_secondary()
+            return
+
+        if self.old_hub_action == "decommission":
+            logger.info("Decommissioning old primary hub...")
+            self._decommission_old_hub()
+            return
+
+        logger.warning(f"Unknown old_hub_action: {self.old_hub_action}, skipping")
+
+    def _decommission_old_hub(self):
+        """
+        Decommission the old primary hub by removing ACM components.
+        
+        This is run non-interactively as part of the switchover finalization.
+        """
+        if not self.primary:
+            logger.debug("No primary client available, skipping decommission")
+            return
+
+        if self.dry_run:
+            logger.info("[DRY-RUN] Would decommission old primary hub")
+            return
+
+        logger.warning("=" * 60)
+        logger.warning("DECOMMISSIONING OLD PRIMARY HUB")
+        logger.warning("This will remove ACM components from the old hub!")
+        logger.warning("=" * 60)
+
+        decom = Decommission(self.primary, self.primary_has_observability, dry_run=self.dry_run)
+        
+        # Run decommission non-interactively since we're in automated mode
+        if decom.decommission(interactive=False):
+            logger.info("Old hub decommissioned successfully")
+        else:
+            logger.warning("Old hub decommission completed with warnings")
+            logger.warning("You may need to manually clean up remaining resources")
+
+    def _setup_old_hub_as_secondary(self):
+        """
+        Set up the old primary hub as a new secondary with passive sync restore.
+        
+        After switchover, the old primary should:
+        1. NOT have a BackupSchedule (already handled by primary_prep)
+        2. HAVE a passive sync restore to continuously receive backups from new primary
+        
+        This ensures the old hub is ready for a future failback if needed.
+        """
+        if not self.primary:
+            logger.debug("No primary client available, skipping secondary setup")
+            return
+
+        if self.dry_run:
+            logger.info("[DRY-RUN] Would set up old primary as secondary with passive sync")
+            return
+
+        logger.info("Setting up old primary hub as new secondary...")
+
+        # Check if restore already exists
+        existing_restore = self.primary.get_custom_resource(
+            group="cluster.open-cluster-management.io",
+            version="v1beta1",
+            plural="restores",
+            name="restore-acm-passive-sync",
+            namespace=BACKUP_NAMESPACE,
+        )
+
+        if existing_restore:
+            logger.info("Passive sync restore already exists on old primary")
+            return
+
+        # Create passive sync restore on old primary
+        restore_body = {
+            "apiVersion": "cluster.open-cluster-management.io/v1beta1",
+            "kind": "Restore",
+            "metadata": {
+                "name": "restore-acm-passive-sync",
+                "namespace": BACKUP_NAMESPACE,
+            },
+            "spec": {
+                "syncRestoreWithNewBackups": True,
+                "restoreSyncInterval": "10m",
+                "cleanupBeforeRestore": "CleanupRestored",
+                "veleroManagedClustersBackupName": "skip",
+                "veleroCredentialsBackupName": "latest",
+                "veleroResourcesBackupName": "latest",
+            },
+        }
+
+        try:
+            self.primary.create_custom_resource(
+                group="cluster.open-cluster-management.io",
+                version="v1beta1",
+                plural="restores",
+                body=restore_body,
+                namespace=BACKUP_NAMESPACE,
+            )
+            logger.info("Created passive sync restore on old primary hub")
+        except Exception as e:
+            logger.warning(f"Failed to create passive sync restore on old primary: {e}")
+            logger.warning("You may need to manually create it for failback capability")
+
+    def _fix_backup_schedule_collision(self):
+        """
+        Fix BackupSchedule collision by recreating it.
+        
+        After switchover, the new primary's BackupSchedule may show "BackupCollision"
+        because it detects old backups from the previous primary in storage.
+        Recreating the BackupSchedule resets this state.
+        """
+        if self.dry_run:
+            logger.info("[DRY-RUN] Would check and fix BackupSchedule collision")
+            return
+
+        # Check current BackupSchedule status
+        schedules = self.secondary.list_custom_resources(
+            group="cluster.open-cluster-management.io",
+            version="v1beta1",
+            plural="backupschedules",
+            namespace=BACKUP_NAMESPACE,
+        )
+
+        if not schedules:
+            logger.warning("No BackupSchedule found on new primary")
+            return
+
+        schedule = schedules[0]
+        schedule_name = schedule.get("metadata", {}).get("name", "acm-hub-backup")
+        phase = schedule.get("status", {}).get("phase", "")
+        
+        if phase != "BackupCollision":
+            logger.info(f"BackupSchedule {schedule_name} is healthy (phase: {phase})")
+            return
+
+        logger.warning(f"BackupSchedule {schedule_name} has collision, recreating...")
+
+        # Save the spec for recreation
+        schedule_spec = schedule.get("spec", {})
+
+        # Delete the old schedule
+        try:
+            self.secondary.delete_custom_resource(
+                group="cluster.open-cluster-management.io",
+                version="v1beta1",
+                plural="backupschedules",
+                name=schedule_name,
+                namespace=BACKUP_NAMESPACE,
+            )
+            logger.info(f"Deleted old BackupSchedule {schedule_name}")
+            
+            # Wait a moment for deletion
+            time.sleep(5)
+
+            # Recreate with same spec
+            new_schedule = {
+                "apiVersion": "cluster.open-cluster-management.io/v1beta1",
+                "kind": "BackupSchedule",
+                "metadata": {
+                    "name": schedule_name,
+                    "namespace": BACKUP_NAMESPACE,
+                },
+                "spec": schedule_spec,
+            }
+
+            self.secondary.create_custom_resource(
+                group="cluster.open-cluster-management.io",
+                version="v1beta1",
+                plural="backupschedules",
+                body=new_schedule,
+                namespace=BACKUP_NAMESPACE,
+            )
+            logger.info(f"Recreated BackupSchedule {schedule_name}")
+
+        except Exception as e:
+            logger.warning(f"Failed to fix BackupSchedule collision: {e}")
+            logger.warning("You may need to manually delete and recreate the BackupSchedule")
 
     def _verify_old_hub_state(self):
         """Run regression checks on the old (primary) hub."""
