@@ -485,11 +485,13 @@ class PassiveSyncValidator:
             phase = status.get("phase", "unknown")
             message = status.get("lastMessage", "")
 
-            if phase == "Enabled":
+            # "Enabled" = continuous sync running
+            # "Finished" = initial sync completed successfully (still valid for switchover)
+            if phase in ("Enabled", "Finished"):
                 self.reporter.add_result(
                     "Passive sync restore",
                     True,
-                    f"passive sync enabled and running: {message}",
+                    f"passive sync ready ({phase}): {message}",
                     critical=True,
                 )
             else:
@@ -548,6 +550,122 @@ class ObservabilityDetector:
             )
 
         return primary_has, secondary_has
+
+
+class ManagedClusterBackupValidator:
+    """Validates that all joined ManagedClusters are included in the latest backup."""
+
+    def __init__(self, reporter: ValidationReporter) -> None:
+        self.reporter = reporter
+
+    def run(self, primary: KubeClient) -> None:
+        """Check that all joined ManagedClusters are in the latest managed-clusters backup."""
+        try:
+            # Get all joined ManagedClusters (excluding local-cluster)
+            managed_clusters = primary.list_custom_resources(
+                group="cluster.open-cluster-management.io",
+                version="v1",
+                plural="managedclusters",
+            )
+
+            joined_clusters = []
+            for mc in managed_clusters:
+                mc_name = mc.get("metadata", {}).get("name", "unknown")
+                if mc_name == "local-cluster":
+                    continue
+
+                # Check if cluster is joined (has Joined condition = True)
+                conditions = mc.get("status", {}).get("conditions", [])
+                is_joined = any(
+                    c.get("type") == "ManagedClusterJoined" and c.get("status") == "True"
+                    for c in conditions
+                )
+                if is_joined:
+                    joined_clusters.append(mc_name)
+
+            if not joined_clusters:
+                self.reporter.add_result(
+                    "ManagedClusters in backup",
+                    True,
+                    "no joined ManagedClusters found (only local-cluster)",
+                    critical=False,
+                )
+                return
+
+            # Find the latest managed-clusters backup
+            backups = primary.list_custom_resources(
+                group="velero.io",
+                version="v1",
+                plural="backups",
+                namespace=BACKUP_NAMESPACE,
+                label_selector="cluster.open-cluster-management.io/backup-schedule-type=managedClusters",
+            )
+
+            if not backups:
+                self.reporter.add_result(
+                    "ManagedClusters in backup",
+                    False,
+                    f"no managed-clusters backups found, but {len(joined_clusters)} joined cluster(s) exist: {', '.join(joined_clusters)}",
+                    critical=True,
+                )
+                return
+
+            # Sort by creation timestamp to find latest
+            backups.sort(
+                key=lambda b: b.get("metadata", {}).get("creationTimestamp", ""),
+                reverse=True,
+            )
+
+            latest_backup = backups[0]
+            backup_name = latest_backup.get("metadata", {}).get("name", "unknown")
+            backup_time = latest_backup.get("metadata", {}).get("creationTimestamp", "unknown")
+            phase = latest_backup.get("status", {}).get("phase", "unknown")
+
+            if phase != "Completed":
+                self.reporter.add_result(
+                    "ManagedClusters in backup",
+                    False,
+                    f"latest managed-clusters backup {backup_name} is in state '{phase}', not Completed",
+                    critical=True,
+                )
+                return
+
+            # Check which clusters were created AFTER the backup
+            clusters_not_in_backup = []
+            for mc in managed_clusters:
+                mc_name = mc.get("metadata", {}).get("name", "unknown")
+                if mc_name == "local-cluster" or mc_name not in joined_clusters:
+                    continue
+
+                mc_created = mc.get("metadata", {}).get("creationTimestamp", "")
+                # Compare timestamps (ISO format sorts correctly as strings)
+                if mc_created > backup_time:
+                    clusters_not_in_backup.append(f"{mc_name} (created {mc_created})")
+
+            if clusters_not_in_backup:
+                self.reporter.add_result(
+                    "ManagedClusters in backup",
+                    False,
+                    f"the following ManagedClusters were imported AFTER the latest backup ({backup_name} from {backup_time}): "
+                    f"{', '.join(clusters_not_in_backup)}. "
+                    f"Run a new backup before switchover or these clusters will NOT be restored on the secondary hub!",
+                    critical=True,
+                )
+            else:
+                self.reporter.add_result(
+                    "ManagedClusters in backup",
+                    True,
+                    f"all {len(joined_clusters)} joined ManagedCluster(s) were imported before latest backup ({backup_name} from {backup_time})",
+                    critical=True,
+                )
+
+        except Exception as exc:
+            self.reporter.add_result(
+                "ManagedClusters in backup",
+                False,
+                f"error checking ManagedClusters in backup: {exc}",
+                critical=True,
+            )
 
 
 class ObservabilityPrereqValidator:

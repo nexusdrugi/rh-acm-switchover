@@ -12,6 +12,7 @@ from .preflight_validators import (
     BackupValidator,
     ClusterDeploymentValidator,
     HubComponentValidator,
+    ManagedClusterBackupValidator,
     NamespaceValidator,
     ObservabilityDetector,
     ObservabilityPrereqValidator,
@@ -43,6 +44,7 @@ class PreflightValidator:
         self.hub_component_validator = HubComponentValidator(self.reporter)
         self.backup_validator = BackupValidator(self.reporter)
         self.cluster_deployment_validator = ClusterDeploymentValidator(self.reporter)
+        self.managed_cluster_backup_validator = ManagedClusterBackupValidator(self.reporter)
         self.passive_sync_validator = PassiveSyncValidator(self.reporter)
         self.observability_detector = ObservabilityDetector(self.reporter)
         self.observability_prereq_validator = ObservabilityPrereqValidator(self.reporter)
@@ -65,6 +67,7 @@ class PreflightValidator:
 
         self.backup_validator.run(self.primary)
         self.cluster_deployment_validator.run(self.primary)
+        self.managed_cluster_backup_validator.run(self.primary)
 
         if self.method == "passive":
             self.passive_sync_validator.run(self.secondary)
