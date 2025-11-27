@@ -312,35 +312,51 @@ if [[ $BACKUPS -gt 0 ]]; then
     if [[ "$LATEST_PHASE" == "Finished" ]] || [[ "$LATEST_PHASE" == "Completed" ]]; then
         check_pass "Primary hub: Latest backup '$LATEST_BACKUP' completed successfully"
         
-        # Check if all joined ManagedClusters are included in the backup
+        # Check if all joined ManagedClusters existed before the latest managed clusters backup
         # This prevents data loss when clusters were imported after the last backup
         JOINED_CLUSTERS=$(oc --context="$PRIMARY_CONTEXT" get managedclusters -o json 2>/dev/null | \
             jq -r '.items[] | select(.metadata.name != "local-cluster") | select(.status.conditions[]? | select(.type=="ManagedClusterJoined" and .status=="True")) | .metadata.name' | sort)
         
-        # Get the managed clusters backup name from the latest backup
-        CLUSTERS_BACKUP_NAME=$(oc --context="$PRIMARY_CONTEXT" get backup "$LATEST_BACKUP" -n "$BACKUP_NAMESPACE" -o jsonpath='{.metadata.labels.cluster\.open-cluster-management\.io/backup-cluster}' 2>/dev/null || echo "")
+        # Find the latest managed clusters backup (not validation or resources backup)
+        MC_BACKUP_NAME=$(oc --context="$PRIMARY_CONTEXT" get backup -n "$BACKUP_NAMESPACE" \
+            -l "cluster.open-cluster-management.io/backup-schedule-type=managedClusters" \
+            --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}' 2>/dev/null || echo "")
         
-        if [[ -n "$CLUSTERS_BACKUP_NAME" ]] && [[ -n "$JOINED_CLUSTERS" ]]; then
-            # Get clusters from the managed clusters backup
-            BACKED_UP_CLUSTERS=$(oc --context="$PRIMARY_CONTEXT" get backup "$CLUSTERS_BACKUP_NAME" -n "$BACKUP_NAMESPACE" -o json 2>/dev/null | \
-                jq -r '.status.progress.itemsBackedUp // [] | .[]' 2>/dev/null | grep -E '^managedclusters/' | sed 's|managedclusters/||' | sort || echo "")
+        if [[ -n "$MC_BACKUP_NAME" ]] && [[ -n "$JOINED_CLUSTERS" ]]; then
+            # Get the backup completion timestamp
+            BACKUP_TIME=$(oc --context="$PRIMARY_CONTEXT" get backup "$MC_BACKUP_NAME" -n "$BACKUP_NAMESPACE" \
+                -o jsonpath='{.status.completionTimestamp}' 2>/dev/null || echo "")
             
-            # Find clusters that are joined but not in backup
-            MISSING_FROM_BACKUP=""
-            for cluster in $JOINED_CLUSTERS; do
-                if ! echo "$BACKED_UP_CLUSTERS" | grep -q "^${cluster}$"; then
-                    MISSING_FROM_BACKUP="$MISSING_FROM_BACKUP $cluster"
+            if [[ -n "$BACKUP_TIME" ]]; then
+                BACKUP_EPOCH=$(date -d "$BACKUP_TIME" +%s 2>/dev/null || echo "0")
+                
+                # Find clusters that were created after the backup completed
+                MISSING_FROM_BACKUP=""
+                for cluster in $JOINED_CLUSTERS; do
+                    CLUSTER_TIME=$(oc --context="$PRIMARY_CONTEXT" get managedcluster "$cluster" \
+                        -o jsonpath='{.metadata.creationTimestamp}' 2>/dev/null || echo "")
+                    if [[ -n "$CLUSTER_TIME" ]]; then
+                        CLUSTER_EPOCH=$(date -d "$CLUSTER_TIME" +%s 2>/dev/null || echo "0")
+                        # If cluster was created after backup completed, it's not in the backup
+                        if [[ $CLUSTER_EPOCH -gt $BACKUP_EPOCH ]]; then
+                            MISSING_FROM_BACKUP="$MISSING_FROM_BACKUP $cluster"
+                        fi
+                    fi
+                done
+                
+                if [[ -z "$MISSING_FROM_BACKUP" ]]; then
+                    check_pass "Primary hub: All joined ManagedClusters existed before latest backup ($MC_BACKUP_NAME)"
+                else
+                    check_warn "Primary hub: Clusters imported after latest backup:$MISSING_FROM_BACKUP"
+                    echo -e "${YELLOW}       Consider running a new backup before switchover to include recently imported clusters${NC}"
                 fi
-            done
-            
-            if [[ -z "$MISSING_FROM_BACKUP" ]]; then
-                check_pass "Primary hub: All joined ManagedClusters are included in the latest backup"
             else
-                check_warn "Primary hub: Some joined clusters may not be in latest backup:$MISSING_FROM_BACKUP"
-                echo -e "${YELLOW}       Consider running a new backup before switchover to include recently imported clusters${NC}"
+                check_warn "Primary hub: Could not verify ManagedCluster backup coverage (backup timestamp unavailable)"
             fi
+        elif [[ -z "$MC_BACKUP_NAME" ]]; then
+            check_warn "Primary hub: No managed clusters backup found (cannot verify cluster coverage)"
         else
-            check_warn "Primary hub: Could not verify ManagedCluster backup coverage (backup metadata unavailable)"
+            check_pass "Primary hub: No joined ManagedClusters to verify"
         fi
     else
         check_fail "Primary hub: Latest backup '$LATEST_BACKUP' in unexpected state: $LATEST_PHASE"
