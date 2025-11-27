@@ -45,10 +45,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - All modules now consistently support dry-run mode with clear `[DRY-RUN]` log messages
 - Improved error messages with more context for troubleshooting
 
+#### Code Quality & Refactoring
+- **Centralized constants**: Extracted magic strings to `lib/constants.py` for better maintainability:
+  - `RESTORE_PASSIVE_SYNC_NAME`, `RESTORE_FULL_NAME`, `BACKUP_SCHEDULE_DEFAULT_NAME`
+  - `SPEC_VELERO_MANAGED_CLUSTERS_BACKUP_NAME`, `SPEC_SYNC_RESTORE_WITH_NEW_BACKUPS`
+  - `VELERO_BACKUP_LATEST`, `VELERO_BACKUP_SKIP`
+- **Dry-run decorator**: New `dry_run_skip` decorator in `lib/utils.py` for consistent dry-run handling
+- Updated `modules/activation.py`, `modules/finalization.py`, `modules/rollback.py`, `modules/backup_schedule.py` to use centralized constants
+
+#### Shell Scripts
+- `scripts/preflight-check.sh`: `--method` is now a required parameter (no default)
+- `scripts/preflight-check.sh`: Added ManagedClusterBackup validation using timestamp comparison
+- `scripts/postflight-check.sh`: Added BackupSchedule collision detection (`BackupCollision` state)
+- `scripts/postflight-check.sh`: Added passive sync restore check on old hub for failback capability
+- `scripts/postflight-check.sh`: Added old hub ACM decommission status check
+
 ### Fixed
 
 - Fixed passive sync validation to accept "Finished" state (not just "Enabled")
 - Fixed dry-run mode not being passed to all sub-modules
+- Fixed ManagedClusterBackup validation in shell script (was using wrong backup metadata)
 
 ## [1.1.0] - 2025-11-19
 

@@ -1,7 +1,7 @@
 # ACM Switchover - Architecture & Design
 
-**Version**: 1.0.0  
-**Last Updated**: November 18, 2025
+**Version**: 1.2.0  
+**Last Updated**: November 27, 2025
 
 ## Project Structure
 
@@ -147,6 +147,31 @@ Handle optional components gracefully:
 
 ## Module Architecture
 
+### Constants (`lib/constants.py`)
+
+Centralized constants for maintainability and consistency:
+
+**Namespaces:**
+- `BACKUP_NAMESPACE`: `open-cluster-management-backup`
+- `OBSERVABILITY_NAMESPACE`: `open-cluster-management-observability`
+- `ACM_NAMESPACE`: `open-cluster-management`
+
+**ACM Resource Names:**
+- `RESTORE_PASSIVE_SYNC_NAME`: `restore-acm-passive-sync`
+- `RESTORE_FULL_NAME`: `restore-acm-full`
+- `BACKUP_SCHEDULE_DEFAULT_NAME`: `acm-hub-backup`
+
+**ACM Spec Fields:**
+- `SPEC_VELERO_MANAGED_CLUSTERS_BACKUP_NAME`: `veleroManagedClustersBackupName`
+- `SPEC_SYNC_RESTORE_WITH_NEW_BACKUPS`: `syncRestoreWithNewBackups`
+- `VELERO_BACKUP_LATEST`: `latest`
+- `VELERO_BACKUP_SKIP`: `skip`
+
+**Timeouts:**
+- `RESTORE_WAIT_TIMEOUT`: 1800s (30 min)
+- `CLUSTER_VERIFY_TIMEOUT`: 600s (10 min)
+- `DECOMMISSION_POD_TIMEOUT`: 1200s (20 min)
+
 ### State Manager (`lib/utils.py`)
 
 **Responsibilities:**
@@ -155,6 +180,22 @@ Handle optional components gracefully:
 - Store configuration detected during execution
 - Record errors for debugging
 - **Logging**: Configure structured JSON logging or human-readable text logging
+- **Dry-run decorator**: `dry_run_skip` decorator for consistent dry-run handling
+
+**Dry-Run Decorator:**
+
+```python
+from lib.utils import dry_run_skip
+
+class MyModule:
+    def __init__(self, dry_run: bool = False):
+        self.dry_run = dry_run
+
+    @dry_run_skip(message="Would perform action", return_value=True)
+    def perform_action(self):
+        # This code only runs when dry_run=False
+        return do_something()
+```
 
 **State Structure:**
 ```json
