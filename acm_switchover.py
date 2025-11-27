@@ -118,6 +118,19 @@ Examples:
         help="Reset state file and start fresh (use with caution)",
     )
 
+    # Old hub handling after switchover (required)
+    parser.add_argument(
+        "--old-hub-action",
+        choices=["secondary", "decommission", "none"],
+        required=True,
+        help=(
+            "Action for old primary hub after switchover (REQUIRED): "
+            "'secondary' sets up passive sync for failback capability, "
+            "'decommission' removes ACM components, "
+            "'none' leaves it unchanged for manual handling"
+        ),
+    )
+
     # Optional features
     parser.add_argument(
         "--skip-observability-checks",
@@ -185,7 +198,7 @@ def run_switchover(
     logger.info("\n" + "=" * 60)
     logger.info("SWITCHOVER COMPLETED SUCCESSFULLY!")
     logger.info("=" * 60)
-    logger.info(f"\nSwitchover completed at: {datetime.utcnow().isoformat()}")
+    logger.info(f"\nSwitchover completed at: {datetime.now().astimezone().isoformat()}")
     logger.info(f"State file: {args.state_file}")
     logger.info("\nNext steps:")
     logger.info("  1. Inform stakeholders that switchover is complete")
@@ -259,6 +272,7 @@ def _run_phase_primary_prep(
         state,
         state.get_config("primary_version", "unknown"),
         state.get_config("primary_has_observability", False),
+        dry_run=args.dry_run,
     )
 
     if not prep.prepare():
@@ -334,6 +348,7 @@ def _run_phase_finalization(
         primary_client=primary,
         primary_has_observability=state.get_config("primary_has_observability", False),
         dry_run=args.dry_run,
+        old_hub_action=args.old_hub_action,
     )
 
     if not finalization.finalize():
@@ -376,6 +391,7 @@ def run_rollback(
         state,
         state.get_config("primary_version", "unknown"),
         state.get_config("primary_has_observability", False),
+        dry_run=args.dry_run,
     )
 
     if rollback.rollback():
@@ -395,9 +411,16 @@ def run_decommission(
     logger: logging.Logger,
 ):
     """Execute decommission of old hub."""
-    decom = Decommission(primary, state.get_config("primary_has_observability", False))
+    decom = Decommission(
+        primary,
+        state.get_config("primary_has_observability", False),
+        dry_run=args.dry_run,
+    )
 
-    logger.info("Starting decommission workflow")
+    if args.dry_run:
+        logger.info("[DRY-RUN] Starting decommission workflow (no changes will be made)")
+    else:
+        logger.info("Starting decommission workflow")
 
     return decom.decommission(interactive=not args.non_interactive)
 
