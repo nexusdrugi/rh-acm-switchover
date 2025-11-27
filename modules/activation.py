@@ -5,7 +5,15 @@ Secondary hub activation module for ACM switchover.
 import logging
 import time
 
-from lib.constants import BACKUP_NAMESPACE, RESTORE_POLL_INTERVAL, RESTORE_WAIT_TIMEOUT
+from lib.constants import (
+    BACKUP_NAMESPACE,
+    RESTORE_FULL_NAME,
+    RESTORE_PASSIVE_SYNC_NAME,
+    RESTORE_POLL_INTERVAL,
+    RESTORE_WAIT_TIMEOUT,
+    SPEC_VELERO_MANAGED_CLUSTERS_BACKUP_NAME,
+    VELERO_BACKUP_LATEST,
+)
 from lib.exceptions import FatalError, SwitchoverError, TransientError
 from lib.kube_client import KubeClient
 from lib.utils import StateManager
@@ -89,12 +97,12 @@ class SecondaryActivation:
             group="cluster.open-cluster-management.io",
             version="v1beta1",
             plural="restores",
-            name="restore-acm-passive-sync",
+            name=RESTORE_PASSIVE_SYNC_NAME,
             namespace=BACKUP_NAMESPACE,
         )
 
         if not restore:
-            raise FatalError("restore-acm-passive-sync not found on secondary hub")
+            raise FatalError(f"{RESTORE_PASSIVE_SYNC_NAME} not found on secondary hub")
 
         status = restore.get("status", {})
         phase = status.get("phase", "unknown")
@@ -116,35 +124,35 @@ class SecondaryActivation:
             group="cluster.open-cluster-management.io",
             version="v1beta1",
             plural="restores",
-            name="restore-acm-passive-sync",
+            name=RESTORE_PASSIVE_SYNC_NAME,
             namespace=BACKUP_NAMESPACE,
         )
         
         if restore_before:
-            current_mc_backup = restore_before.get("spec", {}).get("veleroManagedClustersBackupName", "<not set>")
-            logger.info(f"BEFORE PATCH: veleroManagedClustersBackupName = {current_mc_backup}")
+            current_mc_backup = restore_before.get("spec", {}).get(SPEC_VELERO_MANAGED_CLUSTERS_BACKUP_NAME, "<not set>")
+            logger.info(f"BEFORE PATCH: {SPEC_VELERO_MANAGED_CLUSTERS_BACKUP_NAME} = {current_mc_backup}")
             logger.debug(f"BEFORE PATCH: Full spec = {restore_before.get('spec', {})}")
         else:
-            logger.error("BEFORE PATCH: restore-acm-passive-sync not found!")
-            raise FatalError("restore-acm-passive-sync not found before patching")
+            logger.error(f"BEFORE PATCH: {RESTORE_PASSIVE_SYNC_NAME} not found!")
+            raise FatalError(f"{RESTORE_PASSIVE_SYNC_NAME} not found before patching")
 
-        # Patch existing restore-acm-passive-sync with veleroManagedClustersBackupName: latest
-        patch = {"spec": {"veleroManagedClustersBackupName": "latest"}}
+        # Patch existing restore with veleroManagedClustersBackupName: latest
+        patch = {"spec": {SPEC_VELERO_MANAGED_CLUSTERS_BACKUP_NAME: VELERO_BACKUP_LATEST}}
         logger.info(f"PATCHING: Applying patch = {patch}")
 
         result = self.secondary.patch_custom_resource(
             group="cluster.open-cluster-management.io",
             version="v1beta1",
             plural="restores",
-            name="restore-acm-passive-sync",
+            name=RESTORE_PASSIVE_SYNC_NAME,
             patch=patch,
             namespace=BACKUP_NAMESPACE,
         )
         
         logger.info(f"PATCH RESULT: patch_custom_resource returned type={type(result).__name__}")
         if result:
-            result_mc_backup = result.get("spec", {}).get("veleroManagedClustersBackupName", "<not set>")
-            logger.info(f"PATCH RESULT: veleroManagedClustersBackupName in response = {result_mc_backup}")
+            result_mc_backup = result.get("spec", {}).get(SPEC_VELERO_MANAGED_CLUSTERS_BACKUP_NAME, "<not set>")
+            logger.info(f"PATCH RESULT: {SPEC_VELERO_MANAGED_CLUSTERS_BACKUP_NAME} in response = {result_mc_backup}")
             logger.debug(f"PATCH RESULT: Full spec in response = {result.get('spec', {})}")
         else:
             logger.warning("PATCH RESULT: patch_custom_resource returned empty/None result")
@@ -152,7 +160,7 @@ class SecondaryActivation:
         # Skip verification in dry-run mode since the patch wasn't actually applied
         if self.secondary.dry_run:
             logger.info("[DRY-RUN] Skipping patch verification (patch was not applied)")
-            logger.info("Patched restore-acm-passive-sync to activate managed clusters")
+            logger.info(f"Patched {RESTORE_PASSIVE_SYNC_NAME} to activate managed clusters")
             return
 
         # Verify the patch was actually applied by re-reading the resource
@@ -162,26 +170,26 @@ class SecondaryActivation:
             group="cluster.open-cluster-management.io",
             version="v1beta1",
             plural="restores",
-            name="restore-acm-passive-sync",
+            name=RESTORE_PASSIVE_SYNC_NAME,
             namespace=BACKUP_NAMESPACE,
         )
         
         if restore_after:
-            after_mc_backup = restore_after.get("spec", {}).get("veleroManagedClustersBackupName", "<not set>")
-            logger.info(f"AFTER PATCH (re-read): veleroManagedClustersBackupName = {after_mc_backup}")
+            after_mc_backup = restore_after.get("spec", {}).get(SPEC_VELERO_MANAGED_CLUSTERS_BACKUP_NAME, "<not set>")
+            logger.info(f"AFTER PATCH (re-read): {SPEC_VELERO_MANAGED_CLUSTERS_BACKUP_NAME} = {after_mc_backup}")
             logger.debug(f"AFTER PATCH (re-read): Full spec = {restore_after.get('spec', {})}")
             
-            if after_mc_backup != "latest":
-                logger.error(f"PATCH VERIFICATION FAILED: Expected 'latest', got '{after_mc_backup}'")
+            if after_mc_backup != VELERO_BACKUP_LATEST:
+                logger.error(f"PATCH VERIFICATION FAILED: Expected '{VELERO_BACKUP_LATEST}', got '{after_mc_backup}'")
                 raise FatalError(
-                    f"Patch verification failed: veleroManagedClustersBackupName is '{after_mc_backup}', "
-                    f"expected 'latest'. The patch may not have been applied correctly."
+                    f"Patch verification failed: {SPEC_VELERO_MANAGED_CLUSTERS_BACKUP_NAME} is '{after_mc_backup}', "
+                    f"expected '{VELERO_BACKUP_LATEST}'. The patch may not have been applied correctly."
                 )
             else:
-                logger.info("PATCH VERIFICATION SUCCESS: veleroManagedClustersBackupName is now 'latest'")
+                logger.info(f"PATCH VERIFICATION SUCCESS: {SPEC_VELERO_MANAGED_CLUSTERS_BACKUP_NAME} is now '{VELERO_BACKUP_LATEST}'")
         else:
-            logger.error("AFTER PATCH: restore-acm-passive-sync not found after patching!")
-            raise FatalError("restore-acm-passive-sync disappeared after patching")
+            logger.error(f"AFTER PATCH: {RESTORE_PASSIVE_SYNC_NAME} not found after patching!")
+            raise FatalError(f"{RESTORE_PASSIVE_SYNC_NAME} disappeared after patching")
 
     def _create_full_restore(self):
         """Create full restore resource (Method 2)."""
@@ -192,12 +200,12 @@ class SecondaryActivation:
             group="cluster.open-cluster-management.io",
             version="v1beta1",
             plural="restores",
-            name="restore-acm-full",
+            name=RESTORE_FULL_NAME,
             namespace=BACKUP_NAMESPACE,
         )
 
         if existing_restore:
-            logger.info("restore-acm-full already exists")
+            logger.info(f"{RESTORE_FULL_NAME} already exists")
             return
 
         # Create restore resource
@@ -205,13 +213,13 @@ class SecondaryActivation:
             "apiVersion": "cluster.open-cluster-management.io/v1beta1",
             "kind": "Restore",
             "metadata": {
-                "name": "restore-acm-full",
+                "name": RESTORE_FULL_NAME,
                 "namespace": BACKUP_NAMESPACE,
             },
             "spec": {
-                "veleroManagedClustersBackupName": "latest",
-                "veleroCredentialsBackupName": "latest",
-                "veleroResourcesBackupName": "latest",
+                SPEC_VELERO_MANAGED_CLUSTERS_BACKUP_NAME: VELERO_BACKUP_LATEST,
+                "veleroCredentialsBackupName": VELERO_BACKUP_LATEST,
+                "veleroResourcesBackupName": VELERO_BACKUP_LATEST,
                 "cleanupBeforeRestore": "CleanupRestored",
             },
         }
@@ -224,12 +232,12 @@ class SecondaryActivation:
             namespace=BACKUP_NAMESPACE,
         )
 
-        logger.info("Created restore-acm-full resource")
+        logger.info(f"Created {RESTORE_FULL_NAME} resource")
 
     def _wait_for_restore_completion(self, timeout: int = RESTORE_WAIT_TIMEOUT):
         """Wait for restore to complete and verify managed clusters are restored."""
 
-        restore_name = "restore-acm-passive-sync" if self.method == "passive" else "restore-acm-full"
+        restore_name = RESTORE_PASSIVE_SYNC_NAME if self.method == "passive" else RESTORE_FULL_NAME
 
         def _poll_restore():
             restore = self.secondary.get_custom_resource(
@@ -298,7 +306,7 @@ class SecondaryActivation:
                 group="cluster.open-cluster-management.io",
                 version="v1beta1",
                 plural="restores",
-                name="restore-acm-passive-sync",
+                name=RESTORE_PASSIVE_SYNC_NAME,
                 namespace=BACKUP_NAMESPACE,
             )
 

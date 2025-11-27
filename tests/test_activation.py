@@ -13,7 +13,12 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import modules.activation as activation_module
-from lib.constants import BACKUP_NAMESPACE
+from lib.constants import (
+    BACKUP_NAMESPACE,
+    RESTORE_PASSIVE_SYNC_NAME,
+    SPEC_VELERO_MANAGED_CLUSTERS_BACKUP_NAME,
+    VELERO_BACKUP_LATEST,
+)
 
 SecondaryActivation = activation_module.SecondaryActivation
 
@@ -76,7 +81,7 @@ class TestSecondaryActivation:
         # Mock verify_passive_sync - return Enabled state
         # This will be called multiple times for different resources
         def get_custom_resource_side_effect(**kwargs):
-            if kwargs.get("plural") == "restores" and kwargs.get("name") == "restore-acm-passive-sync":
+            if kwargs.get("plural") == "restores" and kwargs.get("name") == RESTORE_PASSIVE_SYNC_NAME:
                 return {
                     "status": {
                         "phase": "Enabled",
@@ -103,7 +108,7 @@ class TestSecondaryActivation:
 
         # Mock patch for activation - return a dict mimicking the patched resource
         mock_secondary_client.patch_custom_resource.return_value = {
-            "spec": {"veleroManagedClustersBackupName": "latest"}
+            "spec": {SPEC_VELERO_MANAGED_CLUSTERS_BACKUP_NAME: VELERO_BACKUP_LATEST}
         }
 
         result = activation_passive.activate()
@@ -115,8 +120,8 @@ class TestSecondaryActivation:
             group="cluster.open-cluster-management.io",
             version="v1beta1",
             plural="restores",
-            name="restore-acm-passive-sync",
-            patch={"spec": {"veleroManagedClustersBackupName": "latest"}},
+            name=RESTORE_PASSIVE_SYNC_NAME,
+            patch={"spec": {SPEC_VELERO_MANAGED_CLUSTERS_BACKUP_NAME: VELERO_BACKUP_LATEST}},
             namespace=BACKUP_NAMESPACE,
         )
 

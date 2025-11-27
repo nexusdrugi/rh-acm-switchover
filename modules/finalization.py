@@ -6,7 +6,18 @@ import logging
 import time
 from typing import Optional
 
-from lib.constants import ACM_NAMESPACE, BACKUP_NAMESPACE, OBSERVABILITY_NAMESPACE
+from lib.constants import (
+    ACM_NAMESPACE,
+    BACKUP_NAMESPACE,
+    BACKUP_SCHEDULE_DEFAULT_NAME,
+    OBSERVABILITY_NAMESPACE,
+    RESTORE_FULL_NAME,
+    RESTORE_PASSIVE_SYNC_NAME,
+    SPEC_SYNC_RESTORE_WITH_NEW_BACKUPS,
+    SPEC_VELERO_MANAGED_CLUSTERS_BACKUP_NAME,
+    VELERO_BACKUP_LATEST,
+    VELERO_BACKUP_SKIP,
+)
 from lib.kube_client import KubeClient
 from lib.utils import StateManager
 
@@ -125,7 +136,7 @@ class Finalization:
         ACM backup operator won't allow BackupSchedule to be active while
         a Restore resource exists. We need to clean them up first.
         """
-        restore_names = ["restore-acm-passive-sync", "restore-acm-full"]
+        restore_names = [RESTORE_PASSIVE_SYNC_NAME, RESTORE_FULL_NAME]
         
         for restore_name in restore_names:
             try:
@@ -370,7 +381,7 @@ class Finalization:
             group="cluster.open-cluster-management.io",
             version="v1beta1",
             plural="restores",
-            name="restore-acm-passive-sync",
+            name=RESTORE_PASSIVE_SYNC_NAME,
             namespace=BACKUP_NAMESPACE,
         )
 
@@ -383,16 +394,16 @@ class Finalization:
             "apiVersion": "cluster.open-cluster-management.io/v1beta1",
             "kind": "Restore",
             "metadata": {
-                "name": "restore-acm-passive-sync",
+                "name": RESTORE_PASSIVE_SYNC_NAME,
                 "namespace": BACKUP_NAMESPACE,
             },
             "spec": {
-                "syncRestoreWithNewBackups": True,
+                SPEC_SYNC_RESTORE_WITH_NEW_BACKUPS: True,
                 "restoreSyncInterval": "10m",
                 "cleanupBeforeRestore": "CleanupRestored",
-                "veleroManagedClustersBackupName": "skip",
-                "veleroCredentialsBackupName": "latest",
-                "veleroResourcesBackupName": "latest",
+                SPEC_VELERO_MANAGED_CLUSTERS_BACKUP_NAME: VELERO_BACKUP_SKIP,
+                "veleroCredentialsBackupName": VELERO_BACKUP_LATEST,
+                "veleroResourcesBackupName": VELERO_BACKUP_LATEST,
             },
         }
 
@@ -434,7 +445,7 @@ class Finalization:
             return
 
         schedule = schedules[0]
-        schedule_name = schedule.get("metadata", {}).get("name", "acm-hub-backup")
+        schedule_name = schedule.get("metadata", {}).get("name", BACKUP_SCHEDULE_DEFAULT_NAME)
         phase = schedule.get("status", {}).get("phase", "")
         
         if phase != "BackupCollision":

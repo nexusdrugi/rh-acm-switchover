@@ -10,6 +10,7 @@ from lib.constants import (
     ACM_NAMESPACE,
     BACKUP_NAMESPACE,
     OBSERVABILITY_NAMESPACE,
+    RESTORE_PASSIVE_SYNC_NAME,
     THANOS_OBJECT_STORAGE_SECRET,
 )
 from lib.kube_client import KubeClient
@@ -468,7 +469,7 @@ class PassiveSyncValidator:
                 group="cluster.open-cluster-management.io",
                 version="v1beta1",
                 plural="restores",
-                name="restore-acm-passive-sync",
+                name=RESTORE_PASSIVE_SYNC_NAME,
                 namespace=BACKUP_NAMESPACE,
             )
 
@@ -476,7 +477,7 @@ class PassiveSyncValidator:
                 self.reporter.add_result(
                     "Passive sync restore",
                     False,
-                    "restore-acm-passive-sync not found on secondary hub",
+                    f"{RESTORE_PASSIVE_SYNC_NAME} not found on secondary hub",
                     critical=True,
                 )
                 return
