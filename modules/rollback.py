@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from lib.constants import BACKUP_NAMESPACE, OBSERVABILITY_NAMESPACE
+from lib.exceptions import SwitchoverError
 from lib.kube_client import KubeClient
 from lib.utils import StateManager
 
@@ -53,8 +54,11 @@ class Rollback:
             logger.info("Allow 5-10 minutes for ManagedClusters to reconnect.")
 
             return True
+        except SwitchoverError as exc:
+            logger.error("Rollback failed: %s", exc)
+            return False
         except Exception as exc:
-            logger.error(f"Rollback failed: {exc}")
+            logger.error("Unexpected error during rollback: %s", exc)
             return False
 
     def _deactivate_secondary(self) -> None:
@@ -122,7 +126,7 @@ class Rollback:
             if not self.dry_run:
                 logger.info("Thanos compactor scaled back to 1 replica")
         except Exception as exc:
-            logger.error(f"Failed to restart Thanos compactor: {exc}")
+            logger.error("Failed to restart Thanos compactor: %s", exc)
 
     def _unpause_backup_schedule(self) -> None:
         if self.dry_run:
