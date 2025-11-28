@@ -9,6 +9,7 @@ from lib.constants import (
     CLUSTER_VERIFY_TIMEOUT,
     OBSERVABILITY_NAMESPACE,
 )
+from lib.exceptions import SwitchoverError
 from lib.kube_client import KubeClient
 from lib.utils import StateManager
 from lib.waiter import wait_for_condition
@@ -79,9 +80,13 @@ class PostActivationVerification:
             logger.info("Post-activation verification completed successfully")
             return True
 
-        except Exception as e:
-            logger.error(f"Post-activation verification failed: {e}")
+        except SwitchoverError as e:
+            logger.error("Post-activation verification failed: %s", e)
             self.state.add_error(str(e), "post_activation_verification")
+            return False
+        except Exception as e:
+            logger.error("Unexpected error during post-activation verification: %s", e)
+            self.state.add_error(f"Unexpected: {str(e)}", "post_activation_verification")
             return False
 
     def _verify_managed_clusters_connected(self, timeout: int = CLUSTER_VERIFY_TIMEOUT):
@@ -208,7 +213,7 @@ class PostActivationVerification:
                 logger.warning("observatorium-api pods did not become ready in time")
 
         except Exception as e:
-            logger.error(f"Failed to restart observatorium-api: {e}")
+            logger.error("Failed to restart observatorium-api: %s", e)
             if "not found" in str(e).lower():
                 logger.warning("observatorium-api deployment not found")
             else:
@@ -270,13 +275,19 @@ class PostActivationVerification:
             if pod_errors:
                 error_pods.append(f"{pod_name}: " + "; ".join(pod_errors))
 
-        logger.info(f"Observability pods: {running_pods}/{len(pods)} running, " f"{ready_pods}/{len(pods)} ready")
+        logger.info(
+            "Observability pods: %d/%d running, %d/%d ready",
+            running_pods, len(pods), ready_pods, len(pods)
+        )
 
         if error_pods:
-            logger.warning(f"Pods in error state: {', '.join(error_pods)}")
+            logger.warning("Pods in error state: %s", ", ".join(error_pods))
 
         if ready_pods < len(pods) * 0.8:  # Allow 20% tolerance
-            logger.warning(f"Only {ready_pods}/{len(pods)} pods ready. " "Some pods may still be starting.")
+            logger.warning(
+                "Only %d/%d pods ready. Some pods may still be starting.",
+                ready_pods, len(pods)
+            )
 
     def _verify_metrics_collection(self):
         """Verify metrics collection is working (informational)."""
@@ -301,7 +312,7 @@ class PostActivationVerification:
         )
 
         if metrics_pods:
-            logger.info(f"Found {len(metrics_pods)} metrics-collector pod(s)")
+            logger.info("Found %d metrics-collector pod(s)", len(metrics_pods))
         else:
             logger.warning("No metrics-collector pods found")
 
@@ -318,7 +329,7 @@ class PostActivationVerification:
             else:
                 logger.warning("Grafana route not found in Observability namespace")
         except Exception as exc:
-            logger.warning(f"Unable to query Grafana route: {exc}")
+            logger.warning("Unable to query Grafana route: %s", exc)
 
     def _verify_disable_auto_import_cleared(self):
         """Ensure disable-auto-import annotations were removed after activation."""
