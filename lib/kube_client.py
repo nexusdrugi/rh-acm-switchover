@@ -31,14 +31,20 @@ def is_retryable_error(exception: BaseException) -> bool:
     return False
 
 
-# Standard retry decorator for API calls
-retry_api_call = retry(
-    retry=retry_if_exception(is_retryable_error),
-    wait=wait_exponential(multiplier=1, min=1, max=10),
-    stop=stop_after_attempt(5),
-    before_sleep=before_sleep_log(logger, logging.DEBUG),
-    reraise=True,
-)
+from tenacity import retry_if_exception
+
+def _should_retry(exception: Exception) -> bool:
+    """Custom retry condition using is_retryable_error."""
+    return is_retryable_error(exception)
+ 
+ # Standard retry decorator for API calls
+ retry_api_call = retry(
+    retry=retry_if_exception(_should_retry),
+     wait=wait_exponential(multiplier=1, min=1, max=10),
+     stop=stop_after_attempt(5),
+     before_sleep=before_sleep_log(logger, logging.DEBUG),
+     reraise=True,
+ )
 
 
 class KubeClient:
