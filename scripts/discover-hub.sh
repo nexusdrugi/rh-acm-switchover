@@ -365,8 +365,8 @@ propose_check() {
     local secondary_ctx=""
     local new_hub_ctx=""
     local old_hub_ctx=""
-    local proposal=""
     local proposal_type=""
+    declare -a proposal_cmd=()
     
     # Find hubs by role
     for i in "${!HUB_CONTEXTS[@]}"; do
@@ -401,7 +401,7 @@ propose_check() {
     if [[ -n "$primary_ctx" ]] && [[ -n "$secondary_ctx" ]]; then
         # Pre-switchover scenario: Primary + Secondary with passive-sync
         proposal_type="preflight"
-        proposal="${SCRIPT_DIR}/preflight-check.sh --primary-context $primary_ctx --secondary-context $secondary_ctx --method passive"
+        proposal_cmd=("${SCRIPT_DIR}/preflight-check.sh" "--primary-context" "$primary_ctx" "--secondary-context" "$secondary_ctx" "--method" "passive")
         
         echo -e "  ${GREEN}Scenario: Pre-Switchover${NC}"
         echo "  Primary hub ($primary_ctx) and secondary hub ($secondary_ctx) detected."
@@ -411,7 +411,7 @@ propose_check() {
     elif [[ -n "$new_hub_ctx" ]] && [[ -n "$old_hub_ctx" ]]; then
         # Post-switchover scenario: New primary + Old primary
         proposal_type="postflight"
-        proposal="${SCRIPT_DIR}/postflight-check.sh --new-hub-context $new_hub_ctx --old-hub-context $old_hub_ctx"
+        proposal_cmd=("${SCRIPT_DIR}/postflight-check.sh" "--new-hub-context" "$new_hub_ctx" "--old-hub-context" "$old_hub_ctx")
         
         echo -e "  ${GREEN}Scenario: Post-Switchover${NC}"
         echo "  New primary ($new_hub_ctx) and old primary ($old_hub_ctx) detected."
@@ -421,7 +421,7 @@ propose_check() {
     elif [[ -n "$new_hub_ctx" ]]; then
         # Post-switchover without old hub comparison
         proposal_type="postflight"
-        proposal="${SCRIPT_DIR}/postflight-check.sh --new-hub-context $new_hub_ctx"
+        proposal_cmd=("${SCRIPT_DIR}/postflight-check.sh" "--new-hub-context" "$new_hub_ctx")
         
         echo -e "  ${GREEN}Scenario: Post-Switchover (single hub)${NC}"
         echo "  New primary ($new_hub_ctx) detected."
@@ -462,7 +462,7 @@ propose_check() {
     
     # Print the proposed command
     echo -e "  ${GREEN}Proposed command:${NC}"
-    echo -e "    $proposal"
+    echo -e "    ${proposal_cmd[*]}"
     echo ""
     
     # Execute if --run was specified
@@ -471,7 +471,7 @@ propose_check() {
         echo -e "${BLUE}Executing $proposal_type checks...${NC}"
         echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo ""
-        exec $proposal
+        exec "${proposal_cmd[@]}"
     fi
     
     return 0
