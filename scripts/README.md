@@ -16,7 +16,7 @@ These scripts automate the validation process before and after switchover, ensur
 
 ## Idempotency & Safety
 
-**Both scripts are fully idempotent and safe to run multiple times:**
+**Scripts are fully idempotent and safe to run multiple times:**
 
 - ✅ **Read-only operations** - Only perform `oc get`, `oc describe`, and similar read operations
 - ✅ **No state modifications** - Never modify cluster resources or configuration
