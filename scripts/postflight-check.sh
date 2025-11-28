@@ -55,12 +55,12 @@ while [[ $# -gt 0 ]]; do
             echo "  --new-hub-context     Kubernetes context for new active hub (required)"
             echo "  --old-hub-context     Kubernetes context for old primary hub (optional)"
             echo "  --help, -h            Show this help message"
-            exit $EXIT_SUCCESS
+            exit "$EXIT_SUCCESS"
             ;;
         *)
             echo "Unknown option: $1"
             echo "Use --help for usage information"
-            exit $EXIT_INVALID_ARGS
+            exit "$EXIT_INVALID_ARGS"
             ;;
     esac
 done
@@ -69,7 +69,7 @@ done
 if [[ -z "$NEW_HUB_CONTEXT" ]]; then
     echo -e "${RED}Error: --new-hub-context is required${NC}"
     echo "Use --help for usage information"
-    exit $EXIT_INVALID_ARGS
+    exit "$EXIT_INVALID_ARGS"
 fi
 
 # Main validation
@@ -416,7 +416,7 @@ fi
 
 # Summary and exit
 if print_summary "postflight"; then
-    exit $EXIT_SUCCESS
+    exit "$EXIT_SUCCESS"
 else
-    exit $EXIT_FAILURE
+    exit "$EXIT_FAILURE"
 fi

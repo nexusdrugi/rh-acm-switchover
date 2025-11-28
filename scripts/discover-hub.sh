@@ -83,7 +83,7 @@ Examples:
   # Show detailed cluster status
   $0 --auto --verbose
 EOF
-    exit $EXIT_SUCCESS
+    exit "$EXIT_SUCCESS"
 }
 
 # Test if a context is reachable
@@ -273,7 +273,7 @@ analyze_context() {
     
     # Check if it's an ACM hub
     if ! is_acm_hub "$ctx"; then
-        echo -e "${GRAY:-}not an ACM hub (skipped)${NC}"
+        echo -e "${GRAY}not an ACM hub (skipped)${NC}"
         return 1
     fi
     
@@ -515,7 +515,7 @@ while [[ $# -gt 0 ]]; do
         *)
             echo "Unknown option: $1"
             echo "Use --help for usage information"
-            exit $EXIT_INVALID_ARGS
+            exit "$EXIT_INVALID_ARGS"
             ;;
     esac
 done
@@ -533,13 +533,13 @@ detect_cluster_cli
 
 if [[ -z "$CLUSTER_CLI_BIN" ]]; then
     echo -e "${RED}Error: No Kubernetes CLI found. Install oc or kubectl.${NC}"
-    exit $EXIT_FAILURE
+    exit "$EXIT_FAILURE"
 fi
 
 # Check for jq (required for this script)
 if ! command -v jq &>/dev/null; then
     echo -e "${RED}Error: jq is required for this script but not found.${NC}"
-    exit $EXIT_FAILURE
+    exit "$EXIT_FAILURE"
 fi
 
 # Get list of contexts to check
@@ -559,14 +559,14 @@ elif [[ "$AUTO_DISCOVER" == "true" ]]; then
     
     if [[ ${#CONTEXT_LIST[@]} -eq 0 ]]; then
         echo -e "${RED}No Kubernetes contexts found in kubeconfig${NC}"
-        exit $EXIT_FAILURE
+        exit "$EXIT_FAILURE"
     fi
     
     echo "Found ${#CONTEXT_LIST[@]} context(s) in kubeconfig"
 else
     echo -e "${RED}Error: Either --auto or --contexts must be specified${NC}"
     echo "Use --help for usage information"
-    exit $EXIT_INVALID_ARGS
+    exit "$EXIT_INVALID_ARGS"
 fi
 
 # Analyze each context
@@ -581,7 +581,7 @@ if [[ ${#HUB_CONTEXTS[@]} -eq 0 ]]; then
     echo ""
     echo -e "${RED}No ACM hubs found among the checked contexts.${NC}"
     echo "Ensure your kubeconfig contains contexts for ACM hub clusters."
-    exit $EXIT_FAILURE
+    exit "$EXIT_FAILURE"
 fi
 
 # Print discovered hubs
@@ -589,7 +589,7 @@ print_discovered_hubs
 
 # Propose the appropriate check
 if propose_check; then
-    exit $EXIT_SUCCESS
+    exit "$EXIT_SUCCESS"
 else
-    exit $EXIT_FAILURE
+    exit "$EXIT_FAILURE"
 fi

@@ -61,12 +61,12 @@ while [[ $# -gt 0 ]]; do
             echo "  --secondary-context   Kubernetes context for secondary hub (required)"
             echo "  --method              Switchover method: passive or full (required)"
             echo "  --help, -h            Show this help message"
-            exit $EXIT_SUCCESS
+            exit "$EXIT_SUCCESS"
             ;;
         *)
             echo "Unknown option: $1"
             echo "Use --help for usage information"
-            exit $EXIT_INVALID_ARGS
+            exit "$EXIT_INVALID_ARGS"
             ;;
     esac
 done
@@ -75,19 +75,19 @@ done
 if [[ -z "$PRIMARY_CONTEXT" ]] || [[ -z "$SECONDARY_CONTEXT" ]]; then
     echo -e "${RED}Error: Both --primary-context and --secondary-context are required${NC}"
     echo "Use --help for usage information"
-    exit $EXIT_INVALID_ARGS
+    exit "$EXIT_INVALID_ARGS"
 fi
 
 if [[ -z "$METHOD" ]]; then
     echo -e "${RED}Error: --method is required (passive or full)${NC}"
     echo "Use --help for usage information"
-    exit $EXIT_INVALID_ARGS
+    exit "$EXIT_INVALID_ARGS"
 fi
 
 if [[ "$METHOD" != "passive" ]] && [[ "$METHOD" != "full" ]]; then
     echo -e "${RED}Error: --method must be 'passive' or 'full', got '$METHOD'${NC}"
     echo "Use --help for usage information"
-    exit $EXIT_INVALID_ARGS
+    exit "$EXIT_INVALID_ARGS"
 fi
 
 # Main validation
@@ -372,7 +372,7 @@ fi
 
 # Summary and exit
 if print_summary "preflight"; then
-    exit $EXIT_SUCCESS
+    exit "$EXIT_SUCCESS"
 else
-    exit $EXIT_FAILURE
+    exit "$EXIT_FAILURE"
 fi
