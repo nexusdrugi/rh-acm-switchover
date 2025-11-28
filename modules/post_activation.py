@@ -381,12 +381,17 @@ class PostActivationVerification:
 
     def _verify_klusterlet_connections(self):
         """
-        Verify klusterlet agents on managed clusters are connected to the new hub.
+        Verify and fix klusterlet agents on managed clusters to connect to the new hub.
 
-        This is a non-blocking verification that attempts to connect to each managed
-        cluster and verify its klusterlet is pointing to the new hub. If we can't
-        connect to a managed cluster (no context available), we log a warning but
-        don't fail the switchover.
+        When both hubs have the same cluster imported (due to passive sync restoring
+        ManagedCluster resources), the klusterlet may remain connected to the old hub.
+        This method detects such cases and forces the klusterlet to reconnect by:
+        1. Deleting the bootstrap-hub-kubeconfig secret on the managed cluster
+        2. Re-applying the import manifest from the new hub
+        3. Restarting the klusterlet deployment
+
+        If we can't connect to a managed cluster (no context available), we log a
+        warning but don't fail the switchover.
         """
         if self.dry_run:
             logger.info("[DRY-RUN] Skipping klusterlet connection verification")
@@ -429,7 +434,7 @@ class PostActivationVerification:
 
         # Try to verify each cluster's klusterlet connection
         verified = []
-        failed = []
+        wrong_hub = []
         unreachable = []
 
         for cluster_name, cluster_api_url in cluster_info:
@@ -444,14 +449,14 @@ class PostActivationVerification:
                 if result == "verified":
                     verified.append(cluster_name)
                 elif result == "wrong_hub":
-                    failed.append(cluster_name)
+                    wrong_hub.append((cluster_name, context_name))
                 else:  # unreachable or error
                     unreachable.append(cluster_name)
             except Exception as e:
                 logger.debug("Error checking klusterlet for %s: %s", cluster_name, e)
                 unreachable.append(cluster_name)
 
-        # Log results
+        # Log initial results
         if verified:
             logger.info(
                 "✓ Klusterlet verified for %d cluster(s): %s",
@@ -459,12 +464,33 @@ class PostActivationVerification:
                 ", ".join(verified),
             )
 
-        if failed:
+        # Fix clusters connected to wrong hub
+        if wrong_hub:
             logger.warning(
-                "✗ Klusterlet NOT connected to new hub for %d cluster(s): %s",
-                len(failed),
-                ", ".join(failed),
+                "Klusterlet connected to wrong hub for %d cluster(s): %s - attempting to fix...",
+                len(wrong_hub),
+                ", ".join([c[0] for c in wrong_hub]),
             )
+            fixed = []
+            fix_failed = []
+            for cluster_name, context_name in wrong_hub:
+                if self._force_klusterlet_reconnect(cluster_name, context_name):
+                    fixed.append(cluster_name)
+                else:
+                    fix_failed.append(cluster_name)
+
+            if fixed:
+                logger.info(
+                    "✓ Fixed klusterlet connection for %d cluster(s): %s",
+                    len(fixed),
+                    ", ".join(fixed),
+                )
+            if fix_failed:
+                logger.warning(
+                    "✗ Failed to fix klusterlet for %d cluster(s): %s",
+                    len(fix_failed),
+                    ", ".join(fix_failed),
+                )
 
         if unreachable:
             logger.info(
@@ -472,6 +498,121 @@ class PostActivationVerification:
                 len(unreachable),
                 ", ".join(unreachable),
             )
+
+    def _force_klusterlet_reconnect(self, cluster_name: str, context_name: str) -> bool:
+        """
+        Force a managed cluster's klusterlet to reconnect to the new hub.
+
+        This is needed when both hubs have the same cluster imported (due to passive
+        sync) and the klusterlet is still connected to the old hub. The fix involves:
+        1. Getting the import secret from the new hub
+        2. Deleting the bootstrap-hub-kubeconfig secret on the managed cluster
+        3. Re-applying the import manifest (which recreates the bootstrap secret)
+        4. Restarting the klusterlet deployment
+
+        Args:
+            cluster_name: Name of the ManagedCluster
+            context_name: Kubeconfig context to use for connecting to the cluster
+
+        Returns:
+            True if successful, False otherwise
+        """
+        import time
+        import yaml
+
+        try:
+            logger.info("Force-reconnecting klusterlet for %s to new hub...", cluster_name)
+
+            # Step 1: Get the import secret from the new hub
+            import_secret = self.secondary.get_secret(
+                namespace=cluster_name,
+                name=f"{cluster_name}-import",
+            )
+            if not import_secret:
+                logger.warning("No import secret found for %s on new hub", cluster_name)
+                return False
+
+            import_yaml_b64 = import_secret.get("data", {}).get("import.yaml", "")
+            if not import_yaml_b64:
+                logger.warning("Import secret for %s has no import.yaml data", cluster_name)
+                return False
+
+            import_yaml = base64.b64decode(import_yaml_b64).decode("utf-8")
+
+            # Step 2: Connect to the managed cluster and delete the bootstrap secret
+            config.load_kube_config(context=context_name)
+            v1 = client.CoreV1Api()
+
+            try:
+                v1.delete_namespaced_secret(
+                    name="bootstrap-hub-kubeconfig",
+                    namespace="open-cluster-management-agent",
+                )
+                logger.debug("Deleted bootstrap-hub-kubeconfig secret on %s", cluster_name)
+            except ApiException as e:
+                if e.status != 404:
+                    logger.warning("Failed to delete bootstrap secret on %s: %s", cluster_name, e)
+
+            # Step 3: Apply the import manifest to recreate the bootstrap secret
+            # Parse the import YAML and apply each resource
+            import_docs = list(yaml.safe_load_all(import_yaml))
+            apps_v1 = client.AppsV1Api()
+            rbac_v1 = client.RbacAuthorizationV1Api()
+            scheduling_v1 = client.SchedulingV1Api()
+            custom_api = client.CustomObjectsApi()
+
+            for doc in import_docs:
+                if not doc:
+                    continue
+                kind = doc.get("kind", "")
+                name = doc.get("metadata", {}).get("name", "")
+                namespace = doc.get("metadata", {}).get("namespace")
+
+                try:
+                    if kind == "Secret" and name == "bootstrap-hub-kubeconfig":
+                        # This is the key secret we need to recreate
+                        v1.create_namespaced_secret(
+                            namespace=namespace,
+                            body=doc,
+                        )
+                        logger.debug("Created bootstrap-hub-kubeconfig secret on %s", cluster_name)
+                except ApiException as e:
+                    if e.status == 409:  # Already exists
+                        pass
+                    else:
+                        logger.debug("Error applying %s/%s: %s", kind, name, e)
+
+            # Step 4: Restart the klusterlet deployment
+            time.sleep(2)  # Brief pause for secret to be visible
+
+            try:
+                # Trigger a rollout restart by patching the deployment
+                patch = {
+                    "spec": {
+                        "template": {
+                            "metadata": {
+                                "annotations": {
+                                    "acm-switchover/restart": str(int(time.time()))
+                                }
+                            }
+                        }
+                    }
+                }
+                apps_v1.patch_namespaced_deployment(
+                    name="klusterlet",
+                    namespace="open-cluster-management-agent",
+                    body=patch,
+                )
+                logger.debug("Triggered klusterlet restart on %s", cluster_name)
+            except ApiException as e:
+                logger.warning("Failed to restart klusterlet on %s: %s", cluster_name, e)
+
+            logger.info("Force-reconnected klusterlet for %s", cluster_name)
+            return True
+
+        except Exception as e:
+            logger.warning("Failed to force-reconnect klusterlet for %s: %s", cluster_name, e)
+            return False
 
     def _get_hub_api_server(self) -> str:
         """Get the API server URL for the new hub."""

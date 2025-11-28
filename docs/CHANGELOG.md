@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Post-Activation Verification
 - **Klusterlet connection verification**: Python tool now verifies that klusterlet agents on managed clusters are connected to the new hub (non-blocking, requires managed cluster contexts in kubeconfig)
+- **Automatic klusterlet reconnection**: When a managed cluster's klusterlet is connected to the wrong hub (can happen when passive sync restores cluster resources to both hubs), the tool automatically fixes this by:
+  1. Deleting the `bootstrap-hub-kubeconfig` secret on the managed cluster
+  2. Re-applying the import manifest from the new hub to recreate the secret
+  3. Restarting the klusterlet deployment to pick up the new hub connection
+
+#### Finalization Improvements
+- **Proactive BackupSchedule recreation**: Changed from reactive collision detection to proactive recreation during switchover. The BackupSchedule is now always recreated to prevent the race condition where `BackupCollision` appears after Velero schedules run.
 
 ### Fixed
 
