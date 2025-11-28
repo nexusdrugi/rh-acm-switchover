@@ -1,0 +1,231 @@
+#!/bin/bash
+#
+# Common Library for ACM Switchover Scripts
+#
+# This file contains shared functions and variables used by preflight-check.sh
+# and postflight-check.sh. Sourcing this file ensures consistency and reduces
+# code duplication across scripts.
+#
+# Usage:
+#   source "${SCRIPT_DIR}/lib-common.sh"
+
+# Prevent multiple sourcing
+if [[ -n "${_LIB_COMMON_LOADED:-}" ]]; then
+    return 0
+fi
+_LIB_COMMON_LOADED=1
+
+# =============================================================================
+# Colors for output
+# =============================================================================
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# =============================================================================
+# Counters
+# =============================================================================
+TOTAL_CHECKS=0
+PASSED_CHECKS=0
+FAILED_CHECKS=0
+WARNING_CHECKS=0
+
+# =============================================================================
+# Arrays to store messages
+# =============================================================================
+FAILED_MESSAGES=()
+WARNING_MESSAGES=()
+
+# =============================================================================
+# Helper Functions
+# =============================================================================
+
+# Record a passing check
+# Usage: check_pass "Check description"
+check_pass() {
+    ((TOTAL_CHECKS++)) || true
+    ((PASSED_CHECKS++)) || true
+    echo -e "${GREEN}✓${NC} $1"
+}
+
+# Record a failing check
+# Usage: check_fail "Check description"
+check_fail() {
+    ((TOTAL_CHECKS++)) || true
+    ((FAILED_CHECKS++)) || true
+    FAILED_MESSAGES+=("$1")
+    echo -e "${RED}✗${NC} $1"
+}
+
+# Record a warning
+# Usage: check_warn "Check description"
+check_warn() {
+    ((TOTAL_CHECKS++)) || true
+    ((WARNING_CHECKS++)) || true
+    WARNING_MESSAGES+=("$1")
+    echo -e "${YELLOW}⚠${NC} $1"
+}
+
+# Print a section header
+# Usage: section_header "Section Title"
+section_header() {
+    echo ""
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}$1${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+}
+
+# =============================================================================
+# CLI Detection
+# =============================================================================
+
+# Detect and configure the cluster CLI (oc or kubectl) and jq
+# Sets: CLUSTER_CLI_BIN, CLUSTER_CLI_NAME
+# Defines: oc() function alias if using kubectl
+# Usage: detect_cluster_cli
+detect_cluster_cli() {
+    CLUSTER_CLI_BIN=""
+    CLUSTER_CLI_NAME=""
+
+    if command -v oc &> /dev/null; then
+        CLUSTER_CLI_BIN="oc"
+        CLUSTER_CLI_NAME="OpenShift CLI (oc)"
+        check_pass "$CLUSTER_CLI_NAME is installed"
+    elif command -v kubectl &> /dev/null; then
+        CLUSTER_CLI_BIN="kubectl"
+        CLUSTER_CLI_NAME="Kubernetes CLI (kubectl)"
+        # Provide oc alias so the rest of the script can keep using oc invocations
+        oc() {
+            kubectl "$@"
+        }
+        check_pass "$CLUSTER_CLI_NAME is installed"
+    else
+        check_fail "Neither oc nor kubectl CLI found"
+    fi
+
+    # Check for jq (optional but recommended)
+    if command -v jq &> /dev/null; then
+        check_pass "jq is installed"
+    else
+        check_warn "jq not found (optional, but recommended for some commands)"
+    fi
+
+    # Print CLI info if available
+    if [[ -n "$CLUSTER_CLI_BIN" ]]; then
+        echo "Using CLI: $CLUSTER_CLI_NAME ($(command -v "$CLUSTER_CLI_BIN"))"
+    fi
+}
+
+# =============================================================================
+# Summary Output
+# =============================================================================
+
+# Print the validation/verification summary
+# Usage: print_summary "preflight" | print_summary "postflight"
+print_summary() {
+    local mode="${1:-preflight}"
+    
+    echo ""
+    if [[ "$mode" == "preflight" ]]; then
+        echo "╔════════════════════════════════════════════════════════════╗"
+        echo "║   Validation Summary                                       ║"
+        echo "╚════════════════════════════════════════════════════════════╝"
+    else
+        echo "╔════════════════════════════════════════════════════════════╗"
+        echo "║   Verification Summary                                     ║"
+        echo "╚════════════════════════════════════════════════════════════╝"
+    fi
+    
+    echo ""
+    echo -e "Total Checks:    $TOTAL_CHECKS"
+    echo -e "${GREEN}Passed:          $PASSED_CHECKS${NC}"
+    echo -e "${RED}Failed:          $FAILED_CHECKS${NC}"
+    echo -e "${YELLOW}Warnings:        $WARNING_CHECKS${NC}"
+    echo ""
+
+    # Print failed checks if any
+    if [[ $FAILED_CHECKS -gt 0 ]]; then
+        echo -e "${RED}Failed Checks:${NC}"
+        for msg in "${FAILED_MESSAGES[@]}"; do
+            echo -e "${RED}  - $msg${NC}"
+        done
+        echo ""
+    fi
+
+    # Print warnings if any
+    if [[ $WARNING_CHECKS -gt 0 ]]; then
+        echo -e "${YELLOW}Warnings:${NC}"
+        for msg in "${WARNING_MESSAGES[@]}"; do
+            echo -e "${YELLOW}  - $msg${NC}"
+        done
+        echo ""
+    fi
+
+    # Final result
+    if [[ $FAILED_CHECKS -eq 0 ]]; then
+        echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        if [[ "$mode" == "preflight" ]]; then
+            echo -e "${GREEN}✓ ALL CRITICAL CHECKS PASSED${NC}"
+        else
+            echo -e "${GREEN}✓ SWITCHOVER VERIFICATION PASSED${NC}"
+        fi
+        echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        
+        if [[ "$mode" == "preflight" ]]; then
+            echo "You are ready to proceed with the switchover."
+        else
+            echo "The ACM switchover appears to have completed successfully."
+        fi
+        echo ""
+        
+        if [[ $WARNING_CHECKS -gt 0 ]]; then
+            if [[ "$mode" == "preflight" ]]; then
+                echo -e "${YELLOW}Note: $WARNING_CHECKS warning(s) detected. Review them before proceeding.${NC}"
+            else
+                echo -e "${YELLOW}Note: $WARNING_CHECKS warning(s) detected. Review them above.${NC}"
+                echo -e "${YELLOW}Some items may need time to stabilize (e.g., metrics collection).${NC}"
+            fi
+            echo ""
+        fi
+        
+        if [[ "$mode" == "postflight" ]]; then
+            echo "Recommended next steps:"
+            echo "  1. Verify Grafana dashboards show recent metrics (wait 5-10 minutes)"
+            echo "  2. Test cluster management operations (create/update policies, etc.)"
+            echo "  3. Monitor for 24 hours before decommissioning old hub"
+            echo "  4. Inform stakeholders that switchover is complete"
+            echo ""
+        fi
+        
+        return 0
+    else
+        echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        if [[ "$mode" == "preflight" ]]; then
+            echo -e "${RED}✗ VALIDATION FAILED${NC}"
+        else
+            echo -e "${RED}✗ VERIFICATION FAILED${NC}"
+        fi
+        echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        
+        if [[ "$mode" == "preflight" ]]; then
+            echo "Please fix the failed checks before proceeding with switchover."
+        else
+            echo "Critical issues detected. Review the failed checks above."
+            echo ""
+            echo "Common issues and solutions:"
+            echo "  - Clusters not Available: Wait 5-10 minutes for reconnection"
+            echo "  - Restore not Finished: Check restore status with 'oc describe restore'"
+            echo "  - Observability pods failing: Verify observatorium-api was restarted"
+            echo "  - BackupSchedule paused: Unpause with 'oc patch backupschedule ...'"
+            echo ""
+            echo "If issues persist, consider rollback procedure in the runbook."
+        fi
+        echo ""
+        
+        return 1
+    fi
+}
