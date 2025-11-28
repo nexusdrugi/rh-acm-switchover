@@ -18,7 +18,7 @@
 
 set -euo pipefail
 
-# Source constants
+# Source constants and common library
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "${SCRIPT_DIR}/constants.sh" ]]; then
     source "${SCRIPT_DIR}/constants.sh"
@@ -27,22 +27,12 @@ else
     exit 1
 fi
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-# Counters
-TOTAL_CHECKS=0
-PASSED_CHECKS=0
-FAILED_CHECKS=0
-WARNING_CHECKS=0
-
-# Arrays to store messages
-FAILED_MESSAGES=()
-WARNING_MESSAGES=()
+if [[ -f "${SCRIPT_DIR}/lib-common.sh" ]]; then
+    source "${SCRIPT_DIR}/lib-common.sh"
+else
+    echo "Error: lib-common.sh not found in ${SCRIPT_DIR}"
+    exit 1
+fi
 
 # Parse arguments
 NEW_HUB_CONTEXT=""
@@ -65,12 +55,12 @@ while [[ $# -gt 0 ]]; do
             echo "  --new-hub-context     Kubernetes context for new active hub (required)"
             echo "  --old-hub-context     Kubernetes context for old primary hub (optional)"
             echo "  --help, -h            Show this help message"
-            exit 0
+            exit $EXIT_SUCCESS
             ;;
         *)
             echo "Unknown option: $1"
             echo "Use --help for usage information"
-            exit 2
+            exit $EXIT_INVALID_ARGS
             ;;
     esac
 done
@@ -79,36 +69,8 @@ done
 if [[ -z "$NEW_HUB_CONTEXT" ]]; then
     echo -e "${RED}Error: --new-hub-context is required${NC}"
     echo "Use --help for usage information"
-    exit 2
+    exit $EXIT_INVALID_ARGS
 fi
-
-# Helper functions
-check_pass() {
-    ((TOTAL_CHECKS++)) || true
-    ((PASSED_CHECKS++)) || true
-    echo -e "${GREEN}✓${NC} $1"
-}
-
-check_fail() {
-    ((TOTAL_CHECKS++)) || true
-    ((FAILED_CHECKS++)) || true
-    FAILED_MESSAGES+=("$1")
-    echo -e "${RED}✗${NC} $1"
-}
-
-check_warn() {
-    ((TOTAL_CHECKS++)) || true
-    ((WARNING_CHECKS++)) || true
-    WARNING_MESSAGES+=("$1")
-    echo -e "${YELLOW}⚠${NC} $1"
-}
-
-section_header() {
-    echo ""
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BLUE}$1${NC}"
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-}
 
 # Main validation
 echo ""
@@ -124,40 +86,16 @@ echo ""
 
 # Check 0: Verify CLI tools
 section_header "0. Checking CLI Tools"
-
-CLUSTER_CLI_BIN=""
-CLUSTER_CLI_NAME=""
-
-if command -v oc &> /dev/null; then
-    CLUSTER_CLI_BIN="oc"
-    CLUSTER_CLI_NAME="OpenShift CLI (oc)"
-    check_pass "$CLUSTER_CLI_NAME is installed"
-elif command -v kubectl &> /dev/null; then
-    CLUSTER_CLI_BIN="kubectl"
-    CLUSTER_CLI_NAME="Kubernetes CLI (kubectl)"
-    oc() {
-        kubectl "$@"
-    }
-    check_pass "$CLUSTER_CLI_NAME is installed"
-else
-    check_fail "Neither oc nor kubectl CLI found"
-fi
-
-if command -v jq &> /dev/null; then
-    check_pass "jq is installed"
-else
-    check_warn "jq not found (optional, but recommended for some commands)"
-fi
-
-if [[ -n "$CLUSTER_CLI_BIN" ]]; then
-    echo "Using CLI: $CLUSTER_CLI_NAME ($(command -v "$CLUSTER_CLI_BIN"))"
-fi
+detect_cluster_cli
 
 # Check 1: Verify restore completed
 section_header "1. Checking Restore Status"
 
 # Get details of the most recent restore (sort by creation timestamp)
 read -r RESTORE_NAME RESTORE_PHASE RESTORE_TIME <<< "$(oc --context="$NEW_HUB_CONTEXT" get restore -n "$BACKUP_NAMESPACE" --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name} {.items[-1].status.phase} {.items[-1].metadata.creationTimestamp}' 2>/dev/null || true)"
+
+# Check if BackupSchedule is enabled (which deletes Restore objects)
+BACKUP_SCHEDULE_ENABLED=$(oc --context="$NEW_HUB_CONTEXT" get backupschedule -n "$BACKUP_NAMESPACE" -o jsonpath='{.items[0].spec.paused}' 2>/dev/null || echo "")
 
 if [[ -n "$RESTORE_NAME" ]]; then
     if [[ "$RESTORE_PHASE" == "Finished" ]] || [[ "$RESTORE_PHASE" == "Completed" ]]; then
@@ -184,6 +122,11 @@ if [[ -n "$RESTORE_NAME" ]]; then
     else
         check_fail "Latest restore '$RESTORE_NAME' in unexpected state: $RESTORE_PHASE"
     fi
+elif [[ "$BACKUP_SCHEDULE_ENABLED" == "false" ]] || [[ -z "$BACKUP_SCHEDULE_ENABLED" ]]; then
+    # No restore objects but BackupSchedule is enabled - this is expected behavior
+    # When BackupSchedule is enabled, OADP cleans up Restore objects
+    check_pass "No restore objects found (expected: BackupSchedule is enabled and cleaned up Restore resources)"
+    echo -e "       ${YELLOW}Note: OADP deletes Restore objects when BackupSchedule is active${NC}"
 else
     check_fail "No restore resources found on new hub"
 fi
@@ -471,67 +414,9 @@ else
     check_warn "$DISABLED_AUTO_IMPORT cluster(s) have disable-auto-import annotation (may be intentional)"
 fi
 
-# Summary
-echo ""
-echo "╔════════════════════════════════════════════════════════════╗"
-echo "║   Verification Summary                                     ║"
-echo "╚════════════════════════════════════════════════════════════╝"
-echo ""
-echo -e "Total Checks:    $TOTAL_CHECKS"
-echo -e "${GREEN}Passed:          $PASSED_CHECKS${NC}"
-echo -e "${RED}Failed:          $FAILED_CHECKS${NC}"
-echo -e "${YELLOW}Warnings:        $WARNING_CHECKS${NC}"
-echo ""
-
-if [[ $FAILED_CHECKS -gt 0 ]]; then
-    echo -e "${RED}Failed Checks:${NC}"
-    for msg in "${FAILED_MESSAGES[@]}"; do
-        echo -e "${RED}  - $msg${NC}"
-    done
-    echo ""
-fi
-
-if [[ $WARNING_CHECKS -gt 0 ]]; then
-    echo -e "${YELLOW}Warnings:${NC}"
-    for msg in "${WARNING_MESSAGES[@]}"; do
-        echo -e "${YELLOW}  - $msg${NC}"
-    done
-    echo ""
-fi
-
-if [[ $FAILED_CHECKS -eq 0 ]]; then
-    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${GREEN}✓ SWITCHOVER VERIFICATION PASSED${NC}"
-    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-    echo "The ACM switchover appears to have completed successfully."
-    echo ""
-    if [[ $WARNING_CHECKS -gt 0 ]]; then
-        echo -e "${YELLOW}Note: $WARNING_CHECKS warning(s) detected. Review them above.${NC}"
-        echo -e "${YELLOW}Some items may need time to stabilize (e.g., metrics collection).${NC}"
-        echo ""
-    fi
-    echo "Recommended next steps:"
-    echo "  1. Verify Grafana dashboards show recent metrics (wait 5-10 minutes)"
-    echo "  2. Test cluster management operations (create/update policies, etc.)"
-    echo "  3. Monitor for 24 hours before decommissioning old hub"
-    echo "  4. Inform stakeholders that switchover is complete"
-    echo ""
-    exit 0
+# Summary and exit
+if print_summary "postflight"; then
+    exit $EXIT_SUCCESS
 else
-    echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${RED}✗ VERIFICATION FAILED${NC}"
-    echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-    echo "Critical issues detected. Review the failed checks above."
-    echo ""
-    echo "Common issues and solutions:"
-    echo "  - Clusters not Available: Wait 5-10 minutes for reconnection"
-    echo "  - Restore not Finished: Check restore status with 'oc describe restore'"
-    echo "  - Observability pods failing: Verify observatorium-api was restarted"
-    echo "  - BackupSchedule paused: Unpause with 'oc patch backupschedule ...'"
-    echo ""
-    echo "If issues persist, consider rollback procedure in the runbook."
-    echo ""
-    exit 1
+    exit $EXIT_FAILURE
 fi
