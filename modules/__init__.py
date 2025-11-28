@@ -8,7 +8,6 @@ from .finalization import Finalization
 from .post_activation import PostActivationVerification
 from .preflight import PreflightValidator, ValidationError
 from .primary_prep import PrimaryPreparation
-from .rollback import Rollback
 
 __all__ = [
     "PreflightValidator",
@@ -17,6 +16,5 @@ __all__ = [
     "SecondaryActivation",
     "PostActivationVerification",
     "Finalization",
-    "Rollback",
     "Decommission",
 ]

@@ -80,7 +80,6 @@ class Phase(Enum):
     POST_ACTIVATION = "post_activation_verification"
     FINALIZATION = "finalization"
     COMPLETED = "completed"
-    ROLLBACK = "rollback"
     FAILED = "failed"
 
 

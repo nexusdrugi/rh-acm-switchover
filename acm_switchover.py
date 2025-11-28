@@ -11,7 +11,7 @@ Features:
 - Auto-detection of ACM version and optional components
 - Dry-run and validate-only modes
 - Support for both passive sync and full restore methods
-- Rollback capability
+- Reverse switchover capability (swap contexts to return to original hub)
 - Interactive decommission of old hub
 """
 
@@ -37,7 +37,6 @@ from modules import (
     PostActivationVerification,
     PreflightValidator,
     PrimaryPreparation,
-    Rollback,
     SecondaryActivation,
 )
 
@@ -66,8 +65,8 @@ Examples:
   # Execute switchover (Method 2 - full restore)
   %(prog)s --primary-context primary-hub --secondary-context secondary-hub --method full
   
-  # Rollback to primary hub
-  %(prog)s --rollback --primary-context primary-hub --secondary-context secondary-hub
+  # Reverse switchover (return to original hub - swap contexts)
+  %(prog)s --primary-context secondary-hub --secondary-context primary-hub --method passive
   
   # Decommission old hub
   %(prog)s --decommission --primary-context old-hub
@@ -78,7 +77,7 @@ Examples:
     parser.add_argument("--primary-context", required=True, help="Kubernetes context for primary hub")
     parser.add_argument(
         "--secondary-context",
-        help="Kubernetes context for secondary hub (required for switchover/rollback)",
+        help="Kubernetes context for secondary hub (required for switchover)",
     )
 
     # Operation mode
@@ -93,7 +92,6 @@ Examples:
         action="store_true",
         help="Show planned actions without executing them",
     )
-    mode_group.add_argument("--rollback", action="store_true", help="Rollback to primary hub")
     mode_group.add_argument("--decommission", action="store_true", help="Decommission old hub (interactive)")
 
     # Switchover options
@@ -158,7 +156,7 @@ Examples:
 def validate_args(args):
     """Validate argument combinations."""
     if not args.decommission and not args.secondary_context:
-        print("Error: --secondary-context is required for switchover/rollback operations")
+        print("Error: --secondary-context is required for switchover operations")
         sys.exit(1)
 
 
@@ -367,43 +365,6 @@ def _log_phase_banner(title: str, logger: logging.Logger) -> None:
     logger.info("=" * 60)
 
 
-def run_rollback(
-    args: argparse.Namespace,
-    state: StateManager,
-    primary: KubeClient,
-    secondary: KubeClient,
-    logger: logging.Logger,
-):
-    """Execute rollback to primary hub."""
-    logger.warning("\n" + "=" * 60)
-    logger.warning("ROLLBACK MODE")
-    logger.warning("=" * 60)
-
-    if not confirm_action("\nAre you sure you want to rollback to the primary hub?", default=False):
-        logger.info("Rollback cancelled by user")
-        return False
-
-    state.set_phase(Phase.ROLLBACK)
-
-    rollback = Rollback(
-        primary,
-        secondary,
-        state,
-        state.get_config("primary_version", "unknown"),
-        state.get_config("primary_has_observability", False),
-        dry_run=args.dry_run,
-    )
-
-    if rollback.rollback():
-        logger.info("\n✓ Rollback completed successfully!")
-        logger.info("Allow 5-10 minutes for ManagedClusters to reconnect to primary hub")
-        state.reset()
-        return True
-
-    logger.error("Rollback failed!")
-    return False
-
-
 def run_decommission(
     args: argparse.Namespace,
     primary: KubeClient,
@@ -520,11 +481,6 @@ def _execute_operation(
 
     if args.decommission:
         return run_decommission(args, primary, state, logger)
-
-    if args.rollback:
-        if secondary is None:
-            raise ValueError("Secondary context is required for rollback")
-        return run_rollback(args, state, primary, secondary, logger)
 
     if secondary is None:
         raise ValueError("Secondary context is required for switchover")

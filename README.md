@@ -126,14 +126,20 @@ python acm_switchover.py \
   --state-file .state/switchover-<primary>__<secondary>.json
 ```
 
-### Rollback
+### Returning to Original Hub
+
+To return to the original hub, perform a reverse switchover by swapping contexts:
 
 ```bash
-python acm_switchover.py --rollback \
-  --primary-context primary-hub \
-  --secondary-context secondary-hub \
-  --state-file .state/switchover-<primary>__<secondary>.json
+# Swap --primary-context and --secondary-context values
+python acm_switchover.py \
+  --primary-context secondary-hub \
+  --secondary-context primary-hub \
+  --method passive \
+  --old-hub-action secondary
 ```
+
+> **Note:** Requires original switchover used `--old-hub-action secondary` to enable passive sync.
 
 ### Decommission Old Hub
 
@@ -149,11 +155,10 @@ python acm_switchover.py --decommission \
 | `--primary-context` | Kubernetes context for primary hub (required) |
 | `--secondary-context` | Kubernetes context for secondary hub (required for switchover) |
 | `--method` | Switchover method: `passive` or `full` (required) |
-| `--old-hub-action` | Action for old hub: `secondary`, `decommission`, or `none` (required) |
+| `--old-hub-action` | Action for old hub: `secondary` (**recommended** - enables reverse switchover), `decommission`, or `none` (required) |
 | `--validate-only` | Run validation checks only, no changes |
 | `--dry-run` | Show planned actions without executing |
 | `--state-file` | Path to state file (default: `.state/switchover-<primary>__<secondary>.json`) |
-| `--rollback` | Rollback to primary hub |
 | `--decommission` | Decommission old hub (interactive) |
 | `--skip-observability-checks` | Skip Observability-related steps even if detected |
 | `--verbose` | Enable verbose logging |
@@ -191,7 +196,7 @@ python acm_switchover.py --decommission \
    - Fix BackupSchedule collision if detected
    - Verify new backups are created
    - Handle old hub based on `--old-hub-action`:
-     - `secondary`: Set up passive sync restore for failback
+     - `secondary`: Set up passive sync restore (**recommended** - enables reverse switchover)
      - `decommission`: Remove ACM components automatically
      - `none`: Leave unchanged for manual handling
    - Generate completion report
@@ -210,7 +215,7 @@ This enables:
 
 - Resume from failure point
 - Audit trail of operations
-- Rollback with context awareness
+- Context awareness across sessions
 
 ## Safety Features
 
@@ -218,7 +223,7 @@ This enables:
 - **Backup State Verification**: Ensures no backups in progress during switchover
 - **Progressive Validation**: Validates at each step before proceeding
 - **Dry-run Mode**: Preview all actions before execution
-- **Rollback Capability**: Revert changes if issues occur
+- **Reverse Switchover**: Return to original hub by swapping contexts (when using `--old-hub-action secondary`)
 - **Auto-detection**: No manual configuration of optional components
 
 ## Troubleshooting

@@ -68,26 +68,6 @@ class TestArgParsing:
             assert args.validate_only is False
             assert args.old_hub_action == "none"
 
-    def test_rollback_mode(self):
-        """Test parsing rollback mode."""
-        with patch(
-            "sys.argv",
-            [
-                "script.py",
-                "--primary-context",
-                "p1",
-                "--secondary-context",
-                "s1",
-                "--old-hub-action",
-                "secondary",
-                "--method",
-                "passive",
-                "--rollback",
-            ],
-        ):
-            args = parse_args()
-            assert args.rollback is True
-
     def test_decommission_mode(self):
         """Test parsing decommission mode."""
         with patch(

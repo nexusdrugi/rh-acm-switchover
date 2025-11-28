@@ -220,31 +220,46 @@ BackupSchedule schedule-rhacm deleted (saved to state)
 
 No manual intervention needed - version-aware handling is automatic.
 
-## Rollback Procedure
+## Returning to Original Hub (Reverse Switchover)
 
-If issues occur after switchover, rollback to the primary hub:
+To return to the original hub after a switchover, perform a **reverse switchover** by swapping the primary and secondary contexts. This is the recommended approach as it uses the same proven switchover workflow.
+
+> **Prerequisite:** Your original switchover must have used `--old-hub-action secondary` to set up passive sync on the old hub. This is why `secondary` is the recommended value for this option.
+
+### Step 1: Verify Old Hub Has Passive Sync
+
+On the original primary hub (now acting as secondary):
 
 ```bash
+oc get restore restore-acm-passive-sync -n open-cluster-management-backup
+# Should show Phase="Enabled"
+```
+
+### Step 2: Run Reverse Switchover
+
+Simply swap the `--primary-context` and `--secondary-context` values:
+
+```bash
+# Original switchover was:
+# python acm_switchover.py --primary-context hub-A --secondary-context hub-B ...
+
+# Reverse switchover (swap contexts):
 python acm_switchover.py \
-  --rollback \
-  --primary-context primary-acm-hub \
-  --secondary-context secondary-acm-hub \
-  --state-file .state/switchover-<primary>__<secondary>.json
+  --primary-context hub-B \
+  --secondary-context hub-A \
+  --method passive \
+  --old-hub-action secondary
 ```
 
-**What rollback does:**
-1. Deletes/pauses activation restore on secondary hub
-2. Removes disable-auto-import annotations on primary
-3. Restarts Thanos compactor on primary (if Observability)
-4. Unpauses BackupSchedule on primary
+### Step 3: Verify Clusters Reconnect
 
-**After rollback:**
-```
-✓ Rollback completed successfully!
-Allow 5-10 minutes for ManagedClusters to reconnect to primary hub
+Wait 5-10 minutes and verify clusters are `Available=True` on the original hub:
+
+```bash
+oc get managedclusters -o custom-columns=NAME:.metadata.name,AVAILABLE:.status.conditions[?(@.type=="ManagedClusterConditionAvailable")].status
 ```
 
-Wait 5-10 minutes and verify clusters are `Available=True` on primary.
+> **Tip:** The same validate → dry-run → execute workflow applies to reverse switchovers.
 
 ## Decommission Old Hub
 
@@ -428,7 +443,7 @@ python acm_switchover.py \
 ### 5. Maintain State Files
 - Keep `.state/` directory in version control (optional)
 - Provides audit trail of switchovers
-- Enables rollback with context
+- Enables resume from failure
 
 ### 6. Plan Maintenance Window
 - Estimated time: 30-60 minutes
@@ -444,8 +459,8 @@ oc get backup -n open-cluster-management-backup
 # Verify all clusters show AVAILABLE=True
 ```
 
-### 8. Test Rollback Procedure
-In a test environment, practice rollback before production use.
+### 8. Test Reverse Switchover
+In a test environment, practice reverse switchover (swapping contexts) before production use.
 
 ## Complete Example: Production Switchover
 

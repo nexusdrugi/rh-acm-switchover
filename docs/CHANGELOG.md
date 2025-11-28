@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+#### Rollback Feature
+- **Removed `--rollback` CLI option**: The automated rollback feature has been removed as it was complex and error-prone
+- **Removed `modules/rollback.py`**: Rollback module and associated tests removed
+- **Removed `ROLLBACK` phase**: No longer tracked in state management
+
+### Changed
+
+#### Reverse Switchover (Replaces Rollback)
+- **Recommended approach**: To return to the original hub, perform a reverse switchover by swapping `--primary-context` and `--secondary-context` values
+- **`--old-hub-action secondary` emphasized**: This option is now marked as **recommended** as it enables seamless reverse switchover by setting up passive sync on the old hub
+- **Documentation updated**: All rollback references replaced with reverse switchover guidance
+
 ### Added
 
 #### Hub Discovery Improvements
@@ -56,7 +70,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Dry-Run Support
 - Comprehensive dry-run support across all modules:
   - `PrimaryPreparation`: Skip Thanos pod verification wait
-  - `Rollback`: Log all operations with `[DRY-RUN]` prefix
   - `BackupScheduleManager`: Log schedule modifications
   - `Decommission`: Log all delete operations without making changes
   - `Finalization`: Full dry-run support for old hub handling
@@ -79,7 +92,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `SPEC_VELERO_MANAGED_CLUSTERS_BACKUP_NAME`, `SPEC_SYNC_RESTORE_WITH_NEW_BACKUPS`
   - `VELERO_BACKUP_LATEST`, `VELERO_BACKUP_SKIP`
 - **Dry-run decorator**: New `dry_run_skip` decorator in `lib/utils.py` for consistent dry-run handling
-- Updated `modules/activation.py`, `modules/finalization.py`, `modules/rollback.py`, `modules/backup_schedule.py` to use centralized constants
+- Updated `modules/activation.py`, `modules/finalization.py`, `modules/backup_schedule.py` to use centralized constants
 
 #### Shell Scripts
 - `scripts/preflight-check.sh`: `--method` is now a required parameter (no default)
@@ -136,7 +149,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Method 1: Continuous passive restore (recommended)
   - Method 2: One-time full restore
 - Comprehensive pre-flight validation with 15+ checks
-- Rollback capability to revert to primary hub
+- Reverse switchover capability (swap contexts to return to original hub)
 - Interactive decommission mode for old hub cleanup
 
 #### Safety & Validation
@@ -166,7 +179,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `primary_prep.py` - Primary hub preparation (143 lines)
 - `activation.py` - Secondary hub activation (169 lines)
 - `post_activation.py` - Post-activation verification (218 lines)
-- `finalization.py` - Finalization and rollback (237 lines)
+- `finalization.py` - Finalization and old hub handling (237 lines)
 - `decommission.py` - Old hub decommission (144 lines)
 
 #### Libraries
@@ -210,7 +223,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JSON state file at `.state/switchover-<primary>__<secondary>.json`
 - Tracks current phase, completed steps, configuration
 - Records errors for debugging
-- Enables resume and rollback operations
+- Enables resume operations
 
 #### Validation Checks
 - Namespace existence (both hubs)
@@ -291,7 +304,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Recovery
 - Manual intervention required for catastrophic failures
-- Rollback capability available for most failure scenarios
+- Reverse switchover (swap contexts) available for returning to original hub
 
 ### Troubleshooting
 

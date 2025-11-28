@@ -180,7 +180,6 @@ class TestPhaseEnum:
             Phase.POST_ACTIVATION: "post_activation_verification",
             Phase.FINALIZATION: "finalization",
             Phase.COMPLETED: "completed",
-            Phase.ROLLBACK: "rollback",
             Phase.FAILED: "failed",
         }
 

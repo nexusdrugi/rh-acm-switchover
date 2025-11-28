@@ -29,7 +29,6 @@ Located in `tests/test_*.py`:
 - `test_activation.py` - Secondary hub activation (7 tests)
 - `test_decommission.py` - Old hub decommissioning (15 tests)
 - `test_post_activation.py` - Post-activation verification (15 tests)
-- `test_rollback.py` - Rollback workflow (6 tests)
 - `test_finalization.py` - Finalization workflow (6 tests)
 - `test_waiter.py` - Wait/poll utilities (4 tests)
 - `test_main.py` - Argument parsing (8 tests)

@@ -410,7 +410,7 @@ graph TD
     H --> I[Run Post-flight Check]
     I --> J{Post-flight<br/>Passed?}
     J -->|No| K{Critical<br/>Failures?}
-    K -->|Yes| L[Consider Rollback]
+    K -->|Yes| L[Consider Reverse Switchover]
     K -->|No| M[Troubleshoot & Retry]
     M --> I
     J -->|Yes| N[Steps 6-11: Post-Activation]
@@ -441,7 +441,7 @@ graph TD
 1. **Run post-flight check immediately** after activation completes
 2. **Wait 5-10 minutes** if clusters show as "Unknown" - they may still be connecting
 3. **Check Grafana metrics** manually after 10-15 minutes
-4. **Keep old hub accessible** for at least 24 hours in case rollback is needed
+4. **Keep old hub accessible** for at least 24 hours in case reverse switchover is needed
 5. **Save post-flight output** for documentation and compliance
 
 ### Troubleshooting
@@ -455,7 +455,7 @@ If post-flight check fails:
 - Check if restore is still in progress (wait and retry)
 - Verify observatorium-api pods were restarted (Step 7 in runbook)
 - Review the troubleshooting section in the runbook
-- Consider rollback if critical failures persist
+- Consider reverse switchover (swap contexts) if critical failures persist
 
 ---
 
@@ -477,7 +477,7 @@ fi
 if ! ./scripts/postflight-check.sh \
     --new-hub-context "$NEW_HUB_CTX" \
     --old-hub-context "$OLD_HUB_CTX"; then
-    echo "Post-flight validation failed. Review and consider rollback."
+    echo "Post-flight validation failed. Review and consider reverse switchover."
     exit 1
 fi
 ```
