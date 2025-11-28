@@ -242,9 +242,14 @@ Recommended next steps:
 graph TD
     A[Start Post-flight Check] --> B[Parse Arguments]
     B --> C[Find & Check Latest Restore]
-    C --> D{Restore<br/>Finished?}
-    D -->|No| E[FAIL: Restore Not Complete]
-    D -->|Yes| F[Check ManagedCluster Status]
+    C --> D{Restore<br/>Found?}
+    D -->|Yes| D2{Phase<br/>Finished?}
+    D2 -->|No| E[FAIL: Restore Not Complete]
+    D2 -->|Yes| F[Check ManagedCluster Status]
+    D -->|No| D3{BackupSchedule<br/>Enabled?}
+    D3 -->|Yes| D4[PASS: No Restore Expected<br/>OADP cleanup behavior]
+    D3 -->|No| E
+    D4 --> F
     F --> G{All Clusters<br/>Available?}
     G -->|No| H[FAIL: Clusters Not Connected]
     G -->|Yes| I{All Clusters<br/>Joined?}
@@ -283,6 +288,7 @@ graph TD
     style T fill:#ff6b6b
     style W fill:#ff6b6b
     style AG fill:#51cf66
+    style D4 fill:#51cf66
     style J fill:#ffd43b
     style AB fill:#ffd43b
 ```
