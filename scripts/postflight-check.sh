@@ -91,8 +91,18 @@ detect_cluster_cli
 # Check 1: Verify restore completed
 section_header "1. Checking Restore Status"
 
-# Get details of the most recent restore (sort by creation timestamp)
-read -r RESTORE_NAME RESTORE_PHASE RESTORE_TIME <<< "$(oc --context="$NEW_HUB_CONTEXT" get restore -n "$BACKUP_NAMESPACE" --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name} {.items[-1].status.phase} {.items[-1].metadata.creationTimestamp}' 2>/dev/null || true)"
+# Try to find passive sync restore by syncRestoreWithNewBackups=true first
+PASSIVE_SYNC_RESTORE=$(oc --context="$NEW_HUB_CONTEXT" get restore -n "$BACKUP_NAMESPACE" -o json 2>/dev/null | \
+    jq -r '.items[] | select(.spec.syncRestoreWithNewBackups == true) | "\(.metadata.name) \(.status.phase // "unknown") \(.metadata.creationTimestamp)"' | head -1 || true)
+
+if [[ -n "$PASSIVE_SYNC_RESTORE" ]]; then
+    read -r RESTORE_NAME RESTORE_PHASE RESTORE_TIME <<< "$PASSIVE_SYNC_RESTORE"
+    IS_PASSIVE_SYNC=true
+else
+    # Fallback: get the most recent restore (sort by creation timestamp)
+    read -r RESTORE_NAME RESTORE_PHASE RESTORE_TIME <<< "$(oc --context="$NEW_HUB_CONTEXT" get restore -n "$BACKUP_NAMESPACE" --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name} {.items[-1].status.phase} {.items[-1].metadata.creationTimestamp}' 2>/dev/null || true)"
+    IS_PASSIVE_SYNC=false
+fi
 
 # Check if BackupSchedule is enabled (which deletes Restore objects)
 BACKUP_SCHEDULE_ENABLED=$(oc --context="$NEW_HUB_CONTEXT" get backupschedule -n "$BACKUP_NAMESPACE" -o jsonpath='{.items[0].spec.paused}' 2>/dev/null || echo "")
@@ -101,9 +111,9 @@ if [[ -n "$RESTORE_NAME" ]]; then
     if [[ "$RESTORE_PHASE" == "Finished" ]] || [[ "$RESTORE_PHASE" == "Completed" ]]; then
         check_pass "Latest restore '$RESTORE_NAME' completed successfully (Phase: $RESTORE_PHASE, Created: $RESTORE_TIME)"
         
-        # Check if it looks like a passive sync restore
-        if [[ "$RESTORE_NAME" == *"passive"* ]]; then
-            echo -e "       (Identified as likely passive sync restore based on name)"
+        # Identify if this is a passive sync restore
+        if [[ "$IS_PASSIVE_SYNC" == "true" ]]; then
+            echo -e "       (Identified as passive sync restore via spec.syncRestoreWithNewBackups=true)"
         fi
 
         # Check age of restore
