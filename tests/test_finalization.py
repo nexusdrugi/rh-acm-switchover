@@ -220,3 +220,102 @@ class TestFinalization:
 
         assert primary.list_custom_resources.call_count == 2
         primary.get_pods.assert_called_once()
+
+    def test_cleanup_restore_resources_archives_before_deletion(
+        self, finalization, mock_secondary_client, mock_state_manager
+    ):
+        """Test that restore resources are archived before deletion."""
+        # Mock a restore resource with full details
+        mock_restore = {
+            "metadata": {
+                "name": "restore-acm-passive-sync",
+                "namespace": "open-cluster-management-backup",
+                "creationTimestamp": "2025-11-28T10:00:00Z",
+            },
+            "spec": {
+                "veleroManagedClustersBackupName": "latest",
+                "veleroCredentialsBackupName": "latest",
+                "veleroResourcesBackupName": "latest",
+                "syncRestoreWithNewBackups": True,
+                "cleanupBeforeRestore": "CleanupRestored",
+            },
+            "status": {
+                "phase": "Finished",
+                "lastMessage": "Restore completed successfully",
+                "veleroManagedClustersRestoreName": "acm-managed-clusters-12345",
+                "veleroCredentialsRestoreName": "acm-credentials-12345",
+                "veleroResourcesRestoreName": "acm-resources-12345",
+            },
+        }
+
+        # First call returns restore, second call returns None (for second restore name)
+        mock_secondary_client.get_custom_resource.side_effect = [mock_restore, None]
+
+        finalization._cleanup_restore_resources()
+
+        # Verify archive was saved to state
+        mock_state_manager.set_config.assert_called_once()
+        call_args = mock_state_manager.set_config.call_args
+        assert call_args[0][0] == "archived_restores"
+
+        archived = call_args[0][1]
+        assert len(archived) == 1
+        assert archived[0]["name"] == "restore-acm-passive-sync"
+        assert archived[0]["phase"] == "Finished"
+        assert archived[0]["velero_backups"]["veleroManagedClustersBackupName"] == "latest"
+        assert archived[0]["archived_at"] is not None
+
+        # Verify delete was called
+        mock_secondary_client.delete_custom_resource.assert_called_once()
+
+    def test_archive_restore_details_extracts_all_fields(self, finalization):
+        """Test that _archive_restore_details extracts all important fields."""
+        restore = {
+            "metadata": {
+                "name": "test-restore",
+                "namespace": "test-ns",
+                "uid": "abc-123-def-456",
+                "resourceVersion": "12345",
+                "generation": 2,
+                "creationTimestamp": "2025-11-28T12:00:00Z",
+                "labels": {"app": "acm-backup"},
+                "annotations": {"note": "switchover test"},
+                "ownerReferences": [{"name": "backup-operator", "kind": "Deployment"}],
+            },
+            "spec": {
+                "veleroManagedClustersBackupName": "backup-mc",
+                "veleroCredentialsBackupName": "backup-creds",
+                "veleroResourcesBackupName": "backup-res",
+                "syncRestoreWithNewBackups": False,
+                "restoreSyncInterval": "10m",
+                "cleanupBeforeRestore": "None",
+            },
+            "status": {
+                "phase": "Enabled",
+                "lastMessage": "Sync in progress",
+                "veleroManagedClustersRestoreName": "restore-mc-123",
+                "veleroCredentialsRestoreName": "restore-creds-123",
+                "veleroResourcesRestoreName": "restore-res-123",
+            },
+        }
+
+        result = finalization._archive_restore_details(restore)
+
+        # Metadata fields
+        assert result["name"] == "test-restore"
+        assert result["namespace"] == "test-ns"
+        assert result["uid"] == "abc-123-def-456"
+        assert result["resource_version"] == "12345"
+        assert result["generation"] == 2
+        assert result["creation_timestamp"] == "2025-11-28T12:00:00Z"
+        assert result["labels"] == {"app": "acm-backup"}
+        assert result["annotations"] == {"note": "switchover test"}
+        assert result["owner_references"] == [{"name": "backup-operator", "kind": "Deployment"}]
+        assert result["archived_at"] is not None
+        # Spec fields
+        assert result["velero_backups"]["veleroManagedClustersBackupName"] == "backup-mc"
+        assert result["restore_sync_interval"] == "10m"
+        # Status fields
+        assert result["phase"] == "Enabled"
+        assert result["last_message"] == "Sync in progress"
+        assert result["velero_managed_clusters_restore_name"] == "restore-mc-123"

@@ -135,8 +135,12 @@ class Finalization:
 
         ACM backup operator won't allow BackupSchedule to be active while
         a Restore resource exists. We need to clean them up first.
+
+        Before deletion, we archive the restore details to the state file
+        for audit trail and troubleshooting purposes.
         """
         restore_names = [RESTORE_PASSIVE_SYNC_NAME, RESTORE_FULL_NAME]
+        archived_restores = []
 
         for restore_name in restore_names:
             try:
@@ -149,6 +153,15 @@ class Finalization:
                 )
 
                 if existing:
+                    # Archive restore details before deletion
+                    restore_archive = self._archive_restore_details(existing)
+                    archived_restores.append(restore_archive)
+                    logger.info(
+                        f"Archived restore '{restore_name}' details: "
+                        f"phase={restore_archive.get('phase')}, "
+                        f"veleroBackups={restore_archive.get('velero_backups', {})}"
+                    )
+
                     logger.info(f"Deleting restore resource: {restore_name}")
                     self.secondary.delete_custom_resource(
                         group="cluster.open-cluster-management.io",
@@ -162,6 +175,53 @@ class Finalization:
                 # Not found is OK, other errors should be logged
                 if "not found" not in str(e).lower():
                     logger.warning(f"Error checking/deleting restore {restore_name}: {e}")
+
+        # Save archived restores to state for audit trail
+        if archived_restores:
+            self.state.set_config("archived_restores", archived_restores)
+            logger.info(f"Saved {len(archived_restores)} restore record(s) to state file")
+
+    def _archive_restore_details(self, restore: dict) -> dict:
+        """Extract and return important details from a Restore resource for archiving.
+
+        Args:
+            restore: The full Restore CR dict
+
+        Returns:
+            A dict containing the essential restore information for audit trail
+        """
+        metadata = restore.get("metadata", {})
+        spec = restore.get("spec", {})
+        status = restore.get("status", {})
+
+        return {
+            # Metadata details
+            "name": metadata.get("name"),
+            "namespace": metadata.get("namespace"),
+            "uid": metadata.get("uid"),
+            "resource_version": metadata.get("resourceVersion"),
+            "generation": metadata.get("generation"),
+            "creation_timestamp": metadata.get("creationTimestamp"),
+            "labels": metadata.get("labels", {}),
+            "annotations": metadata.get("annotations", {}),
+            "owner_references": metadata.get("ownerReferences", []),
+            "archived_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            # Spec details
+            "velero_backups": {
+                "veleroManagedClustersBackupName": spec.get("veleroManagedClustersBackupName"),
+                "veleroCredentialsBackupName": spec.get("veleroCredentialsBackupName"),
+                "veleroResourcesBackupName": spec.get("veleroResourcesBackupName"),
+            },
+            "sync_restore_with_new_backups": spec.get("syncRestoreWithNewBackups"),
+            "restore_sync_interval": spec.get("restoreSyncInterval"),
+            "cleanup_before_restore": spec.get("cleanupBeforeRestore"),
+            # Status details
+            "phase": status.get("phase"),
+            "last_message": status.get("lastMessage"),
+            "velero_managed_clusters_restore_name": status.get("veleroManagedClustersRestoreName"),
+            "velero_credentials_restore_name": status.get("veleroCredentialsRestoreName"),
+            "velero_resources_restore_name": status.get("veleroResourcesRestoreName"),
+        }
 
     def _verify_new_backups(self, timeout: int = 600):
         """
