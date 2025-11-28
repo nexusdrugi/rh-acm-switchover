@@ -50,6 +50,8 @@ declare -a HUB_ROLES=()           # "primary", "secondary", "standby", "unknown"
 declare -a HUB_STATES=()          # Human-readable state description
 declare -a HUB_MC_COUNTS=()       # Number of available managed clusters
 declare -a HUB_BACKUP_STATES=()   # BackupSchedule state
+declare -a HUB_KLUSTERLET_COUNTS=()  # Number of clusters with klusterlet pointing to this hub
+declare -a ALL_MANAGED_CLUSTERS=()   # All managed cluster contexts discovered
 
 # =============================================================================
 # Helper Functions
@@ -176,6 +178,136 @@ get_available_mc_count() {
         jq -r --arg LOCAL "$LOCAL_CLUSTER_NAME" \
         '[.items[] | select(.metadata.name != $LOCAL) | select(.status.conditions[]? | select(.type=="ManagedClusterConditionAvailable" and .status=="True"))] | length' \
         2>/dev/null || echo "0"
+}
+
+# Get list of managed cluster names (excluding local-cluster)
+get_managed_cluster_names() {
+    local ctx="$1"
+    
+    "$CLUSTER_CLI_BIN" --context="$ctx" get managedclusters -o json 2>/dev/null | \
+        jq -r --arg LOCAL "$LOCAL_CLUSTER_NAME" \
+        '.items[] | select(.metadata.name != $LOCAL) | .metadata.name' \
+        2>/dev/null || echo ""
+}
+
+# Check which hub a klusterlet is connected to
+# Returns the API server URL the klusterlet is using
+get_klusterlet_hub_server() {
+    local mc_ctx="$1"
+    
+    # Try to get the hub-kubeconfig-secret (actual connection)
+    local server
+    server=$("$CLUSTER_CLI_BIN" --context="$mc_ctx" get secret -n open-cluster-management-agent hub-kubeconfig-secret \
+        -o jsonpath='{.data.kubeconfig}' 2>/dev/null | base64 -d 2>/dev/null | grep -o 'server: [^ ]*' | head -1 | cut -d' ' -f2 || echo "")
+    
+    if [[ -z "$server" ]]; then
+        # Fallback to bootstrap secret
+        server=$("$CLUSTER_CLI_BIN" --context="$mc_ctx" get secret -n open-cluster-management-agent bootstrap-hub-kubeconfig \
+            -o jsonpath='{.data.kubeconfig}' 2>/dev/null | base64 -d 2>/dev/null | grep -o 'server: [^ ]*' | head -1 | cut -d' ' -f2 || echo "")
+    fi
+    
+    echo "$server"
+}
+
+# Get the API server URL for a hub context
+get_hub_api_server() {
+    local ctx="$1"
+    "$CLUSTER_CLI_BIN" --context="$ctx" cluster-info 2>/dev/null | grep -o 'https://[^ ]*' | head -1 || echo ""
+}
+
+# Verify klusterlet connections for all managed clusters
+# This is called after initial discovery to resolve ambiguous cases
+# Updates HUB_KLUSTERLET_COUNTS array
+verify_klusterlet_connections() {
+    local -a hub_servers=()
+    local -a klusterlet_counts=()
+    
+    # Initialize counts and get hub API servers
+    for i in "${!HUB_CONTEXTS[@]}"; do
+        local ctx="${HUB_CONTEXTS[$i]}"
+        local server
+        server=$(get_hub_api_server "$ctx")
+        hub_servers+=("$server")
+        klusterlet_counts+=(0)
+    done
+    
+    # Check if we need to verify (both hubs have available clusters)
+    local need_verification=false
+    local available_count=0
+    for i in "${!HUB_CONTEXTS[@]}"; do
+        local mc_count="${HUB_MC_COUNTS[$i]}"
+        local available="${mc_count%%/*}"
+        if [[ "$available" -gt 0 ]]; then
+            available_count=$((available_count + 1))
+        fi
+    done
+    
+    if [[ "$available_count" -lt 2 ]]; then
+        # Only one hub has clusters, no need to verify
+        for i in "${!HUB_CONTEXTS[@]}"; do
+            HUB_KLUSTERLET_COUNTS+=("${HUB_MC_COUNTS[$i]%%/*}")
+        done
+        return
+    fi
+    
+    echo -e "\n  ${YELLOW}Both hubs report available clusters - verifying klusterlet connections...${NC}"
+    
+    # Get unique list of managed clusters from all hubs
+    declare -A seen_clusters
+    for i in "${!HUB_CONTEXTS[@]}"; do
+        local ctx="${HUB_CONTEXTS[$i]}"
+        local clusters
+        clusters=$(get_managed_cluster_names "$ctx")
+        for cluster in $clusters; do
+            if [[ -z "${seen_clusters[$cluster]:-}" ]]; then
+                seen_clusters[$cluster]=1
+                ALL_MANAGED_CLUSTERS+=("$cluster")
+            fi
+        done
+    done
+    
+    # Check each managed cluster's klusterlet connection
+    for mc in "${ALL_MANAGED_CLUSTERS[@]}"; do
+        # Try to use the cluster name as context
+        if ! test_context_reachable "$mc" 2>/dev/null; then
+            echo -e "    ${YELLOW}⚠${NC} $mc: cannot reach cluster (skipped)"
+            continue
+        fi
+        
+        local klusterlet_server
+        klusterlet_server=$(get_klusterlet_hub_server "$mc")
+        
+        if [[ -z "$klusterlet_server" ]]; then
+            echo -e "    ${YELLOW}⚠${NC} $mc: no klusterlet config found"
+            continue
+        fi
+        
+        # Match klusterlet server to hub
+        local matched=false
+        for i in "${!HUB_CONTEXTS[@]}"; do
+            local hub_server="${hub_servers[$i]}"
+            # Compare by extracting hostname from both
+            local hub_host klusterlet_host
+            hub_host=$(echo "$hub_server" | sed 's|https://||' | cut -d: -f1)
+            klusterlet_host=$(echo "$klusterlet_server" | sed 's|https://||' | cut -d: -f1)
+            
+            if [[ "$hub_host" == "$klusterlet_host" ]]; then
+                klusterlet_counts[$i]=$((klusterlet_counts[$i] + 1))
+                echo -e "    ${GREEN}✓${NC} $mc → ${HUB_CONTEXTS[$i]}"
+                matched=true
+                break
+            fi
+        done
+        
+        if [[ "$matched" == "false" ]]; then
+            echo -e "    ${YELLOW}?${NC} $mc → $klusterlet_server (unknown hub)"
+        fi
+    done
+    
+    # Update the global array
+    for i in "${!HUB_CONTEXTS[@]}"; do
+        HUB_KLUSTERLET_COUNTS+=("${klusterlet_counts[$i]}")
+    done
 }
 
 # Get detailed managed cluster status (for verbose mode)
@@ -315,6 +447,7 @@ print_discovered_hubs() {
         local role="${HUB_ROLES[$i]}"
         local state="${HUB_STATES[$i]}"
         local mc_count="${HUB_MC_COUNTS[$i]}"
+        local klusterlet_count="${HUB_KLUSTERLET_COUNTS[$i]:-}"
         
         # Color based on role
         local role_color="$NC"
@@ -335,7 +468,20 @@ print_discovered_hubs() {
         
         echo -e "  ${role_color}●${NC} ${BLUE}$ctx${NC}"
         echo -e "    Role:     ${role_color}$role${NC}"
-        echo -e "    Clusters: $mc_count"
+        
+        # Show cluster counts - include klusterlet count if we verified
+        if [[ -n "$klusterlet_count" ]] && [[ "${#HUB_KLUSTERLET_COUNTS[@]}" -gt 0 ]]; then
+            local available="${mc_count%%/*}"
+            local total="${mc_count#*/}"
+            if [[ "$klusterlet_count" != "$available" ]]; then
+                # Klusterlet count differs from reported available - show both
+                echo -e "    Clusters: ${mc_count} (reported), ${GREEN}${klusterlet_count}${NC} (actual klusterlet connections)"
+            else
+                echo -e "    Clusters: $mc_count"
+            fi
+        else
+            echo -e "    Clusters: $mc_count"
+        fi
         echo -e "    State:    $state"
         
         # Show detailed cluster info in verbose mode
@@ -583,6 +729,9 @@ if [[ ${#HUB_CONTEXTS[@]} -eq 0 ]]; then
     echo "Ensure your kubeconfig contains contexts for ACM hub clusters."
     exit "$EXIT_FAILURE"
 fi
+
+# Verify klusterlet connections if needed
+verify_klusterlet_connections
 
 # Print discovered hubs
 print_discovered_hubs
