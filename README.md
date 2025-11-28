@@ -31,9 +31,18 @@ See [docs/README.md](docs/README.md) for complete documentation index.
 
 Automated validation scripts to ensure safe and successful switchovers:
 
+- **[Hub Discovery](scripts/discover-hub.sh)** - Auto-discover ACM hubs and determine primary/secondary roles
 - **[Pre-flight Validation](scripts/preflight-check.sh)** - Verify all prerequisites before switchover
 - **[Post-flight Validation](scripts/postflight-check.sh)** - Confirm switchover completed successfully
 - **[Shared Configuration](scripts/constants.sh)** - Centralized configuration for validation scripts
+
+```bash
+# Auto-discover ACM hubs from kubeconfig contexts
+./scripts/discover-hub.sh --auto
+
+# Discover and immediately run the proposed check
+./scripts/discover-hub.sh --auto --run
+```
 
 See [scripts/README.md](scripts/README.md) for detailed usage and workflow diagrams.
 
