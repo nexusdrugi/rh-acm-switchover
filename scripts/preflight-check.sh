@@ -18,7 +18,7 @@
 
 set -euo pipefail
 
-# Source constants
+# Source constants and common library
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "${SCRIPT_DIR}/constants.sh" ]]; then
     source "${SCRIPT_DIR}/constants.sh"
@@ -27,22 +27,12 @@ else
     exit 1
 fi
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-# Counters
-TOTAL_CHECKS=0
-PASSED_CHECKS=0
-FAILED_CHECKS=0
-WARNING_CHECKS=0
-
-# Arrays to store messages
-FAILED_MESSAGES=()
-WARNING_MESSAGES=()
+if [[ -f "${SCRIPT_DIR}/lib-common.sh" ]]; then
+    source "${SCRIPT_DIR}/lib-common.sh"
+else
+    echo "Error: lib-common.sh not found in ${SCRIPT_DIR}"
+    exit 1
+fi
 
 # Parse arguments
 PRIMARY_CONTEXT=""
@@ -71,12 +61,12 @@ while [[ $# -gt 0 ]]; do
             echo "  --secondary-context   Kubernetes context for secondary hub (required)"
             echo "  --method              Switchover method: passive or full (required)"
             echo "  --help, -h            Show this help message"
-            exit 0
+            exit $EXIT_SUCCESS
             ;;
         *)
             echo "Unknown option: $1"
             echo "Use --help for usage information"
-            exit 2
+            exit $EXIT_INVALID_ARGS
             ;;
     esac
 done
@@ -85,48 +75,20 @@ done
 if [[ -z "$PRIMARY_CONTEXT" ]] || [[ -z "$SECONDARY_CONTEXT" ]]; then
     echo -e "${RED}Error: Both --primary-context and --secondary-context are required${NC}"
     echo "Use --help for usage information"
-    exit 2
+    exit $EXIT_INVALID_ARGS
 fi
 
 if [[ -z "$METHOD" ]]; then
     echo -e "${RED}Error: --method is required (passive or full)${NC}"
     echo "Use --help for usage information"
-    exit 2
+    exit $EXIT_INVALID_ARGS
 fi
 
 if [[ "$METHOD" != "passive" ]] && [[ "$METHOD" != "full" ]]; then
     echo -e "${RED}Error: --method must be 'passive' or 'full', got '$METHOD'${NC}"
     echo "Use --help for usage information"
-    exit 2
+    exit $EXIT_INVALID_ARGS
 fi
-
-# Helper functions
-check_pass() {
-    ((TOTAL_CHECKS++)) || true
-    ((PASSED_CHECKS++)) || true
-    echo -e "${GREEN}✓${NC} $1"
-}
-
-check_fail() {
-    ((TOTAL_CHECKS++)) || true
-    ((FAILED_CHECKS++)) || true
-    FAILED_MESSAGES+=("$1")
-    echo -e "${RED}✗${NC} $1"
-}
-
-check_warn() {
-    ((TOTAL_CHECKS++)) || true
-    ((WARNING_CHECKS++)) || true
-    WARNING_MESSAGES+=("$1")
-    echo -e "${YELLOW}⚠${NC} $1"
-}
-
-section_header() {
-    echo ""
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BLUE}$1${NC}"
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-}
 
 # Main validation
 echo ""
@@ -141,35 +103,7 @@ echo ""
 
 # Check 1: Verify CLI tools
 section_header "1. Checking CLI Tools"
-
-CLUSTER_CLI_BIN=""
-CLUSTER_CLI_NAME=""
-
-if command -v oc &> /dev/null; then
-    CLUSTER_CLI_BIN="oc"
-    CLUSTER_CLI_NAME="OpenShift CLI (oc)"
-    check_pass "$CLUSTER_CLI_NAME is installed"
-elif command -v kubectl &> /dev/null; then
-    CLUSTER_CLI_BIN="kubectl"
-    CLUSTER_CLI_NAME="Kubernetes CLI (kubectl)"
-    # Provide oc alias so the rest of the script can keep using oc invocations
-    oc() {
-        kubectl "$@"
-    }
-    check_pass "$CLUSTER_CLI_NAME is installed"
-else
-    check_fail "Neither oc nor kubectl CLI found"
-fi
-
-if command -v jq &> /dev/null; then
-    check_pass "jq is installed"
-else
-    check_warn "jq not found (optional, but recommended for some commands)"
-fi
-
-if [[ -n "$CLUSTER_CLI_BIN" ]]; then
-    echo "Using CLI: $CLUSTER_CLI_NAME ($(command -v "$CLUSTER_CLI_BIN"))"
-fi
+detect_cluster_cli
 
 # Check 2: Verify contexts exist
 section_header "2. Verifying Kubernetes Contexts"
@@ -436,52 +370,9 @@ else
     check_pass "Observability not detected (optional component)"
 fi
 
-# Summary
-echo ""
-echo "╔════════════════════════════════════════════════════════════╗"
-echo "║   Validation Summary                                       ║"
-echo "╚════════════════════════════════════════════════════════════╝"
-echo ""
-echo -e "Total Checks:    $TOTAL_CHECKS"
-echo -e "${GREEN}Passed:          $PASSED_CHECKS${NC}"
-echo -e "${RED}Failed:          $FAILED_CHECKS${NC}"
-echo -e "${YELLOW}Warnings:        $WARNING_CHECKS${NC}"
-echo ""
-
-if [[ $FAILED_CHECKS -gt 0 ]]; then
-    echo -e "${RED}Failed Checks:${NC}"
-    for msg in "${FAILED_MESSAGES[@]}"; do
-        echo -e "${RED}  - $msg${NC}"
-    done
-    echo ""
-fi
-
-if [[ $WARNING_CHECKS -gt 0 ]]; then
-    echo -e "${YELLOW}Warnings:${NC}"
-    for msg in "${WARNING_MESSAGES[@]}"; do
-        echo -e "${YELLOW}  - $msg${NC}"
-    done
-    echo ""
-fi
-
-if [[ $FAILED_CHECKS -eq 0 ]]; then
-    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${GREEN}✓ ALL CRITICAL CHECKS PASSED${NC}"
-    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-    echo "You are ready to proceed with the switchover."
-    echo ""
-    if [[ $WARNING_CHECKS -gt 0 ]]; then
-        echo -e "${YELLOW}Note: $WARNING_CHECKS warning(s) detected. Review them before proceeding.${NC}"
-        echo ""
-    fi
-    exit 0
+# Summary and exit
+if print_summary "preflight"; then
+    exit $EXIT_SUCCESS
 else
-    echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${RED}✗ VALIDATION FAILED${NC}"
-    echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-    echo "Please fix the failed checks before proceeding with switchover."
-    echo ""
-    exit 1
+    exit $EXIT_FAILURE
 fi
