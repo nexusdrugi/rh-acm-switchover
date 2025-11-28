@@ -434,4 +434,4 @@ class TestDryRunSkipDecorator:
         obj.test_method()
 
         mock_get_logger.assert_called_with("acm_switchover")
-        mock_logger.info.assert_called_with("[DRY-RUN] Custom skip message")
+        mock_logger.info.assert_called_with("[DRY-RUN] %s", "Custom skip message")

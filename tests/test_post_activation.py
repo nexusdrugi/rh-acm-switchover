@@ -282,7 +282,12 @@ class TestPostActivationVerification:
 
         post_verify_with_obs._verify_observability_pods()
 
-        assert any("CrashLoopBackOff" in str(call.args[0]) for call in mock_logger.warning.call_args_list)
+        # With lazy logging, format string is args[0] and values are args[1:]
+        # Check all args for CrashLoopBackOff
+        assert any(
+            any("CrashLoopBackOff" in str(arg) for arg in call.args)
+            for call in mock_logger.warning.call_args_list
+        )
 
     @patch("modules.post_activation.wait_for_condition")
     def test_verify_metrics_collection(self, mock_wait, post_verify_with_obs, mock_secondary_client):
