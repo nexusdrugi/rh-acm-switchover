@@ -12,6 +12,7 @@ from lib.constants import (
     OBSERVABILITY_TERMINATE_INTERVAL,
     OBSERVABILITY_TERMINATE_TIMEOUT,
 )
+from lib.exceptions import SwitchoverError
 from lib.kube_client import KubeClient
 from lib.utils import confirm_action
 from lib.waiter import wait_for_condition
@@ -81,8 +82,11 @@ class Decommission:
             logger.info("Decommission completed")
             return True
 
+        except SwitchoverError as e:
+            logger.error("Decommission failed: %s", e)
+            return False
         except Exception as e:
-            logger.error(f"Decommission failed: {e}")
+            logger.error("Unexpected error during decommission: %s", e)
             return False
 
     def _delete_observability(self):
@@ -104,10 +108,10 @@ class Decommission:
             mco_name = mco.get("metadata", {}).get("name")
 
             if self.dry_run:
-                logger.info(f"[DRY-RUN] Would delete MultiClusterObservability: {mco_name}")
+                logger.info("[DRY-RUN] Would delete MultiClusterObservability: %s", mco_name)
                 continue
 
-            logger.info(f"Deleting MultiClusterObservability: {mco_name}")
+            logger.info("Deleting MultiClusterObservability: %s", mco_name)
 
             self.primary.delete_custom_resource(
                 group="observability.open-cluster-management.io",
@@ -156,15 +160,15 @@ class Decommission:
 
             # Skip local-cluster
             if mc_name == "local-cluster":
-                logger.info(f"Skipping local-cluster")
+                logger.info("Skipping local-cluster")
                 continue
 
             if self.dry_run:
-                logger.info(f"[DRY-RUN] Would delete ManagedCluster: {mc_name}")
+                logger.info("[DRY-RUN] Would delete ManagedCluster: %s", mc_name)
                 deleted_count += 1
                 continue
 
-            logger.info(f"Deleting ManagedCluster: {mc_name}")
+            logger.info("Deleting ManagedCluster: %s", mc_name)
 
             self.primary.delete_custom_resource(
                 group="cluster.open-cluster-management.io",
@@ -176,9 +180,9 @@ class Decommission:
             deleted_count += 1
 
         if self.dry_run:
-            logger.info(f"[DRY-RUN] Would delete {deleted_count} ManagedCluster(s)")
+            logger.info("[DRY-RUN] Would delete %s ManagedCluster(s)", deleted_count)
         else:
-            logger.info(f"Deleted {deleted_count} ManagedCluster(s)")
+            logger.info("Deleted %s ManagedCluster(s)", deleted_count)
 
         # Note: We don't wait for deletion as clusters should have preserveOnDelete=true
         logger.info(
@@ -206,10 +210,10 @@ class Decommission:
             mch_name = mch.get("metadata", {}).get("name")
 
             if self.dry_run:
-                logger.info(f"[DRY-RUN] Would delete MultiClusterHub: {mch_name}")
+                logger.info("[DRY-RUN] Would delete MultiClusterHub: %s", mch_name)
                 continue
 
-            logger.info(f"Deleting MultiClusterHub: {mch_name}")
+            logger.info("Deleting MultiClusterHub: %s", mch_name)
             logger.info("This may take up to 20 minutes...")
 
             self.primary.delete_custom_resource(
