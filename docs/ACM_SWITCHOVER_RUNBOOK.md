@@ -710,11 +710,34 @@ oc logs -n open-cluster-management-backup deployment/velero -c velero | grep "$B
 - No errors in backup logs
 - Backup timestamp is recent (within last 10 minutes)
 
-**TROUBLESHOOTING:** If backup fails:
-- Check Velero pod logs
-- Verify storage backend is accessible
-- Check available storage space
-- Verify no resource quotas are preventing backup creation
+> **WARNING:** Do NOT decommission the old hub if backup integrity validation fails.
+>
+> Proceed only after you have a recent, successful backup.
+
+**Remediation steps:**
+1. Check Velero pod logs for specific error messages.
+   ```bash
+   # Recent logs
+   oc logs -n open-cluster-management-backup deployment/velero -c velero --since=10m
+   # Filter for the failing backup (uses BACKUP_NAME set above)
+   oc logs -n open-cluster-management-backup deployment/velero -c velero | grep "$BACKUP_NAME"
+   ```
+2. Attempt a fresh backup and verify its status.
+   - Create an on-demand backup using your standard process (e.g., Velero Backup CR) targeting the same storage location.
+   - Monitor until it completes successfully:
+   ```bash
+   oc get backup -n open-cluster-management-backup -w
+   ```
+3. Inspect storage backend connectivity and authentication.
+   ```bash
+   # BackupStorageLocation phase and messages
+   oc get backupstoragelocation -n open-cluster-management-backup -o yaml | grep -E "phase:|message:"
+   ```
+4. Check capacity and quotas; free space or adjust quotas if needed.
+   ```bash
+   oc get resourcequota -n open-cluster-management-backup 2>/dev/null || true
+   ```
+5. Repeat verification until a successful backup with a recent timestamp exists. Only then proceed to decommission the old hub.
 ---
 
 ### Step 13: Inform Stakeholders
