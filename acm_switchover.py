@@ -27,7 +27,6 @@ from lib import (
     KubeClient,
     Phase,
     StateManager,
-    confirm_action,
     setup_logging,
 )
 from lib.constants import EXIT_FAILURE, EXIT_INTERRUPT, EXIT_SUCCESS
@@ -55,19 +54,19 @@ def parse_args():
 Examples:
   # Validate only (no changes)
   %(prog)s --validate-only --primary-context primary-hub --secondary-context secondary-hub
-  
+
   # Dry-run to see planned actions
   %(prog)s --dry-run --primary-context primary-hub --secondary-context secondary-hub
-  
+
   # Execute switchover (Method 1 - passive sync)
   %(prog)s --primary-context primary-hub --secondary-context secondary-hub --method passive
-  
+
   # Execute switchover (Method 2 - full restore)
   %(prog)s --primary-context primary-hub --secondary-context secondary-hub --method full
-  
+
   # Reverse switchover (return to original hub - swap contexts)
   %(prog)s --primary-context secondary-hub --secondary-context primary-hub --method passive
-  
+
   # Decommission old hub
   %(prog)s --decommission --primary-context old-hub
         """,

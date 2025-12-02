@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from lib.constants import BACKUP_NAMESPACE
 from lib.kube_client import KubeClient
