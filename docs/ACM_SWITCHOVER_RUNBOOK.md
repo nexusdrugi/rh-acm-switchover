@@ -333,10 +333,10 @@ oc get restore restore-acm-passive-sync -n open-cluster-management-backup \
 
 **Verify these match recent backups from primary:**
 ```bash
-for s in $(oc get backup -n open-cluster-management-backup --context mgmt1 -o json \
+for s in $(oc get backup -n open-cluster-management-backup --context <primary> -o json \
   | jq -r '.items[].metadata.labels["velero.io/schedule-name"]' | sort -u); do
   echo -n "$s: "
-  oc get backup -n open-cluster-management-backup --context mgmt1 \
+  oc get backup -n open-cluster-management-backup --context <primary> \
     -l velero.io/schedule-name="$s" \
     --sort-by=.metadata.creationTimestamp --no-headers | tail -n1 | awk '{print $1 " (" $2 ")"}'
 done
