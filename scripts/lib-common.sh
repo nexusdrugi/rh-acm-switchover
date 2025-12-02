@@ -120,6 +120,59 @@ detect_cluster_cli() {
 }
 
 # =============================================================================
+# Auto-Import Strategy Helpers (ACM 2.14+)
+# =============================================================================
+
+# Get the autoImportStrategy value from a hub
+# Returns: "ImportOnly", "ImportAndSync", "default" (if not configured), or "error"
+# Usage: get_auto_import_strategy "$CONTEXT"
+get_auto_import_strategy() {
+    local context="$1"
+    
+    # Check if the configmap exists
+    if ! oc --context="$context" get configmap "$IMPORT_CONTROLLER_CONFIGMAP" -n "$MCE_NAMESPACE" &> /dev/null; then
+        echo "default"
+        return 0
+    fi
+    
+    # Get the autoImportStrategy key explicitly
+    local strategy
+    strategy=$(oc --context="$context" get configmap "$IMPORT_CONTROLLER_CONFIGMAP" -n "$MCE_NAMESPACE" \
+        -o jsonpath="{.data.${AUTO_IMPORT_STRATEGY_KEY}}" 2>/dev/null || echo "")
+    
+    if [[ -z "$strategy" ]]; then
+        # ConfigMap exists but no autoImportStrategy key
+        echo "default"
+    else
+        echo "$strategy"
+    fi
+}
+
+# Check if ACM version is 2.14 or higher
+# Usage: is_acm_214_or_higher "$VERSION"
+# Returns 0 (true) if version >= 2.14, 1 (false) otherwise
+is_acm_214_or_higher() {
+    local version="$1"
+    
+    # Extract major and minor version (e.g., "2.14.0" -> major=2, minor=14)
+    local major minor
+    major=$(echo "$version" | cut -d'.' -f1)
+    minor=$(echo "$version" | cut -d'.' -f2)
+    
+    # Handle unknown versions
+    if [[ -z "$major" ]] || [[ -z "$minor" ]]; then
+        return 1
+    fi
+    
+    # Check if version is 2.14 or higher
+    if [[ "$major" -gt 2 ]] || { [[ "$major" -eq 2 ]] && [[ "$minor" -ge 14 ]]; }; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# =============================================================================
 # Summary Output
 # =============================================================================
 

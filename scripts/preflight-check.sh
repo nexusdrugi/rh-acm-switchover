@@ -379,6 +379,56 @@ else
     check_pass "Observability not detected (optional component)"
 fi
 
+# Check 11: Verify Auto-Import Strategy (ACM 2.14+)
+section_header "11. Checking Auto-Import Strategy (ACM 2.14+)"
+
+# Check primary hub
+PRIMARY_STRATEGY=$(get_auto_import_strategy "$PRIMARY_CONTEXT")
+if [[ "$PRIMARY_STRATEGY" == "default" ]]; then
+    check_pass "Primary hub: Using default autoImportStrategy ($AUTO_IMPORT_STRATEGY_DEFAULT)"
+elif [[ "$PRIMARY_STRATEGY" == "$AUTO_IMPORT_STRATEGY_DEFAULT" ]]; then
+    check_pass "Primary hub: autoImportStrategy explicitly set to $AUTO_IMPORT_STRATEGY_DEFAULT"
+else
+    check_warn "Primary hub: autoImportStrategy is set to '$PRIMARY_STRATEGY' (non-default)"
+    echo -e "${YELLOW}       This should only be temporary for specific scenarios.${NC}"
+    echo -e "${YELLOW}       See: $AUTO_IMPORT_STRATEGY_DOC_URL${NC}"
+fi
+
+# Check secondary/destination hub
+SECONDARY_STRATEGY=$(get_auto_import_strategy "$SECONDARY_CONTEXT")
+
+# Count managed clusters on secondary hub (excluding local-cluster)
+SECONDARY_CLUSTER_COUNT=$(oc --context="$SECONDARY_CONTEXT" get managedclusters --no-headers 2>/dev/null | grep -cv "$LOCAL_CLUSTER_NAME" || echo "0")
+
+# Check if secondary hub is ACM 2.14+
+if is_acm_214_or_higher "$SECONDARY_VERSION"; then
+    if [[ "$SECONDARY_STRATEGY" == "default" ]]; then
+        check_pass "Secondary hub: Using default autoImportStrategy ($AUTO_IMPORT_STRATEGY_DEFAULT)"
+    elif [[ "$SECONDARY_STRATEGY" == "$AUTO_IMPORT_STRATEGY_DEFAULT" ]]; then
+        check_pass "Secondary hub: autoImportStrategy explicitly set to $AUTO_IMPORT_STRATEGY_DEFAULT"
+    else
+        check_warn "Secondary hub: autoImportStrategy is set to '$SECONDARY_STRATEGY' (non-default)"
+        echo -e "${YELLOW}       This should only be temporary for specific scenarios.${NC}"
+        echo -e "${YELLOW}       See: $AUTO_IMPORT_STRATEGY_DOC_URL${NC}"
+    fi
+    
+    # If secondary hub already has managed clusters (more than just local-cluster), warn about ImportAndSync
+    if [[ $SECONDARY_CLUSTER_COUNT -gt 0 ]]; then
+        check_warn "Secondary hub: Has $SECONDARY_CLUSTER_COUNT existing managed cluster(s)"
+        echo -e "${YELLOW}       IMPORTANT for ACM 2.14+ restore:${NC}"
+        echo -e "${YELLOW}       1. BEFORE restore: Change autoImportStrategy to '$AUTO_IMPORT_STRATEGY_SYNC'${NC}"
+        echo -e "${YELLOW}          oc -n $MCE_NAMESPACE create configmap $IMPORT_CONTROLLER_CONFIGMAP \\${NC}"
+        echo -e "${YELLOW}            --from-literal=$AUTO_IMPORT_STRATEGY_KEY=$AUTO_IMPORT_STRATEGY_SYNC --dry-run=client -o yaml | oc apply -f -${NC}"
+        echo -e "${YELLOW}       2. AFTER restore completes: Remove the configmap to restore default behavior${NC}"
+        echo -e "${YELLOW}          oc -n $MCE_NAMESPACE delete configmap $IMPORT_CONTROLLER_CONFIGMAP${NC}"
+        echo -e "${YELLOW}       See: $AUTO_IMPORT_STRATEGY_DOC_URL${NC}"
+    else
+        check_pass "Secondary hub: No pre-existing managed clusters (ImportOnly is appropriate)"
+    fi
+else
+    check_pass "Secondary hub: ACM version $SECONDARY_VERSION (autoImportStrategy check not applicable for versions < 2.14)"
+fi
+
 # Summary and exit
 if print_summary "preflight"; then
     exit "$EXIT_SUCCESS"

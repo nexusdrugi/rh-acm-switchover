@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+#### Auto-Import Strategy Validation (ACM 2.14+)
+- **New preflight check (Check 11)**: Validates `autoImportStrategy` configuration on both hubs
+  - Warns if non-default strategy is configured (should be temporary)
+  - For secondary hubs with existing managed clusters: provides guidance to temporarily change to `ImportAndSync` before restore
+  - Links to official Red Hat documentation for explanation
+- **New postflight check (Check 9)**: Ensures `autoImportStrategy` is reset to default after switchover
+  - Warns if non-default strategy remains configured
+  - Provides command to reset to default
+- **New constants**: Added `MCE_NAMESPACE`, `IMPORT_CONTROLLER_CONFIGMAP`, `AUTO_IMPORT_STRATEGY_*` constants
+- **New helper functions**: Added `get_auto_import_strategy()` and `is_acm_214_or_higher()` to `lib-common.sh`
+- **Documentation**: Updated runbook prerequisites and verification checklist for ACM 2.14+ autoImportStrategy
+
 ### Removed
 
 #### Rollback Feature
