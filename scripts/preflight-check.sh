@@ -385,7 +385,9 @@ section_header "11. Checking Auto-Import Strategy (ACM 2.14+)"
 # Check primary hub
 if is_acm_214_or_higher "$PRIMARY_VERSION"; then
     PRIMARY_STRATEGY=$(get_auto_import_strategy "$PRIMARY_CONTEXT")
-    if [[ "$PRIMARY_STRATEGY" == "default" ]]; then
+    if [[ "$PRIMARY_STRATEGY" == "error" ]]; then
+        check_fail "Primary hub: Could not retrieve autoImportStrategy (connection or API error)"
+    elif [[ "$PRIMARY_STRATEGY" == "default" ]]; then
         check_pass "Primary hub: Using default autoImportStrategy ($AUTO_IMPORT_STRATEGY_DEFAULT)"
     elif [[ "$PRIMARY_STRATEGY" == "$AUTO_IMPORT_STRATEGY_DEFAULT" ]]; then
         check_pass "Primary hub: autoImportStrategy explicitly set to $AUTO_IMPORT_STRATEGY_DEFAULT"
@@ -411,7 +413,9 @@ fi
 
 # Check if secondary hub is ACM 2.14+
 if is_acm_214_or_higher "$SECONDARY_VERSION"; then
-    if [[ "$SECONDARY_STRATEGY" == "default" ]]; then
+    if [[ "$SECONDARY_STRATEGY" == "error" ]]; then
+        check_fail "Secondary hub: Could not retrieve autoImportStrategy (connection or API error)"
+    elif [[ "$SECONDARY_STRATEGY" == "default" ]]; then
         check_pass "Secondary hub: Using default autoImportStrategy ($AUTO_IMPORT_STRATEGY_DEFAULT)"
     elif [[ "$SECONDARY_STRATEGY" == "$AUTO_IMPORT_STRATEGY_DEFAULT" ]]; then
         check_pass "Secondary hub: autoImportStrategy explicitly set to $AUTO_IMPORT_STRATEGY_DEFAULT"
