@@ -438,7 +438,9 @@ fi
 NEW_HUB_STRATEGY=$(get_auto_import_strategy "$NEW_HUB_CONTEXT")
 
 if [[ "$NEW_HUB_VERSION" != "unknown" ]] && is_acm_214_or_higher "$NEW_HUB_VERSION"; then
-    if [[ "$NEW_HUB_STRATEGY" == "default" ]]; then
+    if [[ "$NEW_HUB_STRATEGY" == "error" ]]; then
+        check_fail "New hub: Could not retrieve autoImportStrategy (connection or API error)"
+    elif [[ "$NEW_HUB_STRATEGY" == "default" ]]; then
         check_pass "New hub: Using default autoImportStrategy ($AUTO_IMPORT_STRATEGY_DEFAULT) - correct post-switchover state"
     elif [[ "$NEW_HUB_STRATEGY" == "$AUTO_IMPORT_STRATEGY_DEFAULT" ]]; then
         check_pass "New hub: autoImportStrategy explicitly set to $AUTO_IMPORT_STRATEGY_DEFAULT"
@@ -463,7 +465,9 @@ if [[ -n "$OLD_HUB_CONTEXT" ]]; then
     OLD_HUB_STRATEGY=$(get_auto_import_strategy "$OLD_HUB_CONTEXT")
     
     if [[ "$OLD_HUB_VERSION" != "unknown" ]] && is_acm_214_or_higher "$OLD_HUB_VERSION"; then
-        if [[ "$OLD_HUB_STRATEGY" == "default" ]] || [[ "$OLD_HUB_STRATEGY" == "$AUTO_IMPORT_STRATEGY_DEFAULT" ]]; then
+        if [[ "$OLD_HUB_STRATEGY" == "error" ]]; then
+            check_warn "Old hub: Could not retrieve autoImportStrategy (connection or API error)"
+        elif [[ "$OLD_HUB_STRATEGY" == "default" ]] || [[ "$OLD_HUB_STRATEGY" == "$AUTO_IMPORT_STRATEGY_DEFAULT" ]]; then
             check_pass "Old hub: autoImportStrategy is default/ImportOnly"
         else
             check_warn "Old hub: autoImportStrategy is set to '$OLD_HUB_STRATEGY'"

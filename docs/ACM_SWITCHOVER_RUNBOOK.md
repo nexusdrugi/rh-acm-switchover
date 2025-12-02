@@ -892,8 +892,8 @@ oc describe restore <restore-name> -n open-cluster-management-backup
 
 ## Good Resources
 
-- **Official Red Hat Documentation on ACM Custom Auto-Import Strategy:**
-https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.14/html-single/clusters/index#custom-auto-import-strat
+- **Official Red Hat Documentation on ACM Custom Auto-Import Strategy:**  
+  <https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.14/html-single/clusters/index#custom-auto-import-strat>
 
 - **Official Red Hat Documentation on ACM Uninstallation:**  
   https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.11/html/install/installing#uninstalling
@@ -913,13 +913,15 @@ https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for
 - **GitHub - Cluster Backup Operator:**  
   https://github.com/stolostron/cluster-backup-operator
 
-- **GitHub - Managed Cluster Auto Import Strategy:**
-  https://github.com/stolostron/managedcluster-import-controller/blob/main/docs/managedcluster_auto_import.md#auto-import-strategy
+- **GitHub - Managed Cluster Auto Import Strategy:**  
+  <https://github.com/stolostron/managedcluster-import-controller/blob/main/docs/managedcluster_auto_import.md#auto-import-strategy>
+
 ---
 
 ## Validation Notes
 
 This runbook has been validated against:
+
 - Red Hat ACM official documentation
 - Red Hat official HA/DR blog posts
 - stolostron/cluster-backup-operator source code and documentation

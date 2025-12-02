@@ -128,23 +128,32 @@ detect_cluster_cli() {
 # Usage: get_auto_import_strategy "$CONTEXT"
 get_auto_import_strategy() {
     local context="$1"
+    local output
+    local exit_code
     
-    # Check if the configmap exists
-    if ! oc --context="$context" get configmap "$IMPORT_CONTROLLER_CONFIGMAP" -n "$MCE_NAMESPACE" &> /dev/null; then
-        echo "default"
-        return 0
+    # Attempt to get the configmap, capturing stdout and stderr together
+    output=$(oc --context="$context" get configmap "$IMPORT_CONTROLLER_CONFIGMAP" -n "$MCE_NAMESPACE" \
+        -o jsonpath="{.data.${AUTO_IMPORT_STRATEGY_KEY}}" 2>&1)
+    exit_code=$?
+    
+    if [[ $exit_code -ne 0 ]]; then
+        if [[ "$output" == *"NotFound"* ]]; then
+            # ConfigMap doesn't exist, which is a valid "default" state
+            echo "default"
+            return 0
+        else
+            # A different error occurred (e.g., connection refused)
+            echo "error"
+            echo "$output" >&2
+            return 1
+        fi
     fi
     
-    # Get the autoImportStrategy key explicitly
-    local strategy
-    strategy=$(oc --context="$context" get configmap "$IMPORT_CONTROLLER_CONFIGMAP" -n "$MCE_NAMESPACE" \
-        -o jsonpath="{.data.${AUTO_IMPORT_STRATEGY_KEY}}" 2>/dev/null || echo "")
-    
-    if [[ -z "$strategy" ]]; then
-        # ConfigMap exists but no autoImportStrategy key
+    if [[ -z "$output" ]]; then
+        # ConfigMap exists but the key is missing or empty
         echo "default"
     else
-        echo "$strategy"
+        echo "$output"
     fi
 }
 
