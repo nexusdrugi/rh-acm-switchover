@@ -2,7 +2,7 @@
 
 **Passive (Continuous) and One-Time Full Restore**
 
-**Last Updated:** 2025-11-12
+**Last Updated:** 2025-12-02
 
 ---
 
@@ -168,6 +168,16 @@ graph TD
 - [ ] Confirm OADP operator installed on both hubs
 - [ ] Verify DataProtectionApplication configured on both hubs
 - [ ] Check access to same S3 storage location from both hubs
+- [ ] BackupStorageLocation shows "Available" on both hubs
+  ```bash
+  oc get backupstoragelocation -n open-cluster-management-backup \
+    -o custom-columns=NAME:.metadata.name,PHASE:.status.phase
+  ```
+- [ ] DataProtectionApplication reports Ready/Available
+  ```bash
+  oc get dpa -n open-cluster-management-backup \
+    -o custom-columns=NAME:.metadata.name,CONDITION:.status.conditions[-1:].type,STATUS:.status.conditions[-1:].status
+  ```
 - [ ] Validate all operators from primary are installed on secondary
 - [ ] Ensure network connectivity between managed clusters and new hub
 - [ ] Nodes should be in ready state and cluster should be healthy
@@ -241,9 +251,10 @@ Delete it:
 oc delete backupschedule schedule-rhacm -n open-cluster-management-backup
 ```
 
-**To restore later:** Clean up status and certain metadata fields (like uid, resourceVersions, managedFields), then:
+**To restore later:** Clean up status and certain metadata fields (uid, resourceVersion, managedFields, status), then re-apply. Example:
 ```bash
-oc apply -f schedule-rhacm.yaml
+yq 'del(.metadata.uid, .metadata.resourceVersion, .metadata.managedFields, .status)' \
+  schedule-rhacm.yaml | oc apply -f -
 ```
 
 ---
@@ -286,6 +297,12 @@ oc scale statefulset observability-thanos-compact \
 ```bash
 oc get pods -n open-cluster-management-observability | grep thanos-compact
 # Should show no resources
+```
+
+**Optional (to avoid write contention): Pause Observatorium API on OLD hub during the switchover window. Re-enable only if you roll back.**
+```bash
+oc scale deployment observability-observatorium-api \
+  -n open-cluster-management-observability --replicas=0
 ```
 
 ---
@@ -365,7 +382,8 @@ EOF
 oc get configmap import-controller-config -n multicluster-engine -o yaml
 ```
 
-> **IMPORTANT:** This ensures the current primary hub will actively import and sync managed clusters during activation when going back to the original primary hub in the future. Do not do this step if you do not plan to switchback.
+> Clarification: The ConfigMap affects only the hub where you create it. Use `ImportAndSync` only when you intentionally need continuous re-application on the hub you are promoting (typically for temporary switchback scenarios), and remove it after activation (see Step 7). If the ConfigMap does not exist, the hub uses the default `ImportOnly` behavior.
+> **IMPORTANT:** Do not perform this step if your destination hub has no existing managed clusters, as it is unnecessary.
 
 ---
 
@@ -547,7 +565,7 @@ oc get configmap import-controller-config -n multicluster-engine 2>/dev/null
 oc delete configmap import-controller-config -n multicluster-engine --ignore-not-found
 ```
 
-> **NOTE:** This step is important to prevent unintended sync operations from this hub in the future. Only perform this step if you had previously set `ImportAndSync` on this hub.
+> **NOTE:** This step prevents unintended continuous sync from this hub in the future. Only perform it if you previously set `ImportAndSync` on this hub. If the ConfigMap is absent, the default `ImportOnly` is already in effect.
 
 ---
 
@@ -657,9 +675,10 @@ oc get backupschedule schedule-rhacm -n open-cluster-management-backup
 
 **Check that new backups are being created:**
 ```bash
-# Wait 5-10 minutes, then check:
-oc get backup -n open-cluster-management-backup | head -10
-# Should see new backups with recent timestamps
+# Wait 5-10 minutes, then check newest entries:
+oc get backup -n open-cluster-management-backup \
+  --sort-by=.metadata.creationTimestamp | tail -n10
+# Should show new backups with recent timestamps
 ```
 
 ---
@@ -668,14 +687,15 @@ oc get backup -n open-cluster-management-backup | head -10
 Before decommissioning the old hub, verify the backup integrity.
 
 ```bash
-# Get the latest backup name:
-BACKUP_NAME=$(oc get backup -n open-cluster-management-backup -o jsonpath='{.items[0].metadata.name}')
+# Get the newest backup name by creationTimestamp
+BACKUP_NAME=$(oc get backup -n open-cluster-management-backup \
+  --sort-by=.metadata.creationTimestamp -o name | tail -n1 | cut -d/ -f2)
 
 # Verify backup status:
-oc get backup $BACKUP_NAME -n open-cluster-management-backup -o yaml | grep -A 5 "status:"
+oc get backup "$BACKUP_NAME" -n open-cluster-management-backup -o yaml | grep -A 5 "status:"
 
 # Check backup logs:
-oc logs -n open-cluster-management-backup deployment/velero -c velero | grep $BACKUP_NAME
+oc logs -n open-cluster-management-backup deployment/velero -c velero | grep "$BACKUP_NAME"
 ```
 
 **SUCCESS CRITERIA:**
@@ -830,6 +850,12 @@ oc scale statefulset observability-thanos-compact \
   -n open-cluster-management-observability --replicas=1
 ```
 
+**Re-enable Observatorium API (only if you paused it in Step 3):**
+```bash
+oc scale deployment observability-observatorium-api \
+  -n open-cluster-management-observability --replicas=1
+```
+
 **Unpause BackupSchedule:**
 ```bash
 oc patch backupschedule schedule-rhacm -n open-cluster-management-backup \
@@ -927,4 +953,3 @@ This runbook has been validated against:
 - stolostron/cluster-backup-operator source code and documentation
 - OpenShift Hive documentation
 
-**Last Updated:** 2025-11-24
