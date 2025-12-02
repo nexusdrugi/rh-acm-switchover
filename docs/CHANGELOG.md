@@ -226,7 +226,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - rich>=13.0.0 - Rich text formatting
 
 #### Supported Environments
-- Python 3.8+
+- Python 3.9+
 - ACM 2.11 and 2.12+
 - OpenShift 4.x
 - Both kubectl and oc CLI

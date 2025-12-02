@@ -537,8 +537,7 @@ class Finalization:
             logger.warning("BackupSchedule %s has collision, recreating...", schedule_name)
         else:
             logger.info(
-                "Proactively recreating BackupSchedule %s to prevent future collision "
-                "(current phase: %s)",
+                "Proactively recreating BackupSchedule %s to prevent future collision " "(current phase: %s)",
                 schedule_name,
                 phase or "Unknown",
             )

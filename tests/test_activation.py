@@ -116,11 +116,13 @@ class TestSecondaryActivation:
         def list_custom_resources_side_effect(**kwargs):
             if kwargs.get("plural") == "restores":
                 # Return the passive sync restore for discovery
-                return [{
-                    "metadata": {"name": RESTORE_PASSIVE_SYNC_NAME},
-                    "spec": {SPEC_SYNC_RESTORE_WITH_NEW_BACKUPS: True},
-                    "status": {"phase": "Enabled"},
-                }]
+                return [
+                    {
+                        "metadata": {"name": RESTORE_PASSIVE_SYNC_NAME},
+                        "spec": {SPEC_SYNC_RESTORE_WITH_NEW_BACKUPS: True},
+                        "status": {"phase": "Enabled"},
+                    }
+                ]
             if kwargs.get("plural") == "managedclusters":
                 return [
                     {"metadata": {"name": "cluster1"}},

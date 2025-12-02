@@ -285,8 +285,7 @@ class TestPostActivationVerification:
         # With lazy logging, format string is args[0] and values are args[1:]
         # Check all args for CrashLoopBackOff
         assert any(
-            any("CrashLoopBackOff" in str(arg) for arg in call.args)
-            for call in mock_logger.warning.call_args_list
+            any("CrashLoopBackOff" in str(arg) for arg in call.args) for call in mock_logger.warning.call_args_list
         )
 
     @patch("modules.post_activation.wait_for_condition")

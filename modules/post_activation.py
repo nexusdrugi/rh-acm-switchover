@@ -292,19 +292,13 @@ class PostActivationVerification:
             if pod_errors:
                 error_pods.append(f"{pod_name}: " + "; ".join(pod_errors))
 
-        logger.info(
-            "Observability pods: %d/%d running, %d/%d ready",
-            running_pods, len(pods), ready_pods, len(pods)
-        )
+        logger.info("Observability pods: %d/%d running, %d/%d ready", running_pods, len(pods), ready_pods, len(pods))
 
         if error_pods:
             logger.warning("Pods in error state: %s", ", ".join(error_pods))
 
         if ready_pods < len(pods) * 0.8:  # Allow 20% tolerance
-            logger.warning(
-                "Only %d/%d pods ready. Some pods may still be starting.",
-                ready_pods, len(pods)
-            )
+            logger.warning("Only %d/%d pods ready. Some pods may still be starting.", ready_pods, len(pods))
 
     def _verify_metrics_collection(self):
         """Verify metrics collection is working (informational)."""
@@ -585,13 +579,7 @@ class PostActivationVerification:
                 # Trigger a rollout restart by patching the deployment
                 patch = {
                     "spec": {
-                        "template": {
-                            "metadata": {
-                                "annotations": {
-                                    "acm-switchover/restart": str(int(time.time()))
-                                }
-                            }
-                        }
+                        "template": {"metadata": {"annotations": {"acm-switchover/restart": str(int(time.time()))}}}
                     }
                 }
                 apps_v1.patch_namespaced_deployment(
