@@ -383,18 +383,30 @@ fi
 section_header "11. Checking Auto-Import Strategy (ACM 2.14+)"
 
 # Check primary hub
-PRIMARY_STRATEGY=$(get_auto_import_strategy "$PRIMARY_CONTEXT")
-if [[ "$PRIMARY_STRATEGY" == "default" ]]; then
-    check_pass "Primary hub: Using default autoImportStrategy ($AUTO_IMPORT_STRATEGY_DEFAULT)"
-elif [[ "$PRIMARY_STRATEGY" == "$AUTO_IMPORT_STRATEGY_DEFAULT" ]]; then
-    check_pass "Primary hub: autoImportStrategy explicitly set to $AUTO_IMPORT_STRATEGY_DEFAULT"
+if is_acm_214_or_higher "$PRIMARY_VERSION"; then
+    PRIMARY_STRATEGY=$(get_auto_import_strategy "$PRIMARY_CONTEXT")
+    if [[ "$PRIMARY_STRATEGY" == "default" ]]; then
+        check_pass "Primary hub: Using default autoImportStrategy ($AUTO_IMPORT_STRATEGY_DEFAULT)"
+    elif [[ "$PRIMARY_STRATEGY" == "$AUTO_IMPORT_STRATEGY_DEFAULT" ]]; then
+        check_pass "Primary hub: autoImportStrategy explicitly set to $AUTO_IMPORT_STRATEGY_DEFAULT"
+    else
+        check_warn "Primary hub: autoImportStrategy is set to '$PRIMARY_STRATEGY' (non-default)"
+        echo -e "${YELLOW}       This should only be temporary for specific scenarios.${NC}"
+        echo -e "${YELLOW}       See: $AUTO_IMPORT_STRATEGY_DOC_URL${NC}"
+    fi
 else
-    check_warn "Primary hub: autoImportStrategy is set to '$PRIMARY_STRATEGY' (non-default)"
-    echo -e "${YELLOW}       This should only be temporary for specific scenarios.${NC}"
-    echo -e "${YELLOW}       See: $AUTO_IMPORT_STRATEGY_DOC_URL${NC}"
+    check_pass "Primary hub: ACM version $PRIMARY_VERSION (autoImportStrategy check not applicable for versions < 2.14)"
 fi
 
-# Check secondary/destination hub
+SECONDARY_CLUSTER_COUNT=$(oc --context="$SECONDARY_CONTEXT" get managedclusters --no-headers 2>/dev/null | grep -cv "$LOCAL_CLUSTER_NAME")
+if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
+    check_fail "Secondary hub: Could not list managed clusters. Cannot verify auto-import strategy requirements."
+    SECONDARY_CLUSTER_COUNT=0 # Set to 0 to avoid breaking subsequent logic, failure is already logged.
+fi
+if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
+    check_fail "Secondary hub: Could not list managed clusters. Cannot verify auto-import strategy requirements."
+    SECONDARY_CLUSTER_COUNT=0 # Set to 0 to avoid breaking subsequent logic, failure is already logged.
+fi
 SECONDARY_STRATEGY=$(get_auto_import_strategy "$SECONDARY_CONTEXT")
 
 # Count managed clusters on secondary hub (excluding local-cluster)
