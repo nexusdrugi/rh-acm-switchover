@@ -292,9 +292,13 @@ class KubeClient:
             return {}
 
         logger.debug(
-            "KUBE_CLIENT patch_custom_resource: group=%s, version=%s, "
-            "plural=%s, name=%s, namespace=%s, patch=%s",
-            group, version, plural, name, namespace, patch,
+            "KUBE_CLIENT patch_custom_resource: group=%s, version=%s, " "plural=%s, name=%s, namespace=%s, patch=%s",
+            group,
+            version,
+            plural,
+            name,
+            namespace,
+            patch,
         )
 
         try:
@@ -321,7 +325,9 @@ class KubeClient:
         except ApiException as e:
             logger.error(
                 "KUBE_CLIENT: ApiException during patch: status=%s, reason=%s, body=%s",
-                e.status, e.reason, e.body[:500] if e.body else "None",
+                e.status,
+                e.reason,
+                e.body[:500] if e.body else "None",
             )
             if is_retryable_error(e):
                 raise

@@ -229,9 +229,7 @@ def test_lib_common_sources_successfully():
     """Test that lib-common.sh can be sourced without errors."""
     constants = SCRIPTS_DIR / "constants.sh"
     lib_common = SCRIPTS_DIR / "lib-common.sh"
-    code, out = run_bash_command(
-        f"source '{constants}' && source '{lib_common}' && echo 'success'"
-    )
+    code, out = run_bash_command(f"source '{constants}' && source '{lib_common}' && echo 'success'")
     assert code == 0, f"lib-common.sh should source successfully. Output: {out}"
     assert "success" in out
 
@@ -240,10 +238,9 @@ def test_lib_common_functions_defined():
     """Test that all expected functions are defined after sourcing lib-common.sh."""
     constants = SCRIPTS_DIR / "constants.sh"
     lib_common = SCRIPTS_DIR / "lib-common.sh"
-    
-    functions = ["check_pass", "check_fail", "check_warn", "section_header", 
-                 "detect_cluster_cli", "print_summary"]
-    
+
+    functions = ["check_pass", "check_fail", "check_warn", "section_header", "detect_cluster_cli", "print_summary"]
+
     for func in functions:
         code, out = run_bash_command(
             f"source '{constants}' && source '{lib_common}' && type {func} >/dev/null 2>&1 && echo 'exists'"
@@ -307,8 +304,7 @@ def test_lib_common_print_summary_preflight():
     constants = SCRIPTS_DIR / "constants.sh"
     lib_common = SCRIPTS_DIR / "lib-common.sh"
     code, out = run_bash_command(
-        f"source '{constants}' && source '{lib_common}' && "
-        "check_pass 'test' >/dev/null && print_summary 'preflight'"
+        f"source '{constants}' && source '{lib_common}' && " "check_pass 'test' >/dev/null && print_summary 'preflight'"
     )
     assert code == 0
     assert "Validation Summary" in out, "Preflight summary should say 'Validation Summary'"
@@ -331,8 +327,6 @@ def test_lib_common_print_summary_postflight():
 def test_constants_exit_codes_defined():
     """Test that exit code constants are defined in constants.sh."""
     constants = SCRIPTS_DIR / "constants.sh"
-    code, out = run_bash_command(
-        f"source '{constants}' && echo $EXIT_SUCCESS,$EXIT_FAILURE,$EXIT_INVALID_ARGS"
-    )
+    code, out = run_bash_command(f"source '{constants}' && echo $EXIT_SUCCESS,$EXIT_FAILURE,$EXIT_INVALID_ARGS")
     assert code == 0
     assert out.strip() == "0,1,2", f"Exit codes should be 0,1,2. Got: {out.strip()}"

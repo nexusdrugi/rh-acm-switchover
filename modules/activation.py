@@ -28,9 +28,7 @@ logger = logging.getLogger("acm_switchover")
 MIN_MANAGED_CLUSTERS = 0
 
 
-def find_passive_sync_restore(
-    client: KubeClient, namespace: str = BACKUP_NAMESPACE
-) -> Optional[Dict]:
+def find_passive_sync_restore(client: KubeClient, namespace: str = BACKUP_NAMESPACE) -> Optional[Dict]:
     """
     Find an existing passive sync restore on the cluster.
 
@@ -264,7 +262,8 @@ class SecondaryActivation:
             if after_mc_backup != VELERO_BACKUP_LATEST:
                 logger.error(
                     "PATCH VERIFICATION FAILED: Expected '%s', got '%s'",
-                    VELERO_BACKUP_LATEST, after_mc_backup,
+                    VELERO_BACKUP_LATEST,
+                    after_mc_backup,
                 )
                 raise FatalError(
                     f"Patch verification failed: {SPEC_VELERO_MANAGED_CLUSTERS_BACKUP_NAME} is '{after_mc_backup}', "
@@ -273,7 +272,8 @@ class SecondaryActivation:
             else:
                 logger.info(
                     "PATCH VERIFICATION SUCCESS: %s is now '%s'",
-                    SPEC_VELERO_MANAGED_CLUSTERS_BACKUP_NAME, VELERO_BACKUP_LATEST,
+                    SPEC_VELERO_MANAGED_CLUSTERS_BACKUP_NAME,
+                    VELERO_BACKUP_LATEST,
                 )
         else:
             logger.error("AFTER PATCH: %s not found after patching!", restore_name)

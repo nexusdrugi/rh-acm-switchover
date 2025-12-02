@@ -241,9 +241,11 @@ def print_archived_restores(restores: List[Dict], use_color: bool = True):
                     print(f"          {k}: {v}")
 
         # Velero restores created
-        for key in ["velero_managed_clusters_restore_name",
-                    "velero_credentials_restore_name",
-                    "velero_resources_restore_name"]:
+        for key in [
+            "velero_managed_clusters_restore_name",
+            "velero_credentials_restore_name",
+            "velero_resources_restore_name",
+        ]:
             val = restore.get(key)
             if val:
                 short_key = key.replace("velero_", "").replace("_restore_name", "")
@@ -312,12 +314,14 @@ Examples:
         help="Path to state file (default: most recent in .state/)",
     )
     parser.add_argument(
-        "--list", "-l",
+        "--list",
+        "-l",
         action="store_true",
         help="List all available state files",
     )
     parser.add_argument(
-        "--json", "-j",
+        "--json",
+        "-j",
         action="store_true",
         help="Output raw JSON instead of formatted view",
     )
