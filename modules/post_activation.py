@@ -5,7 +5,6 @@ Post-activation verification module for ACM switchover.
 import base64
 import logging
 import re
-from typing import List, Tuple
 
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
@@ -557,9 +556,6 @@ class PostActivationVerification:
             # Parse the import YAML and apply each resource
             import_docs = list(yaml.safe_load_all(import_yaml))
             apps_v1 = client.AppsV1Api()
-            rbac_v1 = client.RbacAuthorizationV1Api()
-            scheduling_v1 = client.SchedulingV1Api()
-            custom_api = client.CustomObjectsApi()
 
             for doc in import_docs:
                 if not doc:
@@ -776,5 +772,4 @@ class PostActivationVerification:
             return "unreachable"
         except Exception as e:
             logger.debug("Error checking klusterlet for %s: %s", cluster_name, e)
-            return "unreachable"
             return "unreachable"

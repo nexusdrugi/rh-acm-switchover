@@ -3,7 +3,6 @@ Primary hub preparation module for ACM switchover.
 """
 
 import logging
-from typing import List
 
 from lib.exceptions import SwitchoverError
 from lib.kube_client import KubeClient
