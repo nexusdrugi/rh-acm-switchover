@@ -145,7 +145,8 @@ get_auto_import_strategy() {
             # A different error occurred (e.g., connection refused)
             echo "error"
             echo "$output" >&2
-            return 1
+            # Avoid aborting callers that use set -e and command substitution
+            return 0
         fi
     fi
     
@@ -155,6 +156,8 @@ get_auto_import_strategy() {
     else
         echo "$output"
     fi
+
+    return 0
 }
 
 # Check if ACM version is 2.14 or higher
