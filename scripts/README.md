@@ -290,13 +290,14 @@ Verifies that the ACM switchover completed successfully by validating all critic
 
 ### What It Checks
 
+0. **CLI Tools** - Verifies `oc`/`kubectl` and `jq` are installed
 1. **Restore Status** - Confirms restore completed successfully (Phase: Finished) - Dynamically finds latest restore
-2. **ManagedCluster Connectivity** - Verifies all clusters are Available and Joined
+2. **ManagedCluster Status** - Verifies all clusters are Available and Joined
 3. **Observability Components** - Checks all observability pods are running (Grafana, Observatorium, Thanos)
 4. **Metrics Collection** - Validates Grafana route and observatorium-api status
 5. **Backup Configuration** - Ensures BackupSchedule is enabled and creating backups
 6. **ACM Hub Components** - Verifies MultiClusterHub and ACM pods are healthy
-7. **Old Hub Comparison** (if provided) - Checks old hub clusters are disconnected
+7. **Old Hub Comparison** (if `--old-hub-context` provided) - Checks old hub clusters are disconnected
 8. **Auto-Import Status** - Verifies no lingering disable-auto-import annotations
 9. **Auto-Import Strategy** (ACM 2.14+) - Ensures `autoImportStrategy` is reset to default post-switchover:
     - Warns if non-default strategy remains configured
@@ -314,9 +315,16 @@ New Hub:        new-hub
 Old Hub:        old-hub (for comparison)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+0. Checking CLI Tools
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ OpenShift CLI (oc) is installed
+✓ jq is installed
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 1. Checking Restore Status
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✓ Restore 'restore-acm-passive-sync' completed successfully (Phase: Finished)
+✓ Latest restore 'restore-acm-passive-sync' completed successfully (Phase: Finished, Created: 2025-12-03T10:15:30Z)
+       (Identified as passive sync restore via spec.syncRestoreWithNewBackups=true)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 2. Checking ManagedCluster Status
@@ -332,8 +340,8 @@ Old Hub:        old-hub (for comparison)
 ║   Verification Summary                                     ║
 ╚════════════════════════════════════════════════════════════╝
 
-Total Checks:    24
-Passed:          24
+Total Checks:    25
+Passed:          25
 Failed:          0
 Warnings:        0
 
