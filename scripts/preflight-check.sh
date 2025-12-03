@@ -450,8 +450,11 @@ if [[ $SECONDARY_CLUSTERS_EXIT -ne 0 ]]; then
     check_fail "Secondary hub: Could not list managed clusters. Cannot verify auto-import strategy requirements."
     SECONDARY_CLUSTER_COUNT=0
 else
-    # grep -cv returns 1 when count is 0, so use || echo "0" to handle that case
-    SECONDARY_CLUSTER_COUNT=$(echo "$SECONDARY_CLUSTERS_OUTPUT" | grep -cv "$LOCAL_CLUSTER_NAME" || echo "0")
+    # Count managed clusters excluding local-cluster
+    # grep -cv returns 1 when count is 0, so use || true to handle that case, then default to 0 if empty
+    SECONDARY_CLUSTER_COUNT=$(echo "$SECONDARY_CLUSTERS_OUTPUT" | grep -cv "$LOCAL_CLUSTER_NAME" || true)
+    # Ensure we have a valid number (handle empty output or other edge cases)
+    SECONDARY_CLUSTER_COUNT=${SECONDARY_CLUSTER_COUNT:-0}
 fi
 
 # Check if secondary hub is ACM 2.14+
