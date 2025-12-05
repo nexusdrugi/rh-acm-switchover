@@ -14,6 +14,9 @@ build/
 *.state.json
 .DS_Store
 
+# Node.js
+node_modules/
+
 # Test coverage
 htmlcov/
 .coverage
