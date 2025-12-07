@@ -57,7 +57,8 @@ def dry_run_skip(
                 if obj is None:
                     break
 
-            if obj:
+            # Explicitly check for True to avoid truthy object references
+            if obj is True:
                 logger = logging.getLogger("acm_switchover")
                 logger.info("[DRY-RUN] %s", message)
                 return return_value
