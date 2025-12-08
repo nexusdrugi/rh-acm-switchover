@@ -20,6 +20,11 @@ rules:
     resources: ["secrets"]
     verbs: ["get"]
   
+  # Core API - Pods (read-only for Velero health checks)
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  
   # ACM Backup/Restore - BackupSchedules
   - apiGroups: ["cluster.open-cluster-management.io"]
     resources: ["backupschedules"]
@@ -38,6 +43,11 @@ rules:
   # Velero - Restores (read-only for monitoring)
   - apiGroups: ["velero.io"]
     resources: ["restores"]
+    verbs: ["get", "list"]
+  
+  # Velero - BackupStorageLocations (read-only for storage health check)
+  - apiGroups: ["velero.io"]
+    resources: ["backupstoragelocations"]
     verbs: ["get", "list"]
   
   # OADP - DataProtectionApplications (read-only for validation)
@@ -76,6 +86,28 @@ rules:
   - apiGroups: ["apps"]
     resources: ["statefulsets"]
     verbs: ["get", "patch"]
+  
+  # OpenShift Routes API - Routes (read-only for Grafana access)
+  - apiGroups: ["route.openshift.io"]
+    resources: ["routes"]
+    verbs: ["get"]
+
+---
+# Role for ACM Switchover Operator in open-cluster-management namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: acm-switchover-operator
+  namespace: open-cluster-management
+  labels:
+    app.kubernetes.io/name: acm-switchover
+    app.kubernetes.io/component: operator
+    app.kubernetes.io/role: operator
+rules:
+  # Core API - Pods (read-only for ACM health checks)
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
 
 ---
 # Role for ACM Switchover Operator in multicluster-engine namespace
@@ -111,6 +143,11 @@ rules:
     resources: ["configmaps"]
     verbs: ["get", "list"]
   
+  # Core API - Pods (read-only for Velero health checks)
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  
   # ACM Backup/Restore - BackupSchedules (read-only)
   - apiGroups: ["cluster.open-cluster-management.io"]
     resources: ["backupschedules"]
@@ -129,6 +166,11 @@ rules:
   # Velero - Restores (read-only)
   - apiGroups: ["velero.io"]
     resources: ["restores"]
+    verbs: ["get", "list"]
+  
+  # Velero - BackupStorageLocations (read-only for storage health check)
+  - apiGroups: ["velero.io"]
+    resources: ["backupstoragelocations"]
     verbs: ["get", "list"]
   
   # OADP - DataProtectionApplications (read-only)
@@ -153,6 +195,11 @@ rules:
     resources: ["pods"]
     verbs: ["get", "list"]
   
+  # Core API - Secrets (read-only for Thanos config)
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+  
   # Apps API - Deployments (read-only)
   - apiGroups: ["apps"]
     resources: ["deployments"]
@@ -161,6 +208,28 @@ rules:
   # Apps API - StatefulSets (read-only)
   - apiGroups: ["apps"]
     resources: ["statefulsets"]
+    verbs: ["get", "list"]
+  
+  # OpenShift Routes API - Routes (read-only for Grafana access)
+  - apiGroups: ["route.openshift.io"]
+    resources: ["routes"]
+    verbs: ["get"]
+
+---
+# Role for ACM Switchover Validator in open-cluster-management namespace (Read-Only)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: acm-switchover-validator
+  namespace: open-cluster-management
+  labels:
+    app.kubernetes.io/name: acm-switchover
+    app.kubernetes.io/component: validator
+    app.kubernetes.io/role: validator
+rules:
+  # Core API - Pods (read-only for ACM health checks)
+  - apiGroups: [""]
+    resources: ["pods"]
     verbs: ["get", "list"]
 
 ---

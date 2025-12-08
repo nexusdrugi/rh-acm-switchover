@@ -15,6 +15,21 @@ rules:
     resources: ["namespaces"]
     verbs: ["get"]
   
+  # Core API - Nodes (for cluster health validation per runbook)
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+  
+  # OpenShift Config API - ClusterOperators (for cluster health validation)
+  - apiGroups: ["config.openshift.io"]
+    resources: ["clusteroperators"]
+    verbs: ["get", "list"]
+  
+  # OpenShift Config API - ClusterVersions (for upgrade status check)
+  - apiGroups: ["config.openshift.io"]
+    resources: ["clusterversions"]
+    verbs: ["get", "list"]
+  
   # ACM Cluster Management - ManagedClusters
   - apiGroups: ["cluster.open-cluster-management.io"]
     resources: ["managedclusters"]
@@ -51,6 +66,21 @@ rules:
   - apiGroups: [""]
     resources: ["namespaces"]
     verbs: ["get"]
+  
+  # Core API - Nodes (for cluster health validation per runbook)
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+  
+  # OpenShift Config API - ClusterOperators (for cluster health validation)
+  - apiGroups: ["config.openshift.io"]
+    resources: ["clusteroperators"]
+    verbs: ["get", "list"]
+  
+  # OpenShift Config API - ClusterVersions (for upgrade status check)
+  - apiGroups: ["config.openshift.io"]
+    resources: ["clusterversions"]
+    verbs: ["get", "list"]
   
   # ACM Cluster Management - ManagedClusters (read-only)
   - apiGroups: ["cluster.open-cluster-management.io"]

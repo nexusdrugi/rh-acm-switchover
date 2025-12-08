@@ -52,6 +52,7 @@ role:
   # ACM namespaces where roles should be created
   # Adjust these if your ACM installation uses custom namespaces
   namespaces:
+    acm: open-cluster-management
     backup: open-cluster-management-backup
     observability: open-cluster-management-observability
     mce: multicluster-engine
