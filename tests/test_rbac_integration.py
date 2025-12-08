@@ -304,7 +304,9 @@ class TestRBACManifestConsistency:
         )
         
         assert routes_rule is not None, "Expected routes rule in observability operator role"
-        assert "route.openshift.io" in routes_rule["apiGroups"], \
+        # Check that route.openshift.io is in the apiGroups list
+        api_groups = routes_rule.get("apiGroups", [])
+        assert any(group == "route.openshift.io" for group in api_groups), \
             "Expected route.openshift.io API group"
 
     def test_kustomize_observability_role_has_secrets(self, kustomize_roles):
