@@ -32,6 +32,15 @@ tests/
 ./run_tests.sh
 ```
 
+#### Virtual Environment Usage
+
+- Prefer activating an existing virtual environment before running tooling.
+- The test runner (`run_tests.sh`) detects an active `$VIRTUAL_ENV`; otherwise it will try `.venv/` first, then `venv/`, and create `.venv/` if none exist.
+- Recommended setup:
+    - Create `.venv` once: `python3 -m venv .venv`
+    - Activate: `source .venv/bin/activate`
+    - Then run: `./run_tests.sh`
+
 This script will:
 1. Set up a virtual environment (if needed)
 2. Install dependencies
