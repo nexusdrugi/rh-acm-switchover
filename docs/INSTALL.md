@@ -32,6 +32,7 @@ oc config get-contexts
 If your system has Python 3.8 or earlier, you must upgrade to Python 3.9+:
 
 **RHEL 8 / CentOS 8:**
+
 ```bash
 sudo dnf install python39 python39-pip
 python3.9 -m venv venv
@@ -39,6 +40,7 @@ source venv/bin/activate
 ```
 
 **Ubuntu 20.04+:**
+
 ```bash
 sudo apt install python3.9 python3.9-venv
 python3.9 -m venv venv
@@ -46,6 +48,7 @@ source venv/bin/activate
 ```
 
 **Using pyenv:**
+
 ```bash
 pyenv install 3.11.0
 pyenv local 3.11.0
@@ -267,6 +270,13 @@ source venv/bin/activate
 # Run help command
 python acm_switchover.py --help
 
+
+### Enable Bash Completions (oc/kubectl)
+
+We ship bash completions for all executables (Python entry points and scripts under `scripts/`).
+
+```bash
+# Install system-wide (requires root; SELinux relabel via restorecon if enabled)
 # Expected output: Help text with all options
 ```
 
@@ -275,6 +285,11 @@ python acm_switchover.py --help
 ```bash
 # Run validation against your hubs
 python acm_switchover.py \
+
+Notes:
+- Supports both `oc` and `kubectl` automatically.
+- Context suggestions are cached for 60s and refreshed automatically.
+- SELinux: `restorecon` runs automatically when available; directory defaults pick the context type.
   --validate-only \
   --primary-context your-primary-hub \
   --secondary-context your-secondary-hub
