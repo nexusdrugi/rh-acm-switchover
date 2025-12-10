@@ -16,6 +16,19 @@ pip install -r requirements.txt
 
 ```
 
+### Bash Completions (oc/kubectl)
+
+```bash
+# Install for current user
+./scripts/install-completions.sh --user
+
+# System-wide (root)
+sudo ./scripts/install-completions.sh --system
+
+# Verify install paths
+./scripts/install-completions.sh test-completion
+```
+
 ## Common Commands
 
 ### Validation & Dry-Run
