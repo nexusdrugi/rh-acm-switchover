@@ -40,6 +40,29 @@ FAILED_MESSAGES=()
 WARNING_MESSAGES=()
 
 # =============================================================================
+# Version Display
+# =============================================================================
+
+# Print script version and name
+# Usage: print_script_version "script-name"
+# Example: print_script_version "preflight-check"
+print_script_version() {
+    local script_name="${1:-script}"
+    echo -e "${GRAY}${script_name} v${SCRIPT_VERSION} (${SCRIPT_VERSION_DATE})${NC}"
+}
+
+# Print version info in a banner format (for script headers)
+# Usage: print_version_banner "Script Title"
+print_version_banner() {
+    local title="$1"
+    echo ""
+    echo "╔════════════════════════════════════════════════════════════╗"
+    echo "║   $title"
+    printf "║   %-57s ║\n" "Version: ${SCRIPT_VERSION} (${SCRIPT_VERSION_DATE})"
+    echo "╚════════════════════════════════════════════════════════════╝"
+}
+
+# =============================================================================
 # Helper Functions
 # =============================================================================
 
@@ -189,6 +212,105 @@ is_acm_214_or_higher() {
         return 0
     else
         return 1
+    fi
+}
+
+# =============================================================================
+# Managed Cluster Helpers
+# =============================================================================
+
+# Get total managed cluster count (excluding local-cluster)
+# Usage: get_total_mc_count "$CONTEXT"
+get_total_mc_count() {
+    local ctx="$1"
+    local count
+    
+    count=$("$CLUSTER_CLI_BIN" --context="$ctx" get managedclusters --no-headers 2>/dev/null | \
+        grep -v "$LOCAL_CLUSTER_NAME" | wc -l)
+    
+    # Trim whitespace and ensure numeric
+    count=$(echo "$count" | tr -d '[:space:]')
+    echo "${count:-0}"
+}
+
+# Get count of available (connected) managed clusters (excluding local-cluster)
+# Usage: get_available_mc_count "$CONTEXT"
+get_available_mc_count() {
+    local ctx="$1"
+    local count
+    
+    count=$("$CLUSTER_CLI_BIN" --context="$ctx" get managedclusters -o json 2>/dev/null | \
+        jq -r --arg LOCAL "$LOCAL_CLUSTER_NAME" \
+        '[.items[] | select(.metadata.name != $LOCAL) | select(.status.conditions[]? | select(.type=="ManagedClusterConditionAvailable" and .status=="True"))] | length' \
+        2>/dev/null)
+    
+    # Trim whitespace and ensure numeric
+    count=$(echo "$count" | tr -d '[:space:]')
+    echo "${count:-0}"
+}
+
+# Get BackupSchedule state
+# Returns: "running", "paused", "none", or "error"
+get_backup_schedule_state() {
+    local ctx="$1"
+    
+    local phase
+    phase=$("$CLUSTER_CLI_BIN" --context="$ctx" get backupschedule -n "$BACKUP_NAMESPACE" -o jsonpath='{.items[0].status.phase}' 2>/dev/null)
+    
+    if [[ -z "$phase" ]]; then
+        echo "none"
+    elif [[ "$phase" == "Enabled" ]]; then
+        echo "running"
+    elif [[ "$phase" == "BackupCollision" ]]; then
+        echo "paused"
+    else
+        echo "$phase"
+    fi
+}
+
+# Print a hub summary card (similar to discover-hub.sh output)
+# Usage: print_hub_summary "$CONTEXT" "$VERSION" "$ROLE" "$AVAILABLE_MC" "$TOTAL_MC" "$STATE_DESC"
+print_hub_summary() {
+    local ctx="$1"
+    local version="$2"
+    local role="$3"
+    local available_mc="$4"
+    local total_mc="$5"
+    local state_desc="$6"
+    
+    # Color based on role
+    local role_color="$NC"
+    case "$role" in
+        primary)
+            role_color="$GREEN"
+            ;;
+        secondary)
+            role_color="$BLUE"
+            ;;
+        standby|old-primary)
+            role_color="$YELLOW"
+            ;;
+        *)
+            role_color="$NC"
+            ;;
+    esac
+    
+    # Color for cluster counts
+    local cluster_color="$GREEN"
+    if [[ "$available_mc" -lt "$total_mc" ]]; then
+        cluster_color="$YELLOW"
+    fi
+    if [[ "$available_mc" -eq 0 ]] && [[ "$total_mc" -gt 0 ]]; then
+        cluster_color="$RED"
+    fi
+    
+    echo ""
+    echo -e "  ${role_color}●${NC} ${BLUE}$ctx${NC}"
+    echo -e "    Role:     ${role_color}$role${NC}"
+    echo -e "    Version:  $version"
+    echo -e "    Clusters: ${cluster_color}${available_mc}/${total_mc}${NC} (available/total)"
+    if [[ -n "$state_desc" ]]; then
+        echo -e "    State:    $state_desc"
     fi
 }
 
