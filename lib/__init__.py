@@ -2,6 +2,9 @@
 Library package for ACM switchover automation.
 """
 
+__version__ = "1.3.1"
+__version_date__ = "2025-12-11"
+
 from .exceptions import (
     ConfigurationError,
     FatalError,
@@ -22,6 +25,8 @@ from .utils import (
 )
 
 __all__ = [
+    "__version__",
+    "__version_date__",
     "KubeClient",
     "SwitchoverError",
     "TransientError",

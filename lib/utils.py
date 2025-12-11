@@ -116,8 +116,11 @@ class StateManager:
 
     def _new_state(self) -> Dict[str, Any]:
         """Return a fresh state structure."""
+        # Import here to avoid circular import
+        from lib import __version__
         return {
             "version": "1.0",
+            "tool_version": __version__,
             "created_at": _utc_timestamp(),
             "current_phase": Phase.INIT.value,
             "completed_steps": [],
