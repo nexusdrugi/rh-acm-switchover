@@ -10,7 +10,7 @@ import argparse
 import logging
 import sys
 
-from lib import KubeClient, RBACValidator, setup_logging
+from lib import KubeClient, RBACValidator, setup_logging, __version__, __version_date__
 
 
 def parse_args():
@@ -75,6 +75,8 @@ def main():
     # Set up logging
     setup_logging(verbose=args.verbose, log_format="text")
     logger = logging.getLogger("acm_switchover")
+
+    logger.info("ACM Switchover RBAC Checker v%s (%s)", __version__, __version_date__)
 
     try:
         # Determine which contexts to check

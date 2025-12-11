@@ -19,6 +19,8 @@ import sys
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from lib import __version__, __version_date__
+
 # ANSI colors for terminal output
 COLORS = {
     "reset": "\033[0m",
@@ -145,7 +147,8 @@ def print_state(state: Dict[str, Any], use_color: bool = True):
 
     # Basic info
     print_section("Overview", use_color)
-    print(f"  Version:      {state.get('version', 'unknown')}")
+    print(f"  State Format: {state.get('version', 'unknown')}")
+    print(f"  Tool Version: {state.get('tool_version', 'unknown')} (viewer: {__version__})")
     print(f"  Created:      {format_timestamp(state.get('created_at', ''))}")
     print(f"  Last Updated: {format_timestamp(state.get('last_updated', ''))}")
 
@@ -334,6 +337,13 @@ Examples:
 
     args = parser.parse_args()
     use_color = not args.no_color and sys.stdout.isatty()
+
+    # Show version in header
+    version_str = f"show_state.py v{__version__} ({__version_date__})"
+    if use_color:
+        print(color(version_str, "gray", use_color))
+    else:
+        print(version_str)
 
     if args.list:
         list_state_files(use_color)
