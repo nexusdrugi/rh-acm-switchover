@@ -29,6 +29,8 @@ from lib import (
     Phase,
     StateManager,
     setup_logging,
+    __version__,
+    __version_date__,
 )
 from lib.constants import EXIT_FAILURE, EXIT_INTERRUPT, EXIT_SUCCESS
 from lib.validation import InputValidator, ValidationError
@@ -457,7 +459,7 @@ def main():
     )
     args.state_file = resolved_state_file
 
-    logger.info("ACM Hub Switchover Automation")
+    logger.info("ACM Hub Switchover Automation v%s (%s)", __version__, __version_date__)
     logger.info("Started at: %s", datetime.now(timezone.utc).isoformat())
     logger.info("Using state file: %s", resolved_state_file)
 
