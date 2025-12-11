@@ -5,6 +5,16 @@
 # This file contains shared constants used by preflight-check.sh and postflight-check.sh.
 # Sourcing this file ensures consistency across scripts.
 
+# =============================================================================
+# Script Version
+# =============================================================================
+# Version format: MAJOR.MINOR.PATCH
+# - MAJOR: Breaking changes to script behavior or output format
+# - MINOR: New features, new checks, significant improvements
+# - PATCH: Bug fixes, minor improvements
+export SCRIPT_VERSION="1.3.1"
+export SCRIPT_VERSION_DATE="2025-12-11"
+
 # Namespaces
 export ACM_NAMESPACE="open-cluster-management"
 export BACKUP_NAMESPACE="open-cluster-management-backup"
