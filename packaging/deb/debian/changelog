@@ -1,0 +1,5 @@
+acm-switchover (1.4.0-1) unstable; urgency=medium
+
+  * Initial Debian packaging skeleton
+
+ -- Platform Engineering <noreply@example.com>  Fri, 12 Dec 2025 00:00:00 +0000

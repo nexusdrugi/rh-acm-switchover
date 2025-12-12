@@ -1,0 +1,6 @@
+debian/tmp/usr/bin/* usr/bin/
+debian/tmp/usr/lib/python3*/dist-packages/* usr/lib/python3/dist-packages/
+packaging/common/man/*.1.gz usr/share/man/man1/
+README.md usr/share/doc/acm-switchover/
+deploy/* usr/share/acm-switchover/deploy/
+completions/* usr/share/bash-completion/completions/

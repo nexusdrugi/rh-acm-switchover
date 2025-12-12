@@ -1,0 +1,12 @@
+Source: acm-switchover
+Section: admin
+Priority: optional
+Maintainer: Platform Engineering <noreply@example.com>
+Standards-Version: 4.6.2
+Build-Depends: debhelper-compat (= 13), python3, python3-setuptools
+
+Package: acm-switchover
+Architecture: all
+Depends: ${misc:Depends}, ${python3:Depends}, python3, python3-kubernetes, python3-yaml, python3-rich, python3-tenacity
+Description: ACM Hub Switchover automation tool
+ Automates switchover from a primary ACM hub to a secondary hub with validation and state.

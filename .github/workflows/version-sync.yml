@@ -1,0 +1,15 @@
+name: Version Sync Check
+
+on:
+  pull_request:
+  push:
+    branches: [ packaging ]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate versions
+        run: |
+          bash packaging/common/validate-versions.sh

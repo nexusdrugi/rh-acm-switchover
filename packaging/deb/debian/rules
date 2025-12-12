@@ -1,0 +1,11 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@ --with python3
+
+override_dh_auto_build:
+	python3 -m build .
+
+override_dh_auto_install:
+	python3 -m pip install . --root=$(CURDIR)/debian/tmp --prefix=/usr
+
