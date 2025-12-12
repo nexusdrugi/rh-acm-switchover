@@ -18,7 +18,7 @@ from lib.constants import (
 )
 from lib.exceptions import SwitchoverError
 from lib.kube_client import KubeClient
-from lib.utils import StateManager
+from lib.utils import StateManager, dry_run_skip
 from lib.waiter import wait_for_condition
 
 logger = logging.getLogger("acm_switchover")
@@ -105,13 +105,9 @@ class PostActivationVerification:
             )
             return False
 
+    @dry_run_skip(message="Skipping wait for ManagedCluster connections")
     def _verify_managed_clusters_connected(self, timeout: int = CLUSTER_VERIFY_TIMEOUT):
         """Verify all ManagedClusters are connected."""
-
-        # Skip waiting in dry-run mode since no actual activation occurred
-        if self.dry_run:
-            logger.info("[DRY-RUN] Skipping wait for ManagedCluster connections")
-            return
 
         latest_status = {
             "available": 0,
@@ -420,6 +416,7 @@ class PostActivationVerification:
 
         logger.info("All ManagedClusters cleared disable-auto-import annotation")
 
+    @dry_run_skip(message="Skipping klusterlet connection verification")
     def _verify_klusterlet_connections(self):
         """
         Verify and fix klusterlet agents on managed clusters to connect to the new hub.
@@ -434,9 +431,6 @@ class PostActivationVerification:
         If we can't connect to a managed cluster (no context available), we log a
         warning but don't fail the switchover.
         """
-        if self.dry_run:
-            logger.info("[DRY-RUN] Skipping klusterlet connection verification")
-            return
 
         logger.info("Verifying klusterlet connections to new hub...")
 
@@ -704,14 +698,42 @@ class PostActivationVerification:
         return ""
 
     def _load_kubeconfig_data(self) -> dict:
-        """Load and return the kubeconfig data as a dictionary."""
+        """Load and merge kubeconfig data from all KUBECONFIG paths.
+
+        Handles the KUBECONFIG environment variable which can contain multiple
+        colon-separated paths (e.g., '/path/one:/path/two:~/.kube/config').
+        Contexts, clusters, and users are merged from all files.
+        """
         try:
-            kubeconfig_path = os.environ.get(
-                "KUBECONFIG", os.path.expanduser("~/.kube/config")
-            )
-            with open(kubeconfig_path) as f:
-                return yaml.safe_load(f) or {}
-        except (OSError, yaml.YAMLError, Exception) as e:
+            kubeconfig_env = os.environ.get("KUBECONFIG", "")
+            if kubeconfig_env:
+                # Split on colon (Unix path separator for KUBECONFIG)
+                paths = [p.strip() for p in kubeconfig_env.split(":") if p.strip()]
+            else:
+                paths = [os.path.expanduser("~/.kube/config")]
+
+            # Merge kubeconfig data from all paths
+            merged: dict = {"contexts": [], "clusters": [], "users": []}
+
+            for path in paths:
+                expanded_path = os.path.expanduser(path)
+                if not os.path.exists(expanded_path):
+                    logger.debug("Kubeconfig path does not exist: %s", expanded_path)
+                    continue
+
+                try:
+                    with open(expanded_path) as f:
+                        data = yaml.safe_load(f) or {}
+                        merged["contexts"].extend(data.get("contexts", []))
+                        merged["clusters"].extend(data.get("clusters", []))
+                        merged["users"].extend(data.get("users", []))
+                except (OSError, yaml.YAMLError) as e:
+                    logger.debug("Error loading kubeconfig %s: %s", expanded_path, e)
+                    continue
+
+            return merged
+
+        except Exception as e:
             logger.debug("Error loading kubeconfig: %s", e)
             return {}
 
