@@ -621,7 +621,7 @@ Automated Python tool that:
 
 **Runtime Configuration**:
 - Volume mounts: `/var/lib/acm-switchover` (state), `/app/.kube` (kubeconfig)
-- Environment variables: `STATE_DIR`, `KUBECONFIG`, `LOG_LEVEL`
+- Environment variables: `ACM_SWITCHOVER_STATE_DIR`, `KUBECONFIG`, `LOG_LEVEL`
 - Working directory: `/app`
 - Entrypoint: `python3 /app/acm_switchover.py`
 - Default CMD: `--help`

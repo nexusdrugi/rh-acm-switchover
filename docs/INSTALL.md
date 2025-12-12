@@ -359,6 +359,8 @@ export KUBECONFIG=/path/to/kubeconfig
 # Set default state directory
 export ACM_SWITCHOVER_STATE_DIR=/path/to/state
 
+# Precedence: --state-file > ACM_SWITCHOVER_STATE_DIR > .state/
+
 # Enable debug logging
 export ACM_SWITCHOVER_DEBUG=1
 ```

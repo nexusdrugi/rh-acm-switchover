@@ -157,10 +157,12 @@ podman run -it --rm \
 ### 7. Resume from Interruption
 
 ```bash
-# State is automatically resumed from /var/lib/acm-switchover/.state/
+# State is automatically resumed from the default state directory.
+# In containers, set ACM_SWITCHOVER_STATE_DIR to control where state is written.
 podman run -it --rm \
   -v ~/.kube:/app/.kube:ro \
   -v $(pwd)/state:/var/lib/acm-switchover \
+  -e ACM_SWITCHOVER_STATE_DIR=/var/lib/acm-switchover \
   quay.io/tomazborstnar/acm-switchover:latest \
   --primary-context primary-hub \
   --secondary-context secondary-hub \
@@ -174,7 +176,7 @@ podman run -it --rm \
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `KUBECONFIG` | `/app/.kube/config` | Path to Kubernetes config file |
-| `STATE_DIR` | `/var/lib/acm-switchover` | Directory for state files |
+| `ACM_SWITCHOVER_STATE_DIR` | `/var/lib/acm-switchover` | Directory for state files |
 | `PYTHONUNBUFFERED` | `1` | Disable Python output buffering |
 | `LOG_LEVEL` | - | Set logging verbosity (not implemented yet) |
 
@@ -185,7 +187,7 @@ podman run -it --rm \
   -v /custom/kubeconfig:/config:ro \
   -v $(pwd)/state:/state \
   -e KUBECONFIG=/config/config \
-  -e STATE_DIR=/state \
+  -e ACM_SWITCHOVER_STATE_DIR=/state \
   quay.io/tomazborstnar/acm-switchover:latest \
   --validate-only \
   --primary-context primary-hub \
