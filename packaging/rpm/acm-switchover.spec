@@ -4,7 +4,7 @@ Release:        1%{?dist}
 Summary:        ACM Hub Switchover automation tool
 License:        Apache-2.0
 URL:            https://github.com/your-org/rh-acm-switchover
-Source0:        %{name}-%{version}.tar.gz
+Source0:        rh-acm-switchover-%{version}.tar.gz
 
 BuildArch:      noarch
 
@@ -84,7 +84,11 @@ cp -a completions/* %{buildroot}%{_datadir}/bash-completion/completions/
 %{_bindir}/acm-switchover
 %{_bindir}/acm-switchover-rbac
 %{_bindir}/acm-switchover-state
-%{python3_sitelib}/rh_acm_switchover*
+%{python3_sitelib}/acm_switchover.py*
+%{python3_sitelib}/check_rbac.py*
+%{python3_sitelib}/show_state.py*
+%{python3_sitelib}/lib/*
+%{python3_sitelib}/modules/*
 %{_mandir}/man1/acm-switchover.1.gz
 %{_mandir}/man1/acm-switchover-rbac.1.gz
 %{_mandir}/man1/acm-switchover-state.1.gz
