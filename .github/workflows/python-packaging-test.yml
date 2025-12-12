@@ -1,0 +1,17 @@
+name: Python Packaging Smoke Test
+
+on:
+  pull_request:
+
+jobs:
+  test-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run test install
+        run: |
+          bash packaging/common/test-install.sh

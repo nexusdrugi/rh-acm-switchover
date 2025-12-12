@@ -1,0 +1,20 @@
+name: Helm Lint
+
+on:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.14.4'
+      - name: Lint chart
+        run: |
+          helm lint packaging/helm/acm-switchover
+      - name: Template chart (dry-run)
+        run: |
+          helm template --debug --dry-run acm-switchover packaging/helm/acm-switchover
