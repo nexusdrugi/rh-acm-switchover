@@ -1,6 +1,6 @@
 # ACM Hub Switchover Automation
 
-**Version 1.3.1** (2025-12-11)
+**Version 1.4.0** (2025-12-12)
 
 Automated, idempotent script for switching over Red Hat Advanced Cluster Management (ACM) from a primary hub to a secondary hub cluster.
 
@@ -76,12 +76,12 @@ cd rh-acm-switchover
 pip install -r requirements.txt
 ```
 
-### Option 2: Container Image (Coming Soon)
+### Option 2: Container Image
 
-> **Note:** Container image is not yet published. Use the source installation method above.
+> **Note:** Images are built on tags and on `main` as `latest`. See the container workflow.
 
 ```bash
-# Pull the latest image (NOT YET AVAILABLE)
+# Pull the latest image
 podman pull quay.io/tomazborstnar/acm-switchover:latest
 
 # Run validation
@@ -163,6 +163,13 @@ python acm_switchover.py \
 python acm_switchover.py --decommission \
   --primary-context primary-hub
 ```
+
+## Packaging
+
+- Python: `pyproject.toml` with console scripts `acm-switchover`, `acm-switchover-rbac`, `acm-switchover-state`
+- Container: OpenShift-safe, non-root, `ACM_SWITCHOVER_STATE_DIR=/var/lib/acm-switchover`
+- RPM/DEB: wrappers default to `/var/lib/acm-switchover`, man pages and completions installed
+- Helm: full app chart under `packaging/helm/acm-switchover` (PVC, SA, RBAC, kubeconfig optional)
 
 ## Command Line Options
 

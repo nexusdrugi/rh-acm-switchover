@@ -1,0 +1,26 @@
+name: Container Smoke Test
+
+on:
+  pull_request:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build test image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./container-bootstrap/Containerfile
+          load: true
+          tags: acm-switchover:test
+      - name: Test - Help and Version
+        run: |
+          docker run --rm acm-switchover:test --help
+          docker run --rm acm-switchover:test --version
+      - name: Test - State dir writable
+        run: |
+          docker run --rm acm-switchover:test sh -c "touch /var/lib/acm-switchover/test.txt"
