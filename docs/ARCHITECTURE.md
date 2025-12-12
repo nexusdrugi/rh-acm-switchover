@@ -1,7 +1,7 @@
-# ACM Switchover - Architecture & Design
+# ACM Switchover System Architecture
 
-**Version**: 1.2.0  
-**Last Updated**: November 27, 2025
+**Version**: 1.3.0  
+**Last Updated**: December 12, 2025
 
 ## Project Structure
 
@@ -480,9 +480,10 @@ except ApiException as e:
 - Namespace read access
 
 ### State File
-- Contains configuration but no secrets
-- Safe to commit to version control (optional)
-- Provides audit trail
+- Authoritative state stored on PVC at `/var/lib/acm-switchover/state/<operation_id>.json`
+- Jobs-only writer/reader for consistency; API does not mount the PVC
+- Contains configuration and progress markers, no secrets
+- Provides audit trail (mirrored summary in DB)
 
 ## Performance Optimization
 
@@ -588,3 +589,148 @@ cat .state/switchover-<primary>__<secondary>.json | python -m json.tool
 - Check state file for error messages
 - Verify Kubernetes contexts are accessible
 - Ensure RBAC permissions are sufficient
+
+## Web Architecture Details
+
+### High-Level Diagram
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                        USER BROWSER                              │
+│  ┌────────────────────────────────────────────────────────┐     │
+│  │              REACT FRONTEND (SPA)                      │     │
+│  │  • OAuth Token (memory)                                │     │
+│  │  • WebSocket Client (progress)                         │     │
+│  │  • Wizard, Dashboard, History                          │     │
+│  └────────────────────────┬───────────────────────────────┘     │
+└──────────────────────────│──────────────────────────────────────┘
+                           │ HTTPS + WSS
+                           │ Authorization: Bearer <token>
+                           ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                     OPENSHIFT CLUSTER                            │
+│  ┌─────────────────┐    ┌─────────────────┐                      │
+│  │   FASTAPI POD   │    │   POSTGRESQL    │                      │
+│  │  ┌───────────┐  │    │  • History      │                      │
+│  │  │  REST API │──┼────│  • Audit        │                      │
+│  │  │ WebSocket │  │    └─────────────────┘                      │
+│  │  └─────┬─────┘  │                                             │
+│  │        │        │                                             │
+│  │  ┌─────▼─────┐  │                                             │
+│  │  │ K8s JOB   │  │ ◄── Per operation, mounts PVC               │
+│  │  │ Python CLI│  │     writes state JSON                       │
+│  │  └─────┬─────┘  │                                             │
+│  └────────│────────┘                                             │
+│           │ Tails Pod logs, streams over WebSocket               │
+└───────────│──────────────────────────────────────────────────────┘
+            ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                       ACM HUB CLUSTER                            │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Data Flow
+```
+User (OAuth) → Frontend → Backend (TokenReview) → Create Job + Secret(KUBECONFIG)
+   ↓ WS
+Tail Pod Logs (JSON) → Broadcast to clients → Persist summary/steps (DB)
+PVC (/var/lib/acm-switchover/state/<operation_id>.json) ← CLI state writes
+Resume → New Job mounts PVC, reuses same --state-file
+```
+
+### Backend Responsibilities (FastAPI)
+- OAuth endpoints: `/auth/login`, `/auth/callback`, `/auth/refresh`
+- Per-request token validation via TokenReview
+- RBAC enforcement (viewer/operator/admin) from OpenShift groups
+- Switchover REST API and WebSocket endpoint for progress
+- Job manager: create Job per operation, mount PVC, pass CLI args and `KUBECONFIG`
+- Log tailer: follow pod logs, parse CLI JSON `EVENT`/`STATE`, broadcast to clients
+- History persistence: `switchovers`, `switchover_steps`, `audit_logs` (optional `switchover_events`)
+
+### Database Schema
+```sql
+CREATE TABLE switchovers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  primary_cluster VARCHAR(255) NOT NULL,
+  secondary_cluster VARCHAR(255) NOT NULL,
+  status VARCHAR(50) NOT NULL DEFAULT 'pending',
+  created_by VARCHAR(255) NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  current_step INTEGER DEFAULT 0,
+  total_steps INTEGER,
+  error_message TEXT,
+  job_name VARCHAR(255),
+  state_json JSONB
+);
+
+CREATE TABLE audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  switchover_id UUID REFERENCES switchovers(id),
+  user_email VARCHAR(255) NOT NULL,
+  action VARCHAR(100) NOT NULL,
+  details JSONB,
+  ip_address INET,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE switchover_steps (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  switchover_id UUID REFERENCES switchovers(id),
+  step_number INTEGER NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  status VARCHAR(50) DEFAULT 'pending',
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  output TEXT,
+  error_message TEXT
+);
+
+CREATE INDEX idx_switchovers_status ON switchovers(status);
+CREATE INDEX idx_switchovers_created_by ON switchovers(created_by);
+CREATE INDEX idx_switchovers_created_at ON switchovers(created_at DESC);
+CREATE INDEX idx_audit_logs_switchover ON audit_logs(switchover_id);
+CREATE INDEX idx_audit_logs_user ON audit_logs(user_email);
+```
+
+### Scaling Without Redis
+- Stream directly from pod logs; no Redis dependency.
+- Each API pod tails logs for its connected clients; clients auto-reconnect.
+- DB stores summaries and steps to support reconnects and historical views.
+
+### Deployment Architecture (OpenShift)
+- Deployments: `acm-switchover-api` (FastAPI, ≥2 replicas), `acm-switchover-ui` (SPA)
+- PostgreSQL: StatefulSet with PVC
+- PVC: `acm-switchover-state-pvc` mounted by Jobs; Jobs-only access policy
+- Services: ClusterIP for API/UI; Route with TLS for external access
+- Secrets: `oauth-client-secret`, `db-credentials`; ConfigMap: `app-config`
+- ServiceAccount/Role: least privileges to create/delete Jobs and mount PVC
+- NetworkPolicies: restrict ingress; CORS limited to frontend origin
+
+### Security
+- TLS 1.2+; token never logged; refresh tokens in httpOnly cookies
+- TokenReview on every request; RBAC enforcement
+- API does not mount PVC; Jobs-only writer/reader to avoid concurrent access
+
+### Monitoring & Observability
+- Prometheus metrics:
+  - `switchover_operations_total{status}`
+  - `switchover_duration_seconds`
+  - `api_request_duration_seconds{endpoint,method}`
+  - `websocket_connections_active`
+- Alert rules for failure rate and high API latency
+
+### Environment Variables
+| Variable | Description |
+|----------|-------------|
+| `OAUTH_CLIENT_ID` | OpenShift OAuth client identifier |
+| `OAUTH_CLIENT_SECRET` | OpenShift OAuth client secret |
+| `OAUTH_AUTHORIZE_URL` | OAuth authorize endpoint URL |
+| `OAUTH_TOKEN_URL` | OAuth token exchange endpoint |
+| `FRONTEND_URL` | Frontend app URL for CORS and redirects |
+| `DATABASE_URL` | PostgreSQL connection string |
+| `ACM_HUB_API_URL` | ACM Hub cluster API server URL |
+| `ACM_HUB_CA_CERT` | Base64-encoded CA cert for ACM Hub |
+| `CLI_IMAGE` | Container image for Python CLI Jobs |
+| `LOG_LEVEL` | Logging level (DEBUG, INFO, WARNING, ERROR) |
+| `CORS_ORIGINS` | Allowed CORS origins (comma-separated) |

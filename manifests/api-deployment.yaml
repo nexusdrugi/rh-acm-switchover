@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: acm-switchover-api
+  labels:
+    app: acm-switchover-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: acm-switchover-api
+  template:
+    metadata:
+      labels:
+        app: acm-switchover-api
+    spec:
+      serviceAccountName: switchover-job-sa
+      containers:
+        - name: api
+          image: ghcr.io/tomazb/acm-switchover-api:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          env:
+            - name: LOG_LEVEL
+              value: "INFO"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"

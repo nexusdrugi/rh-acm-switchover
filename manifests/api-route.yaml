@@ -1,0 +1,12 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: acm-switchover
+spec:
+  to:
+    kind: Service
+    name: acm-switchover-api
+  tls:
+    termination: edge
+  port:
+    targetPort: http

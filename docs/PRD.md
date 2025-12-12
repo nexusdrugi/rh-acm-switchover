@@ -13,6 +13,8 @@
 
 The ACM Hub Switchover Automation tool provides a production-ready, automated solution for migrating Red Hat Advanced Cluster Management (ACM) workloads from a primary hub cluster to a secondary hub cluster. The tool ensures data protection, idempotent execution, and comprehensive validation throughout the switchover process.
 
+This PRD is consolidated to cover both the Python CLI and the Web Frontend experience. The Web application wraps the CLI with a secure, auditable, and user-friendly interface integrated with OpenShift OAuth, providing REST APIs and real-time progress via WebSocket streaming. The system persists operational state on a shared PVC for job-level resume and stores operation history in PostgreSQL for dashboards and audits.
+
 ### Problem Statement
 
 Manual ACM hub switchover is:
@@ -32,6 +34,13 @@ Automated Python tool that:
 - Provides comprehensive pre-flight validation
 
 **Scope**: This tool is designed for **non-GitOps managed ACM hubs**. Support for GitOps-managed hubs is planned for v2.0.
+
+Complementary Web application that:
+- Provides browser-based switchover workflows with OpenShift OAuth SSO
+- Streams real-time progress to operators via WebSockets (no Redis dependency)
+- Enforces RBAC and logs all user actions for audit
+- Shows dashboards and operation history backed by PostgreSQL
+- Orchestrates CLI execution via Kubernetes Jobs and shared PVC state files
 
 ### Success Metrics
 
@@ -126,6 +135,36 @@ Automated Python tool that:
 ---
 
 ## Functional Requirements
+
+### Web Frontend & API (Consolidated)
+
+**Priority**: High  
+**Status**: Draft - Ready for Review
+
+#### Requirements
+
+1. **WF-1: OpenShift OAuth Integration**
+   - Authorization Code flow with redirect and callback endpoints
+   - Validate tokens via TokenReview on every request
+   - Store refresh token as httpOnly cookie; access token in memory
+2. **WF-2: RBAC Enforcement**
+   - Map OpenShift groups to `switchover-viewer`, `switchover-operator`, `switchover-admin`
+   - Block execution without required permissions
+3. **WF-3: Switchover REST API**
+   - Endpoints for create, validate-only, execute, resume, detail, and list
+   - Input validation and standardized error responses
+4. **WF-4: WebSocket Progress Streaming**
+   - Stream real-time progress by tailing Job Pod logs
+   - Use JSON-formatted messages emitted by CLI; no Redis dependency
+5. **WF-5: PVC-Based State for Resume**
+   - Pass `--state-file /var/lib/acm-switchover/state/<operation_id>.json`
+   - Jobs mount shared PVC (single-writer); API does not mount the PVC
+6. **WF-6: History & Audit**
+   - Persist operation summary, steps, and audit logs in PostgreSQL
+   - Optional event storage with retention policy
+7. **WF-7: Dashboard & Wizard**
+   - Wizard for cluster selection, method options, and validation preview
+   - Dashboard listing operations by status/date with filters and details
 
 ### FR-1: Pre-Flight Validation
 
@@ -468,6 +507,19 @@ Automated Python tool that:
 
 ## Non-Functional Requirements
 
+### NFR-Web: Frontend/API Performance & Reliability
+
+**Priority**: High  
+**Status**: Draft - Ready for Review
+
+| Requirement | Target | Status |
+|-------------|--------|--------|
+| API latency (non-blocking) | < 500ms | Planned |
+| WebSocket end-to-end latency | < 100ms | Planned |
+| Concurrent operations supported | ≥ 10 | Planned |
+| Availability during business hours | 99.5% | Planned |
+| Auto-reconnect on WS interruption | Yes | Planned |
+
 ### NFR-1: Performance
 
 **Priority**: High  
@@ -530,6 +582,14 @@ Automated Python tool that:
 - Dry-run for safety ✓
 - Validation before execution ✓
 - Audit trail in state file ✓
+
+### NFR-Web-Sec: Web Security Enhancements
+- TLS 1.2+ for all external traffic
+- Token never logged or persisted in plain text
+- Refresh tokens stored in httpOnly, Secure, SameSite=Strict cookies
+- CORS restricted to trusted frontend origin
+- Rate limiting and standardized error responses
+- NetworkPolicies limiting ingress to frontend/API pods
 
 ### NFR-6: Compatibility
 
@@ -720,6 +780,43 @@ Users should be able to install via:
         └────────────────────────────────────────┘
 ```
 
+### Web Application Overview
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                        USER BROWSER                              │
+│  ┌────────────────────────────────────────────────────────┐     │
+│  │              REACT FRONTEND (SPA)                      │     │
+│  │  • OAuth Token (memory)                                │     │
+│  │  • WebSocket Client (progress)                         │     │
+│  │  • Wizard, Dashboard, History                          │     │
+│  └────────────────────────┬───────────────────────────────┘     │
+└──────────────────────────│──────────────────────────────────────┘
+                           │ HTTPS + WSS
+                           │ Authorization: Bearer <token>
+                           ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                     OPENSHIFT CLUSTER                            │
+│  ┌─────────────────┐    ┌─────────────────┐                      │
+│  │   FASTAPI POD   │    │   POSTGRESQL    │                      │
+│  │  ┌───────────┐  │    │  • History      │                      │
+│  │  │  REST API │──┼────│  • Audit        │                      │
+│  │  │ WebSocket │  │    └─────────────────┘                      │
+│  │  └─────┬─────┘  │                                             │
+│  │        │        │                                             │
+│  │  ┌─────▼─────┐  │                                             │
+│  │  │ K8s JOB   │  │ ◄── Per operation, mounts PVC               │
+│  │  │ Python CLI│  │     writes state JSON                       │
+│  │  └─────┬─────┘  │                                             │
+│  └────────│────────┘                                             │
+│           │ Tails Pod logs, streams over WebSocket               │
+└───────────│──────────────────────────────────────────────────────┘
+            ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                       ACM HUB CLUSTER                            │
+└──────────────────────────────────────────────────────────────────┘
+```
+
 ### Data Flow
 
 ```
@@ -730,6 +827,15 @@ User Input → CLI Parser → State Manager → Module Execution
                     ┌───────────┴───────────┐
                     ▼                       ▼
              Primary K8s API         Secondary K8s API
+```
+
+### Web Data Flow
+```
+User (OAuth) → Frontend → Backend (TokenReview) → Create Job + Secret(KUBECONFIG)
+   ↓ WS
+Tail Pod Logs (JSON) → Broadcast to clients → Persist summary/steps (DB)
+PVC (/var/lib/acm-switchover/state/<operation_id>.json) ← CLI state writes
+Resume → New Job mounts PVC, reuses same --state-file
 ```
 
 ### State Machine
@@ -761,6 +867,12 @@ Any phase can transition to: FAILED or ROLLBACK
 - kubectl or oc CLI
 - Network access to both hub clusters
 - Appropriate RBAC permissions
+
+**Web Runtime**:
+- Node.js 18+ (frontend build)
+- Python 3.11+ (FastAPI backend)
+- PostgreSQL 14+
+- OpenShift OAuth client configuration
 
 **Development & Packaging** (v1.1+):
 
@@ -1141,6 +1253,17 @@ Any phase can transition to: FAILED or ROLLBACK
 - Added ManagedClusterBackupValidator for pre-flight validation
 - Comprehensive dry-run support across all modules
 - Updated all documentation to reflect required parameters
+  
+### December 12, 2025 (Update 7) - PRD Consolidation and Web Frontend
+
+**Consolidation & Web Decisions** ✅:
+- Consolidated PRD to include Web Frontend requirements alongside CLI
+- Adopted OpenShift OAuth Authorization Code flow and TokenReview validation
+- Real-time progress via WebSocket streaming by tailing Job Pod logs (no Redis)
+- PVC-based state file for resume: `/var/lib/acm-switchover/state/<operation_id>.json` (Jobs-only access)
+- Operation history and audit persisted in PostgreSQL (API dashboard, reconnect support)
+- API does not mount PVC; Jobs are the single writer/reader for state consistency
+- `docs/web-frontend/PRD.md` marked superseded by this unified PRD
 
 ### November 25, 2025 (Update 5) - Reliability Hardening
 
@@ -1219,4 +1342,3 @@ Any phase can transition to: FAILED or ROLLBACK
 - Initial PRD creation
 - Documented implemented features
 - Defined functional and non-functional requirements
-
