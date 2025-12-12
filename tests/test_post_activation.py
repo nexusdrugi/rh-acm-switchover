@@ -539,3 +539,135 @@ class TestPostActivationVerificationIntegration:
         assert result is True
         assert state.is_step_completed("verify_clusters_connected")
         assert state.is_step_completed("verify_observability_pods")
+
+
+@pytest.mark.unit
+class TestLoadKubeconfigData:
+    """Tests for _load_kubeconfig_data method."""
+
+    def test_load_single_kubeconfig(self, mock_secondary_client, mock_state_manager, tmp_path):
+        """Test loading a single kubeconfig file."""
+        kubeconfig = tmp_path / "config"
+        kubeconfig.write_text("""
+apiVersion: v1
+clusters:
+- cluster:
+    server: https://api.cluster1.example.com:6443
+  name: cluster1
+contexts:
+- context:
+    cluster: cluster1
+    user: admin
+  name: admin@cluster1
+users:
+- name: admin
+  user:
+    token: test-token
+""")
+        verify = PostActivationVerification(
+            secondary_client=mock_secondary_client,
+            state_manager=mock_state_manager,
+            has_observability=False,
+        )
+
+        with patch.dict("os.environ", {"KUBECONFIG": str(kubeconfig)}):
+            data = verify._load_kubeconfig_data()
+
+        assert len(data["clusters"]) == 1
+        assert len(data["contexts"]) == 1
+        assert data["clusters"][0]["name"] == "cluster1"
+        assert data["contexts"][0]["name"] == "admin@cluster1"
+
+    def test_load_multiple_kubeconfigs(self, mock_secondary_client, mock_state_manager, tmp_path):
+        """Test loading and merging multiple kubeconfig files."""
+        kubeconfig1 = tmp_path / "config1"
+        kubeconfig1.write_text("""
+apiVersion: v1
+clusters:
+- cluster:
+    server: https://api.cluster1.example.com:6443
+  name: cluster1
+contexts:
+- context:
+    cluster: cluster1
+    user: admin1
+  name: admin@cluster1
+users:
+- name: admin1
+  user:
+    token: token1
+""")
+        kubeconfig2 = tmp_path / "config2"
+        kubeconfig2.write_text("""
+apiVersion: v1
+clusters:
+- cluster:
+    server: https://api.cluster2.example.com:6443
+  name: cluster2
+contexts:
+- context:
+    cluster: cluster2
+    user: admin2
+  name: admin@cluster2
+users:
+- name: admin2
+  user:
+    token: token2
+""")
+        verify = PostActivationVerification(
+            secondary_client=mock_secondary_client,
+            state_manager=mock_state_manager,
+            has_observability=False,
+        )
+
+        # Test colon-separated KUBECONFIG paths
+        with patch.dict("os.environ", {"KUBECONFIG": f"{kubeconfig1}:{kubeconfig2}"}):
+            data = verify._load_kubeconfig_data()
+
+        assert len(data["clusters"]) == 2
+        assert len(data["contexts"]) == 2
+        cluster_names = [c["name"] for c in data["clusters"]]
+        assert "cluster1" in cluster_names
+        assert "cluster2" in cluster_names
+
+    def test_load_kubeconfig_missing_file(self, mock_secondary_client, mock_state_manager, tmp_path):
+        """Test graceful handling of missing kubeconfig file."""
+        existing = tmp_path / "exists"
+        existing.write_text("""
+apiVersion: v1
+clusters:
+- cluster:
+    server: https://api.exists.example.com:6443
+  name: exists
+contexts: []
+users: []
+""")
+        missing = tmp_path / "does_not_exist"
+
+        verify = PostActivationVerification(
+            secondary_client=mock_secondary_client,
+            state_manager=mock_state_manager,
+            has_observability=False,
+        )
+
+        # One existing, one missing - should still work
+        with patch.dict("os.environ", {"KUBECONFIG": f"{existing}:{missing}"}):
+            data = verify._load_kubeconfig_data()
+
+        assert len(data["clusters"]) == 1
+        assert data["clusters"][0]["name"] == "exists"
+
+    def test_load_kubeconfig_default_path(self, mock_secondary_client, mock_state_manager, tmp_path):
+        """Test falling back to default ~/.kube/config when KUBECONFIG not set."""
+        verify = PostActivationVerification(
+            secondary_client=mock_secondary_client,
+            state_manager=mock_state_manager,
+            has_observability=False,
+        )
+
+        # Clear KUBECONFIG to test default path behavior
+        with patch.dict("os.environ", {}, clear=True):
+            # This will try ~/.kube/config which may or may not exist
+            # The method should not raise an exception
+            data = verify._load_kubeconfig_data()
+            assert isinstance(data, dict)
