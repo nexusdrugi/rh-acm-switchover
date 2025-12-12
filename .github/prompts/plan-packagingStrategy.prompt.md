@@ -1,282 +1,201 @@
-# Plan: Complete Packaging Strategy—Container, Python, RPM/COPR, DEB, and Helm
+# Packaging Strategy: Container, Python, RPM/COPR, DEB, Helm
 
-A production-ready packaging strategy for rh-acm-switchover supporting:
+A directive, acceptance-driven plan to deliver production-ready packaging for rh-acm-switchover:
 - Container image (non-root, OpenShift-safe)
-- Python packaging (pip-installable; PyPI publishing optional)
+- Python package (pip-installable; optional PyPI)
 - RPM + COPR
 - Debian/Ubuntu (.deb)
-- Kubernetes/OpenShift deployment via Helm
+- Helm deployment for Kubernetes/OpenShift
 
-This plan is aligned with the current repo state (v1.4.0, 2025-12-12) including improved state-file defaults and atomic state persistence.
+Aligned with repo baseline v1.4.0 (2025-12-12), including state-file precedence and atomic persistence.
 
-## Current repo facts (baseline)
-
-- **Python layout is intentionally flat**:
-  - Top-level CLI modules: `acm_switchover.py`, `check_rbac.py`, `show_state.py`
-  - Python packages: `lib/`, `modules/`
-
-- **Version constants already exist**:
+## Baseline Facts
+- Flat Python layout:
+  - Top-level CLIs: `acm_switchover.py`, `check_rbac.py`, `show_state.py`
+  - Packages: `lib/`, `modules/`
+- Version constants exist:
   - `lib/__init__.py`: `__version__ = "1.4.0"`, `__version_date__ = "2025-12-12"`
   - `scripts/constants.sh`: `SCRIPT_VERSION="1.4.0"`, `SCRIPT_VERSION_DATE="2025-12-12"`
-  - Some repo files still contain older version strings (e.g. `setup.cfg`, `README.md`) and must be treated as **needing sync**, not canonical.
+  - Some files carry older strings and require synchronization.
+- State-file precedence in code:
+  1. `--state-file <path>`
+  2. `$ACM_SWITCHOVER_STATE_DIR/switchover-<primary>__<secondary>.json` if `ACM_SWITCHOVER_STATE_DIR` is set
+  3. `.state/switchover-<primary>__<secondary>.json`
+- Atomic writes and path validation implemented.
+- CI container build uses `container-bootstrap/Containerfile`.
 
-- **State file handling has been improved**:
-  - Precedence order (used by `acm_switchover.py`):
-    1. `--state-file <path>` if provided
-    2. else `$ACM_SWITCHOVER_STATE_DIR/switchover-<primary>__<secondary>.json` when `ACM_SWITCHOVER_STATE_DIR` is set
-    3. else `.state/switchover-<primary>__<secondary>.json`
-  - State is written **atomically** (temp file + `os.replace`) to avoid corruption.
-  - Paths are validated (safe relative paths, plus limited absolute-path allowances).
-
-- **Container build is already wired to CI**:
-  - `.github/workflows/container-build.yml` builds `container-bootstrap/Containerfile` with Docker Buildx.
-
-## Steps
-
-### 1. Create unified `packaging/` directory structure ([packaging/](packaging/))
-
-Introduce `packaging/` for packaging artifacts and docs, while keeping existing repo layout stable.
-
-- `packaging/common/` — shared metadata, version sync tooling, helper scripts
-- `packaging/python/` — Python packaging docs/templates (see Step 4)
-- `packaging/rpm/` — RPM spec, build helpers, COPR docs/config
-- `packaging/deb/` — Debian packaging (debian/ control/rules/changelog)
-- `packaging/container/` — container docs/scripts (see Step 8)
-- `packaging/helm/acm-switchover/` — full application Helm chart (Job/CronJob, PVC, RBAC, ConfigMap, Secret templates)
-
-**Note (flat layout)**: Python packages `lib/` and `modules/` plus top-level modules (`acm_switchover.py`, `check_rbac.py`, `show_state.py`) must be included by all installers.
-
-### 2. Establish single version source + synchronization (v1.4.0 baseline)
-
-Goal: one command to bump version/date and keep everything consistent.
-
-- Create `packaging/common/VERSION` containing `1.4.0`.
-- Create `packaging/common/VERSION_DATE` containing `2025-12-12`.
-- Create `packaging/common/version-bump.sh` to update **at minimum**:
-  - `packaging/common/VERSION`, `packaging/common/VERSION_DATE`
-  - `lib/__init__.py` (`__version__`, `__version_date__`)
-  - `scripts/constants.sh` (`SCRIPT_VERSION`, `SCRIPT_VERSION_DATE`)
-  - Root `README.md` version banner
-  - `setup.cfg` version field (or remove it entirely and treat `setup.cfg` as tool config only)
-  - Container labels (or OCI labels) + build args
+## Version Synchronization (Single Source)
+Required changes:
+- Add `packaging/common/VERSION` = `1.4.0` and `packaging/common/VERSION_DATE` = `2025-12-12`.
+- Implement `packaging/common/version-bump.sh` to update:
+  - `packaging/common/VERSION`, `VERSION_DATE`
+  - `lib/__init__.py`
+  - `scripts/constants.sh`
+  - `README.md` banner
+  - `pyproject.toml` or `setup.cfg` version (prefer `pyproject.toml`; treat `setup.cfg` as tool-only if retained)
+  - Container labels/build args
   - Helm `Chart.yaml` `version` and `appVersion`
   - RPM spec `Version:` and Debian changelog version
+- Add `--version` to all CLIs.
+- Create `packaging/common/validate-versions.sh` for CI drift detection.
+Acceptance checklist:
+- Running `version-bump.sh 1.4.1 2025-12-20` updates all targets deterministically.
+- CI fails on any drift detected by `validate-versions.sh`.
+- `acm-switchover --version`, `acm-switchover-rbac --version`, `acm-switchover-state --version` print `1.4.0`.
 
-- Add `--version` support to the three Python CLIs:
-  - `acm_switchover.py --version`
-  - `check_rbac.py --version`
-  - `show_state.py --version`
+## Man Pages
+Required changes:
+- Add `packaging/common/man/` sources:
+  - `acm-switchover.1.md`, `acm-switchover-rbac.1.md`, `acm-switchover-state.1.md`
+- Provide `packaging/common/man/Makefile` using `pandoc -s -t man` and gzip.
+- Document `pandoc` as a system dependency; add CI check with clear failure message if missing.
+Acceptance checklist:
+- `make -C packaging/common/man` produces gzipped `.1` files.
+- RPM/DEB packages install man pages under `/usr/share/man/man1/`.
+- `man acm-switchover` renders correctly.
 
-- Add `packaging/common/validate-versions.sh` (or python script) to validate that all version sources match (CI + pre-commit optional).
-
-### 3. Generate man pages from Markdown source
-
-- Create `packaging/common/man/` with:
-  - `acm-switchover.1.md`
-  - `acm-switchover-rbac.1.md`
-  - `acm-switchover-state.1.md`
-
-- Provide `packaging/common/man/Makefile` to convert `.md → .1` using `pandoc -s -t man` and gzip.
-
-- Treat `pandoc` as a **system dependency** (not a pip dependency):
-  - Document installation in `packaging/README.md`.
-  - Optionally add a CI check that fails with a clear message when `pandoc` is missing.
-
-### 4. Python packaging (keep current flat layout)
-
-Yes: we can keep the current layout and still add solid Python packaging.
-
-**Important tooling constraint:** Standard PEP 517/518 tooling expects `pyproject.toml` in the **project root** you build from (`pip install .`, `python -m build .`). So we keep `pyproject.toml` at repo root, while keeping packaging docs/templates under `packaging/python/`.
-
-- Create root `pyproject.toml` with:
+## Python Packaging (Flat Layout)
+Required changes:
+- Add root `pyproject.toml` with:
   - `requires-python = ">=3.9"`
-  - Dependencies matching `requirements.txt` (`kubernetes`, `PyYAML`, `rich`, `tenacity`)
+  - Dependencies from `requirements.txt` (`kubernetes`, `PyYAML`, `rich`, `tenacity`)
   - Console scripts:
-    - `acm-switchover = "acm_switchover:main"`
-    - `acm-switchover-rbac = "check_rbac:main"`
-    - `acm-switchover-state = "show_state:main"`
-
-- Configure setuptools to package the flat layout:
+    - `acm-switchover = acm_switchover:main`
+    - `acm-switchover-rbac = check_rbac:main`
+    - `acm-switchover-state = show_state:main`
+- Configure setuptools:
   - `py-modules`: `acm_switchover`, `check_rbac`, `show_state`
-  - `packages`: include `lib` and `modules` (and subpackages)
-
+  - `packages`: include `lib` and `modules` recursively
 - Version wiring:
-  - Prefer reading version from `packaging/common/VERSION` (and syncing `lib/__init__.py` from it) or from `lib.__version__`.
-  - Ensure the packaging release process updates **all** version sources.
+  - Read from `lib.__version__` or sync from `packaging/common/VERSION`.
+- Add root `MANIFEST.in` to include non-code assets.
+- Provide `packaging/python/README.md` explaining flat layout trade-offs and future namespacing option.
+- Optional: `.github/workflows/pypi-publish.yml` with Trusted Publishing.
+Acceptance checklist:
+- `pip install .` succeeds from a clean environment.
+- All three console scripts run and `--version` prints `1.4.0`.
+- `python -c "import lib, modules"` succeeds after install.
 
-- Put guidance in `packaging/python/README.md` explaining:
-  - Why we keep the flat layout
-  - The trade-off that installed import packages remain `lib` and `modules`
-  - If public PyPI publishing is desired, a future refactor to a namespaced package (`acm_switchover/...`) may be warranted
+## RPM + COPR
+Required changes:
+- Create `packaging/rpm/acm-switchover.spec` with FHS install:
+  - `/usr/bin/`: `acm-switchover`, `acm-switchover-rbac`, `acm-switchover-state`
+  - `/usr/libexec/acm-switchover/`: helper scripts, `quick-start.sh`
+  - `/etc/acm-switchover/`: optional config
+  - `/var/lib/acm-switchover/`: state directory
+  - `/usr/share/doc/acm-switchover/`: docs
+  - `/usr/share/man/man1/`: man pages
+  - `/usr/share/bash-completion/completions/`: completions
+  - `/usr/share/acm-switchover/deploy/`: `deploy/` content
+- Add wrapper scripts (`/usr/bin/*`) that set default only if unset:
+  - `: "${ACM_SWITCHOVER_STATE_DIR:=/var/lib/acm-switchover}"; export ACM_SWITCHOVER_STATE_DIR`
+  - `exec /usr/bin/python3 -m <module>`
+- Post-install: create `/var/lib/acm-switchover` with `0750 root:root`.
+- Optional: ship `/etc/sysconfig/acm-switchover` for overrides.
+- Add COPR docs under `packaging/rpm/copr/`.
+Acceptance checklist:
+- `rpmbuild -ba packaging/rpm/acm-switchover.spec` succeeds.
+- Installed RPM places files at listed locations.
+- Running `acm-switchover` without `ACM_SWITCHOVER_STATE_DIR` uses `/var/lib/acm-switchover`.
+- Man pages and bash completions are installed and functional.
+- COPR pipeline builds and publishes artifacts for tags.
 
-- Use root `MANIFEST.in` (sdist uses root-level manifests) to include needed non-code assets.
-
-- Add optional `.github/workflows/pypi-publish.yml` for tag-based publishing (Trusted Publishing / OIDC) if/when public PyPI is desired.
-
-### 5. RPM spec file and COPR integration
-
-- Add `packaging/rpm/acm-switchover.spec`:
-  - Version: from `packaging/common/VERSION` (or git tag)
-  - Requires: Python 3.9+, plus python dependencies (distro equivalents)
-
-- Install layout (FHS):
-  - `/usr/bin/` — launchers (`acm-switchover`, `acm-switchover-rbac`, `acm-switchover-state`)
-  - `/usr/libexec/acm-switchover/` — helper scripts (include `quick-start.sh` here)
-  - `/etc/acm-switchover/` — config (optional)
-  - `/var/lib/acm-switchover/` — state directory (owned appropriately)
-  - `/usr/share/doc/acm-switchover/` — docs
-  - `/usr/share/man/man1/` — man pages
-  - `/usr/share/bash-completion/completions/` — bash completions
-  - `/usr/share/acm-switchover/deploy/` — RBAC manifests, kustomize, ACM policies
-
-- State directory defaults for packaged installs (RPM/DEB):
-  - Ship explicit `/usr/bin` wrappers that set a default **only if not already set**:
-    - `/usr/bin/acm-switchover`
-    - `/usr/bin/acm-switchover-rbac`
-    - `/usr/bin/acm-switchover-state`
-  - Wrapper behavior:
-    - If `ACM_SWITCHOVER_STATE_DIR` is unset/empty, export `ACM_SWITCHOVER_STATE_DIR=/var/lib/acm-switchover`.
-    - Then exec the Python module entrypoint (e.g. `python3 -m acm_switchover`).
-    - This preserves precedence:
-      - `--state-file` still wins (the app resolves it first).
-      - The code validates `ACM_SWITCHOVER_STATE_DIR` only when `--state-file` is not provided.
-  - Example wrapper (`/usr/bin/acm-switchover`):
-
-    ```sh
-    #!/bin/sh
-    # Optional admin overrides (RPM/Fedora/RHEL convention):
-    [ -r /etc/sysconfig/acm-switchover ] && . /etc/sysconfig/acm-switchover
-    # Optional admin overrides (Debian/Ubuntu convention):
-    [ -r /etc/default/acm-switchover ] && . /etc/default/acm-switchover
-
-    : "${ACM_SWITCHOVER_STATE_DIR:=/var/lib/acm-switchover}"
-    export ACM_SWITCHOVER_STATE_DIR
-
-    exec /usr/bin/python3 -m acm_switchover "$@"
-    ```
-
-  - Create `/var/lib/acm-switchover/` in post-install with secure perms (recommend `0750 root:root`).
-    - If non-root users need per-user state without sudo, they can override via `ACM_SWITCHOVER_STATE_DIR=$HOME/.local/state/acm-switchover` or pass `--state-file`.
-  - Optional: ship `/etc/sysconfig/acm-switchover` (RPM) with `ACM_SWITCHOVER_STATE_DIR=...` for persistent overrides (the wrapper will source it).
-
-- COPR docs:
-  - `packaging/rpm/copr/README.md` with project setup + webhook instructions
-
-### 6. Debian/Ubuntu packaging
-
+## Debian/Ubuntu Packaging
+Required changes:
 - Add `packaging/deb/debian/`:
-  - `control`, `rules`, `changelog`, `copyright`,
-  - `install` mappings and `postinst` to create `/var/lib/acm-switchover/`.
+  - `control`, `rules`, `changelog`, `install`, `postinst`, and licensing files
+- Use same wrapper scripts behavior as RPM.
+- `postinst` creates `/var/lib/acm-switchover` with secure perms.
+- Optional: ship `/etc/default/acm-switchover` for overrides.
+- Optional CI: `.github/workflows/deb-build.yml` building artifacts and attaching to Releases.
+Acceptance checklist:
+- `dpkg-buildpackage -us -uc` succeeds locally or in CI.
+- Installed DEB places files at listed locations.
+- Default state directory behavior matches RPM.
+- Man pages and bash completions are installed and functional.
 
-- Install the same `/usr/bin` wrapper scripts as RPM (see Step 5) so system packages default to `/var/lib/acm-switchover` without affecting `--state-file` precedence.
-- In `postinst`, create `/var/lib/acm-switchover/` with secure perms (recommend `0750 root:root`).
-- Optional: ship `/etc/default/acm-switchover` for admins to set `ACM_SWITCHOVER_STATE_DIR` persistently (the wrapper will source it).
+## Helm Chart
+Required changes:
+- Create `packaging/helm/acm-switchover/`:
+  - `Chart.yaml` with `version: 1.4.0`, `appVersion: 1.4.0`
+  - `values.yaml` for image repo/tag and runtime settings
+  - Templates for Job/CronJob, PVC, RBAC, ConfigMap, Secret
+- In-cluster state:
+  - Mount PVC at `/var/lib/acm-switchover`
+  - Set `ACM_SWITCHOVER_STATE_DIR=/var/lib/acm-switchover`
+- OpenShift security:
+  - `runAsNonRoot: true`; arbitrary UID compatible file perms
+- Preserve `rbacOnly` mode in existing chart under `deploy/helm/acm-switchover-rbac/`.
+Acceptance checklist:
+- `helm lint` and `helm template --debug --dry-run` succeed.
+- Job manifests show env `ACM_SWITCHOVER_STATE_DIR=/var/lib/acm-switchover` and PVC mount.
+- Deploys on OpenShift with arbitrary UID without permission errors.
+- Chart versions align with `packaging/common/VERSION`.
 
-- Optional CI: `.github/workflows/deb-build.yml` to build artifacts and attach to GitHub Releases.
+## Container Image (OpenShift + Multi-Arch)
+Required changes:
+- Keep `container-bootstrap/Containerfile` as build input.
+- Ensure runtime includes:
+  - `check_rbac.py`, `show_state.py`, `completions/`
+- Set `ENV ACM_SWITCHOVER_STATE_DIR=/var/lib/acm-switchover`.
+- Provide multi-arch build docs/scripts:
+  - Docker Buildx and Podman manifest flows
+- Add `packaging/container/SECURITY.md` with SCC compatibility and CLI entrypoint examples.
+Acceptance checklist:
+- Built image runs all three CLIs:
+  - `podman run --rm <img> acm-switchover --version`
+- With a mounted volume:
+  - `-v /tmp/state:/var/lib/acm-switchover` persists state between runs
+- Passes OpenShift arbitrary UID checks (files readable/writable via group 0, `g=u`).
+- CI multi-arch builds succeed and push manifests.
 
-### 7. Helm chart for full deployment
-
-- Create `packaging/helm/acm-switchover/` with:
-  - `Chart.yaml` version `1.4.0`, appVersion `1.4.0`
-  - `values.yaml` with image repo/tag, resources, tolerations, etc.
-
-- State handling in-cluster:
-  - Mount a PVC to `/var/lib/acm-switchover`.
-  - Set `ACM_SWITCHOVER_STATE_DIR=/var/lib/acm-switchover` in the Job env.
-  - Do **not** assume `.state/` under the container workdir.
-
-- Security context for OpenShift:
-  - Prefer `runAsNonRoot: true` and avoid hard-coding `runAsUser` unless required.
-  - Ensure image file permissions support arbitrary UID (group 0, `g=u`).
-
-- Include `rbacOnly` mode and keep the existing standalone RBAC chart under `deploy/helm/acm-switchover-rbac/` for backward compatibility.
-
-### 8. Container image (OpenShift compliant) + multi-arch builds
-
-Keep `container-bootstrap/Containerfile` as the CI build input (since workflows already reference it). Use `packaging/container/` for docs and helper scripts.
-
-- Fix the Containerfile to include missing runtime files:
-  - `check_rbac.py`, `show_state.py`
-  - `completions/`
-
-- Fix container state persistence alignment:
-  - Set `ENV ACM_SWITCHOVER_STATE_DIR=/var/lib/acm-switchover` in the image.
-  - Update container docs accordingly (the code uses `ACM_SWITCHOVER_STATE_DIR`, not `STATE_DIR`).
-
-- Multi-arch build scripts (standard tooling):
-  - Docker (Buildx):
-    - `docker buildx build --platform linux/amd64,linux/arm64 --tag <img>:<tag> --push .`
-  - Podman (manifest flow):
-    - `podman build --platform linux/amd64,linux/arm64 --manifest <img>:<tag> .`
-    - `podman manifest push <img>:<tag>`
-
-- Add `packaging/container/SECURITY.md` covering:
-  - OpenShift SCC compatibility
-  - Example `--entrypoint` usage for `check_rbac.py` and `show_state.py`
-
-### 9. Package `deploy/` directory contents
-
-- Include `deploy/kustomize/`, `deploy/acm-policies/`, `deploy/rbac/` in RPM/DEB under `/usr/share/acm-switchover/deploy/`.
-
-- Keep `deploy/helm/acm-switchover-rbac/` as the RBAC-only chart; `packaging/helm/acm-switchover/` is the full app chart.
-
+## Package `deploy/` Contents
+Required changes:
+- Install `deploy/kustomize/`, `deploy/acm-policies/`, `deploy/rbac/` to `/usr/share/acm-switchover/deploy/`.
 - Install `quick-start.sh` to `/usr/libexec/acm-switchover/quick-start.sh`.
+Acceptance checklist:
+- Files present at target locations after RPM/DEB install.
+- Docs reference installed paths; examples run successfully.
 
-### 10. Helper scripts for packaging workflows
+## Helper Scripts
+Required changes:
+- `packaging/common/build-all.sh` — build container, wheel/sdist, RPM, DEB.
+- `packaging/common/test-install.sh` — smoke tests in clean containers.
+- `packaging/common/validate-versions.sh` — version drift detection.
+- `packaging/README.md` — directory layout, supported formats, version bump, state-dir semantics.
+Acceptance checklist:
+- Scripts run clean locally and in CI; produce expected artifacts.
+- README links valid; steps reproducible by a new contributor.
 
-- `packaging/common/build-all.sh` — Build all formats (container, wheel/sdist, RPM, DEB).
-- `packaging/common/test-install.sh` — Smoke-test installs in clean containers.
-- `packaging/common/validate-versions.sh` — Fail if version sources drift.
-
-- Add `packaging/README.md` describing:
-  - directory layout
-  - supported packaging formats
-  - version bump process
-  - how state dir defaults work across install methods
-
-### 11. CI/CD + documentation updates
-
-- Add `.github/workflows/version-sync.yml` to validate version consistency.
-- Add (optional) `.github/workflows/packaging-release.yml` to build/publish artifacts on tags:
-  - container (already exists)
-  - PyPI (if desired)
+## CI/CD + Docs
+Required changes:
+- `.github/workflows/version-sync.yml` — validate version consistency.
+- Optional `.github/workflows/packaging-release.yml` — tag builds for:
+  - container
+  - PyPI (if enabled)
   - RPM via COPR
-  - DEB artifacts to GitHub Releases
-  - Helm chart packaging + repo index
+  - DEB artifacts
+  - Helm chart packaging and repo index
+- Update docs to standardize on `ACM_SWITCHOVER_STATE_DIR` precedence and container defaults.
+Acceptance checklist:
+- CI fails on version drift; passes on synchronized versions.
+- Tag builds produce and publish artifacts; missing tools (e.g., `pandoc`) fail with clear messages.
 
-- Update docs to match the improved state handling:
-  - Ensure docs consistently describe `ACM_SWITCHOVER_STATE_DIR` precedence and container defaults.
+## Critical Gaps (Must Fix)
+Required changes:
+- Include `check_rbac.py`, `show_state.py`, and `completions/` in the image.
+- Align state persistence in container/helm with `ACM_SWITCHOVER_STATE_DIR=/var/lib/acm-switchover`.
+- Resolve version drift; ensure deterministic `--version` flags across CLIs.
+- Ensure `show_state.py` honors `ACM_SWITCHOVER_STATE_DIR` when locating state files.
+Acceptance checklist:
+- Image contains all CLIs and completions; Helm sets correct env and PVC.
+- `--version` outputs match `packaging/common/VERSION`.
+- `show_state.py` lists and reads state from the default dir when `--state-file` is not provided.
 
----
-
-## Critical Gaps Identified (Must Fix)
-
-1. **Container image missing `check_rbac.py`, `show_state.py`, and `completions/`** — required for parity with repo CLIs.
-
-2. **State persistence mismatch in container/helm** — ensure `ACM_SWITCHOVER_STATE_DIR` is set to the mounted state volume path.
-
-3. **Version drift across repo files** — versions exist (v1.4.0) but are not yet consistently reflected in all metadata/docs.
-
-4. **`--version` flags missing on Python CLIs** — CI currently treats this as optional; make it deterministic and testable.
-
-5. **State viewer default dir should align with code** — `show_state.py` should honor `ACM_SWITCHOVER_STATE_DIR` when listing/locating state files.
-
----
-
-## Further Considerations
-
-1. **Helm chart namespace** — Create or assume namespace exists? Recommend: create conditionally (`createNamespace: true`).
-
-2. **Kubeconfig strategy** — Support either:
-  - Secret-mounted kubeconfig with both contexts
-  - In-cluster SA (where feasible)
-
-3. **Job retry policy** — Recommend `backoffLimit: 0` and rely on state-based resume.
-
-4. **CronJob for validation** — Optional (disabled by default).
-
-5. **SELinux for `/var/lib/acm-switchover/`** — Document `semanage fcontext` guidance in RPM notes.
-
-6. **Shell completion beyond bash** — Keep bash first; zsh/fish can be post-1.4.x enhancement.
-
-7. **`container-bootstrap/get-pip.py`** — Decide to remove or document its purpose.
+## Directory Structure
+Required changes:
+- Create `packaging/` with subdirs:
+  - `common/`, `python/`, `rpm/`, `deb/`, `container/`, `helm/acm-switchover/`
+Acceptance checklist:
+- All packaging artifacts live under `packaging/`, leaving app code layout intact.
+- Installers include `lib/`, `modules/`, and the three top-level CLIs.
