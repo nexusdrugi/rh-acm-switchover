@@ -2,10 +2,20 @@
 
 All notable changes to the ACM Switchover Automation project will be documented in this file.
 
-Last Updated: 2025-12-12
-
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+
+- State file defaults now honor `ACM_SWITCHOVER_STATE_DIR` when `--state-file` is not provided; explicit `--state-file` always takes precedence. The state viewer aligns with the same default, and docs were updated to describe the order.
+
+#### Documentation
+
+- Added RBAC section to main README
+- Updated prerequisites to include RBAC permissions
+- Added links to RBAC deployment guides
 
 ## [1.4.0] - 2025-12-12
 
@@ -95,61 +105,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added `tr -d '[:space:]'` to sanitize output
   - Added `${count:-0}` fallback for empty results
 
-## [Unreleased]
-
-### Added
-
- 
-#### RBAC Model and Security
-
-- **Comprehensive RBAC model**: Complete role-based access control for least privilege access
-  - `docs/RBAC_REQUIREMENTS.md`: Detailed RBAC requirements documentation
-  - `docs/RBAC_DEPLOYMENT.md`: Step-by-step deployment guide
-  - `lib/rbac_validator.py`: RBAC permission validation module
-  - `check_rbac.py`: Standalone RBAC checker tool
-
- 
-#### Deployment Options
-
-- **Kustomize integration**: Base and overlay configurations in `deploy/kustomize/`
-  - Base RBAC manifests for all environments
-  - Production and development overlays
-  - Comprehensive Kustomize README
-  
-- **Helm chart**: Full-featured Helm chart in `deploy/helm/acm-switchover-rbac/`
-  - Templated RBAC resources
-  - Configurable values for all settings
-  - Production-ready defaults
-  - Detailed Helm chart README
-
-### Planned
-
- 
-#### Python Preflight/Postflight Enhancements (Future)
-
-- Add `BackupStorageLocationValidator` to Python preflight checks
-- Add `ClusterHealthValidator` (nodes, clusteroperators, clusterversion) to Python preflight
-- Add BSL validation to Python post-activation verification
-- Note: These checks are currently implemented in bash scripts (`preflight-check.sh`, `postflight-check.sh`)
-
-- **ACM Policy enforcement**: Governance policies in `deploy/acm-policies/`
-  - Policy for RBAC validation and enforcement
-  - PlacementRule for multi-cluster distribution
-  - PlacementBinding for policy application
-  - ACM Policy README with examples
-
- 
-#### Service Accounts
-
-- **Operator service account**: Full operational permissions for switchover execution
-- **Validator service account**: Read-only permissions for validation and dry-run
-
- 
-#### CLI Enhancements
-
-- **`--skip-rbac-validation`**: Flag to skip RBAC validation during pre-flight checks
-- **RBAC pre-flight validation**: Automatic permission checks before switchover execution
-
  
 #### Documentation
 
@@ -157,7 +112,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated prerequisites to include RBAC permissions
 - Added links to RBAC deployment guides
 
- 
 #### Preflight Script Enhancements
 
 - **Check 7: BackupStorageLocation validation**: Verifies BSL is in "Available" phase on both hubs before switchover
@@ -249,6 +203,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **New constants**: Added `MCE_NAMESPACE`, `IMPORT_CONTROLLER_CONFIGMAP`, `AUTO_IMPORT_STRATEGY_*` constants
 - **New helper functions**: Added `get_auto_import_strategy()` and `is_acm_214_or_higher()` to `lib-common.sh`
 - **Documentation**: Updated runbook prerequisites and verification checklist for ACM 2.14+ autoImportStrategy
+
+#### RBAC Model and Security
+
+- **Comprehensive RBAC model**: Complete role-based access control for least privilege access
+  - `docs/RBAC_REQUIREMENTS.md`: Detailed RBAC requirements documentation
+  - `docs/RBAC_DEPLOYMENT.md`: Step-by-step deployment guide
+  - `lib/rbac_validator.py`: RBAC permission validation module
+  - `check_rbac.py`: Standalone RBAC checker tool
+
+#### Deployment Options
+
+- **Kustomize integration**: Base and overlay configurations in `deploy/kustomize/`
+  - Base RBAC manifests for all environments
+  - Production and development overlays
+  - Comprehensive Kustomize README
+  
+- **Helm chart**: Full-featured Helm chart in `deploy/helm/acm-switchover-rbac/`
+  - Templated RBAC resources
+  - Configurable values for all settings
+  - Production-ready defaults
+  - Detailed Helm chart README
 
 ### Breaking Changes
 
