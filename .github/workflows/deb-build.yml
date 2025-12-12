@@ -20,3 +20,16 @@ jobs:
         working-directory: packaging/deb
         run: |
           dpkg-buildpackage -us -uc
+      - name: Smoke test DEB install
+        if: always()
+        run: |
+          DEB_PKG=$(ls packaging/*.deb | head -n1 || true)
+          if [ -z "$DEB_PKG" ]; then
+            DEB_PKG=$(ls ../*.deb | head -n1 || true)
+          fi
+          if [ -n "$DEB_PKG" ]; then
+            sudo dpkg -i "$DEB_PKG" || sudo apt-get -f install -y
+            acm-switchover --version
+          else
+            echo "No DEB built; skipping smoke test"
+          fi

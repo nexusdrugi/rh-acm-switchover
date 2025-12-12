@@ -23,3 +23,13 @@ jobs:
       - name: Build RPM (spec skeleton)
         run: |
           rpmbuild --define "_topdir $(pwd)/rpmbuild" -ba packaging/rpm/acm-switchover.spec
+      - name: Smoke test RPM install
+        if: always()
+        run: |
+          RPM_PKG=$(ls rpmbuild/RPMS/noarch/*.rpm | head -n1 || true)
+          if [ -n "$RPM_PKG" ]; then
+            sudo rpm -i "$RPM_PKG"
+            acm-switchover --version
+          else
+            echo "No RPM built; skipping smoke test"
+          fi
