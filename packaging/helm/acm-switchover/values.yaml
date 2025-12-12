@@ -9,3 +9,13 @@ resources: {}
 tolerations: []
 nodeSelector: {}
 affinity: {}
+
+rbac:
+  create: true
+  namespace: acm-switchover
+
+kubeconfig:
+  enabled: false
+  secretName: ""
+  mountPath: /app/.kube
+  key: config

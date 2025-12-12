@@ -9,6 +9,7 @@ metadata:
 spec:
   template:
     spec:
+      serviceAccountName: {{ include "acm-switchover.fullname" . }}
       restartPolicy: Never
       containers:
         - name: acm-switchover
@@ -22,6 +23,11 @@ spec:
           volumeMounts:
             - name: state
               mountPath: "{{ .Values.stateDir }}"
+            {{- if .Values.kubeconfig.enabled }}
+            - name: kubeconfig
+              mountPath: "{{ .Values.kubeconfig.mountPath }}"
+              readOnly: true
+            {{- end }}
           args:
             - --validate-only
             - --primary-context
@@ -36,3 +42,8 @@ spec:
         - name: state
           persistentVolumeClaim:
             claimName: {{ include "acm-switchover.fullname" . }}-state
+        {{- if .Values.kubeconfig.enabled }}
+        - name: kubeconfig
+          secret:
+            secretName: "{{ .Values.kubeconfig.secretName }}"
+        {{- end }}
