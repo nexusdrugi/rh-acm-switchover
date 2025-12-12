@@ -17,6 +17,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated prerequisites to include RBAC permissions
 - Added links to RBAC deployment guides
 
+## [1.5.0] - 2025-12-12
+
+### Added
+- Packaging directory with shared version sources and scripts
+- Root `pyproject.toml` with console scripts for three CLIs
+- Man pages built via `pandoc` for CLIs
+- Helm chart (`packaging/helm/acm-switchover`) with PVC, SA, RBAC and optional kubeconfig mount
+- RPM and DEB packaging skeletons with wrapper scripts defaulting state dir
+- CI workflows: version sync, Helm lint/template, Python packaging smoke, container smoke
+
+### Changed
+- Containerfile includes `check_rbac.py`, `show_state.py`, `completions/` and sets `ACM_SWITCHOVER_STATE_DIR=/var/lib/acm-switchover`
+- CLI `--version` implemented for all Python CLIs
+- Version single-source of truth with validation across repo
+
+### Breaking
+- Packaging layout and container environment variable changes; image labels updated
+- Helm introduced for job deployment; previous deployment docs updated accordingly
+
+### Documentation
+- README version updated to 1.5.0 and Packaging section added
+- Chart README and NOTES added
+- Packaging README describing version bump and man build
+
 ## [1.4.0] - 2025-12-12
 
 ### Added

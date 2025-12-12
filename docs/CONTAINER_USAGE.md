@@ -132,16 +132,18 @@ podman run -it --rm \
   --method full
 ```
 
-### 5. Rollback to Primary
+### 5. Reverse Switchover to Original Hub
+
+Perform a reverse switchover by swapping contexts (requires original run used `--old-hub-action secondary`):
 
 ```bash
 podman run -it --rm \
   -v ~/.kube:/app/.kube:ro \
   -v $(pwd)/state:/var/lib/acm-switchover \
   quay.io/tomazborstnar/acm-switchover:latest \
-  --rollback \
-  --primary-context primary-hub \
-  --secondary-context secondary-hub
+  --primary-context secondary-hub \
+  --secondary-context primary-hub \
+  --method passive
 ```
 
 ### 6. Decommission Old Hub
