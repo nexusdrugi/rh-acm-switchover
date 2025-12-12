@@ -24,7 +24,7 @@ from lib.constants import (
 )
 from lib.exceptions import SwitchoverError
 from lib.kube_client import KubeClient
-from lib.utils import StateManager, is_acm_version_ge
+from lib.utils import StateManager, dry_run_skip, is_acm_version_ge
 
 from .backup_schedule import BackupScheduleManager
 from .decommission import Decommission
@@ -254,6 +254,7 @@ class Finalization:
             "velero_resources_restore_name": status.get("veleroResourcesRestoreName"),
         }
 
+    @dry_run_skip(message="Skipping new backup verification")
     def _verify_new_backups(self, timeout: int = 600):
         """
         Verify new backups are being created.
@@ -261,9 +262,6 @@ class Finalization:
         Args:
             timeout: Maximum wait time in seconds (default 10 minutes)
         """
-        if self.dry_run:
-            logger.info("[DRY-RUN] Skipping new backup verification")
-            return
 
         logger.info("Verifying new backups are being created...")
 
@@ -331,11 +329,9 @@ class Finalization:
             "BackupSchedule may take time to create first backup."
         )
 
+    @dry_run_skip(message="Skipping BackupSchedule verification")
     def _verify_backup_schedule_enabled(self):
         """Ensure BackupSchedule is present and not paused."""
-        if self.dry_run:
-            logger.info("[DRY-RUN] Skipping BackupSchedule verification")
-            return
 
         schedules = self.secondary.list_custom_resources(
             group="cluster.open-cluster-management.io",
@@ -356,11 +352,9 @@ class Finalization:
 
         logger.info("BackupSchedule %s is enabled", schedule_name)
 
+    @dry_run_skip(message="Skipping MultiClusterHub health verification")
     def _verify_multiclusterhub_health(self):
         """Ensure MultiClusterHub reports healthy and pods are running."""
-        if self.dry_run:
-            logger.info("[DRY-RUN] Skipping MultiClusterHub health verification")
-            return
 
         logger.info("Verifying MultiClusterHub health...")
         mch = self.secondary.get_custom_resource(
@@ -438,6 +432,7 @@ class Finalization:
 
         logger.warning("Unknown old_hub_action: %s, skipping", self.old_hub_action)
 
+    @dry_run_skip(message="Would decommission old primary hub")
     def _decommission_old_hub(self):
         """
         Decommission the old primary hub by removing ACM components.
@@ -446,10 +441,6 @@ class Finalization:
         """
         if not self.primary:
             logger.debug("No primary client available, skipping decommission")
-            return
-
-        if self.dry_run:
-            logger.info("[DRY-RUN] Would decommission old primary hub")
             return
 
         logger.warning("=" * 60)
@@ -468,6 +459,7 @@ class Finalization:
             logger.warning("Old hub decommission completed with warnings")
             logger.warning("You may need to manually clean up remaining resources")
 
+    @dry_run_skip(message="Would set up old primary as secondary with passive sync")
     def _setup_old_hub_as_secondary(self):
         """
         Set up the old primary hub as a new secondary with passive sync restore.
@@ -480,12 +472,6 @@ class Finalization:
         """
         if not self.primary:
             logger.debug("No primary client available, skipping secondary setup")
-            return
-
-        if self.dry_run:
-            logger.info(
-                "[DRY-RUN] Would set up old primary as secondary with passive sync"
-            )
             return
 
         logger.info("Setting up old primary hub as new secondary...")
@@ -536,6 +522,7 @@ class Finalization:
             )
             logger.warning("You may need to manually create it for failback capability")
 
+    @dry_run_skip(message="Would recreate BackupSchedule to prevent collision")
     def _fix_backup_schedule_collision(self):
         """
         Proactively fix BackupSchedule collision by recreating it.
@@ -549,10 +536,6 @@ class Finalization:
         during switchover. This resets the cluster ID association and prevents
         the collision from occurring.
         """
-        if self.dry_run:
-            logger.info("[DRY-RUN] Would recreate BackupSchedule to prevent collision")
-            return
-
         # Check current BackupSchedule status
         schedules = self.secondary.list_custom_resources(
             group="cluster.open-cluster-management.io",
