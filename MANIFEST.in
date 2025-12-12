@@ -1,0 +1,6 @@
+include README.md
+recursive-include lib *
+recursive-include modules *
+recursive-include completions *
+recursive-include deploy *
+recursive-include packaging/common/man *.md

@@ -64,6 +64,11 @@ Examples:
         action="store_true",
         help="Enable verbose logging",
     )
+    parser.add_argument(
+        "--version",
+        action="store_true",
+        help="Print version and exit",
+    )
 
     return parser.parse_args()
 
@@ -71,6 +76,10 @@ Examples:
 def main():
     """Main entry point."""
     args = parse_args()
+
+    if args.version:
+        print(f"{__version__} ({__version_date__})")
+        return
 
     # Set up logging
     setup_logging(verbose=args.verbose, log_format="text")

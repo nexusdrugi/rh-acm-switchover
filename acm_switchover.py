@@ -177,6 +177,11 @@ Examples:
         default="text",
         help="Log output format (text or json)",
     )
+    parser.add_argument(
+        "--version",
+        action="store_true",
+        help="Print version and exit",
+    )
 
     return parser.parse_args()
 
@@ -461,6 +466,10 @@ def main():
 
     # Set up logging early so validate_args can use logger
     logger = setup_logging(args.verbose, args.log_format)
+
+    if args.version:
+        print(f"{__version__} ({__version_date__})")
+        return
 
     validate_args(args, logger)
     resolved_state_file = _resolve_state_file(
