@@ -136,20 +136,40 @@ class StateManager:
             os.makedirs(state_dir, exist_ok=True)
 
     def _write_state(self, state: Dict[str, Any]) -> None:
-        """Write the provided state dict to disk without modifying it."""
+        """Write the provided state dict to disk atomically.
+
+        Uses a write-to-temp + rename pattern to ensure the state file is
+        never left in a corrupted state if the process crashes mid-write.
+        """
         self._ensure_state_dir()
-        # Use restrictive permissions (owner read/write only)
-        fd = os.open(
-            self.state_file,
-            os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
-            stat.S_IRUSR | stat.S_IWUSR,
-        )
+        temp_file = self.state_file + ".tmp"
+
         try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(state, f, indent=2)
+            # Write to temporary file with restrictive permissions
+            fd = os.open(
+                temp_file,
+                os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                stat.S_IRUSR | stat.S_IWUSR,
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(state, f, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
+            except (OSError, ValueError, TypeError):
+                # os.fdopen() takes ownership of fd, so it's closed on exception
+                raise
+
+            # Atomic rename (POSIX guarantees this is atomic on same filesystem)
+            os.replace(temp_file, self.state_file)
+
         except (OSError, ValueError, TypeError) as e:
-            # Note: os.fdopen() takes ownership of the fd and closes it on exit,
-            # so we don't need to call os.close(fd) here
+            # Clean up temp file if it exists
+            try:
+                if os.path.exists(temp_file):
+                    os.remove(temp_file)
+            except OSError:
+                pass  # Best-effort cleanup
             logging.error("Failed to write state file %s: %s", self.state_file, e)
             raise
 

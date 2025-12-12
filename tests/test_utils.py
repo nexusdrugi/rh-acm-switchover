@@ -4,7 +4,7 @@ Modernized pytest tests with fixtures, markers, and better organization.
 Tests cover StateManager, Phase enum, version comparison, and logging setup.
 """
 
-
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -16,6 +16,11 @@ from lib.utils import (
     is_acm_version_ge,
     setup_logging,
 )
+
+
+def temp_file_exists(path: str) -> bool:
+    """Check if a temp file exists (helper for atomic write tests)."""
+    return os.path.exists(path)
 
 
 @pytest.fixture
@@ -118,6 +123,46 @@ class TestStateManager:
         assert loaded_state.get_current_phase() == Phase.PRIMARY_PREP
         assert loaded_state.is_step_completed("backup_paused") is True
         assert loaded_state.get_config("observability") is True
+
+    def test_atomic_write_no_temp_file_left(self, state_manager, temp_state_file):
+        """Test that atomic write doesn't leave temp files after success."""
+        state_manager.set_phase(Phase.ACTIVATION)
+        state_manager.save_state()
+
+        # Temp file should not exist after successful write
+        temp_file = str(temp_state_file) + ".tmp"
+        assert not temp_file_exists(temp_file)
+        # Main file should exist and be valid
+        assert temp_state_file.exists()
+        loaded = StateManager(str(temp_state_file))
+        assert loaded.get_current_phase() == Phase.ACTIVATION
+
+    def test_atomic_write_preserves_state_on_write_error(self, tmp_path):
+        """Test that original state is preserved if write fails."""
+        state_path = tmp_path / "atomic-test.json"
+        sm = StateManager(str(state_path))
+        sm.set_phase(Phase.PRIMARY_PREP)
+        sm.mark_step_completed("step1")
+        sm.save_state()
+
+        # Verify initial state is saved
+        assert state_path.exists()
+
+        # Make temp file location unwritable to simulate write failure
+        temp_file = str(state_path) + ".tmp"
+        # Create temp as a directory to cause write failure
+        os.makedirs(temp_file, exist_ok=True)
+
+        with pytest.raises(OSError):
+            sm.set_phase(Phase.ACTIVATION)
+
+        # Clean up the directory we created
+        os.rmdir(temp_file)
+
+        # Original state should still be intact
+        loaded = StateManager(str(state_path))
+        assert loaded.get_current_phase() == Phase.PRIMARY_PREP
+        assert loaded.is_step_completed("step1") is True
 
     def test_mark_step_completed_idempotency(self, state_manager):
         """Test that marking same step multiple times doesn't create duplicates."""
