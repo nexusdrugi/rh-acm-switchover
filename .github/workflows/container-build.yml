@@ -175,7 +175,7 @@ jobs:
 
       - name: Test - Version check
         run: |
-          docker run --rm acm-switchover:test --version || echo "Version flag may not exist yet"
+          docker run --rm acm-switchover:test --version
 
       - name: Test - Python dependencies
         run: |
