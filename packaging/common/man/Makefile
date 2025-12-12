@@ -1,11 +1,12 @@
 SOURCES = acm-switchover.1.md acm-switchover-rbac.1.md acm-switchover-state.1.md
-TARGETS = $(SOURCES:.md=.1.gz)
+TARGETS = $(SOURCES:.1.md=.1.gz)
 
 all: $(TARGETS)
 
 %.1.gz: %.1.md
-	pandoc -s -t man $< -o $(<:.md=.1)
-	gzip -f $(<:.md=.1)
+	@command -v pandoc >/dev/null 2>&1 || { echo "pandoc is required to build man pages"; exit 127; }
+	pandoc -s -t man $< -o $(@:.gz=)
+	gzip -f $(@:.gz=)
 
 clean:
 	rm -f *.1 *.1.gz

@@ -1,0 +1,11 @@
+image:
+  repository: ghcr.io/your-org/rh-acm-switchover
+  tag: "1.4.0"
+  pullPolicy: IfNotPresent
+
+stateDir: /var/lib/acm-switchover
+
+resources: {}
+tolerations: []
+nodeSelector: {}
+affinity: {}

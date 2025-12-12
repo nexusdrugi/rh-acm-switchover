@@ -1,0 +1,38 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "acm-switchover.fullname" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "acm-switchover.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion }}
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: acm-switchover
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: ACM_SWITCHOVER_STATE_DIR
+              value: "{{ .Values.stateDir }}"
+          securityContext:
+            runAsNonRoot: true
+          volumeMounts:
+            - name: state
+              mountPath: "{{ .Values.stateDir }}"
+          args:
+            - --validate-only
+            - --primary-context
+            - primary-hub
+            - --secondary-context
+            - secondary-hub
+            - --method
+            - passive
+            - --old-hub-action
+            - secondary
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: {{ include "acm-switchover.fullname" . }}-state

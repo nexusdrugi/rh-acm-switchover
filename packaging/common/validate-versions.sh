@@ -23,8 +23,8 @@ check_file() {
 
 check_file "$repo_root/lib/__init__.py" '^__version__\s*=' "$expected_version" "python_version"
 check_file "$repo_root/lib/__init__.py" '^__version_date__\s*=' "$expected_date" "python_version_date"
-check_file "$repo_root/scripts/constants.sh" '^SCRIPT_VERSION=' "\"$expected_version\"" "script_version"
-check_file "$repo_root/scripts/constants.sh" '^SCRIPT_VERSION_DATE=' "\"$expected_date\"" "script_version_date"
+check_file "$repo_root/scripts/constants.sh" '^export SCRIPT_VERSION=' "\"$expected_version\"" "script_version"
+check_file "$repo_root/scripts/constants.sh" '^export SCRIPT_VERSION_DATE=' "\"$expected_date\"" "script_version_date"
 check_file "$repo_root/pyproject.toml" '^version\s*=' "\"$expected_version\"" "pyproject_version"
 check_file "$repo_root/setup.cfg" '^version\s*=' "$expected_version" "setup_cfg_version"
 check_file "$repo_root/packaging/helm/acm-switchover/Chart.yaml" '^version:\s*' "$expected_version" "helm_chart_version"
