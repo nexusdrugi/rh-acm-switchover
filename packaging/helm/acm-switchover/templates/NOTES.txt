@@ -1,0 +1,19 @@
+Thank you for installing the ACM Switchover chart.
+
+This chart renders a Job that can run the switchover tool in validate-only mode by default.
+
+To dry-run the chart:
+
+  helm template --debug --dry-run acm-switchover ./packaging/helm/acm-switchover
+
+To install with a custom namespace and a mounted kubeconfig secret:
+
+  helm install acm-switchover ./packaging/helm/acm-switchover \
+    --set rbac.create=true \
+    --set rbac.namespace=acm-switchover \
+    --set kubeconfig.enabled=true \
+    --set kubeconfig.secretName=my-kubeconfig \
+    --set kubeconfig.key=config
+
+By default, a PVC is created and mounted at /var/lib/acm-switchover and
+ACM_SWITCHOVER_STATE_DIR is set to the same path inside the job container.
