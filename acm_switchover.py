@@ -43,6 +43,9 @@ from modules import (
     SecondaryActivation,
 )
 
+
+STATE_DIR_ENV_VAR = "ACM_SWITCHOVER_STATE_DIR"
+
 PhaseHandler = Callable[
     [argparse.Namespace, StateManager, KubeClient, KubeClient, logging.Logger],
     bool,
@@ -125,7 +128,7 @@ Examples:
         default=None,
         help=(
             "Path to state file for idempotent execution "
-            "(defaults to .state/switchover-<primary>__<secondary>.json)"
+            "(defaults to $ACM_SWITCHOVER_STATE_DIR/switchover-<primary>__<secondary>.json when set, otherwise .state/...)"
         ),
     )
     parser.add_argument(
@@ -178,13 +181,21 @@ Examples:
     return parser.parse_args()
 
 
-def validate_args(args):
+def validate_args(args: argparse.Namespace, logger: logging.Logger) -> None:
     """Validate argument combinations and input values."""
     try:
         # Perform comprehensive input validation
         # Note: validate_all_cli_args already checks that secondary_context is
         # provided when not in decommission mode
         InputValidator.validate_all_cli_args(args)
+
+        # Validate state dir env var only when it would be used
+        if not getattr(args, "state_file", None):
+            env_state_dir = os.environ.get(STATE_DIR_ENV_VAR)
+            if env_state_dir and env_state_dir.strip():
+                InputValidator.validate_safe_filesystem_path(
+                    env_state_dir.strip(), STATE_DIR_ENV_VAR
+                )
 
     except ValidationError as e:
         logger.error("Validation error: %s", str(e))
@@ -451,9 +462,9 @@ def main():
     # Set up logging early so validate_args can use logger
     logger = setup_logging(args.verbose, args.log_format)
 
-    validate_args(args)
+    validate_args(args, logger)
     resolved_state_file = _resolve_state_file(
-        args.state_file or DEFAULT_STATE_FILE,
+        args.state_file,
         args.primary_context,
         args.secondary_context,
     )
@@ -512,25 +523,28 @@ def _initialize_clients(
 
     return primary, secondary
 
-
-DEFAULT_STATE_FILE = ".state/switchover-state.json"
-
-
 def _sanitize_context_identifier(value: str) -> str:
     """Sanitize context string to be filesystem friendly."""
     return InputValidator.sanitize_context_identifier(value)
+
+
+def _get_default_state_dir() -> str:
+    env_state_dir = os.environ.get(STATE_DIR_ENV_VAR)
+    if env_state_dir and env_state_dir.strip():
+        return env_state_dir.strip()
+    return ".state"
 
 
 def _resolve_state_file(
     requested_path: Optional[str], primary_ctx: str, secondary_ctx: Optional[str]
 ) -> str:
     """Derive the state file path based on contexts unless user provided one."""
-    if requested_path and requested_path != DEFAULT_STATE_FILE:
+    if requested_path:
         return requested_path
 
     secondary_label = secondary_ctx or "none"
     slug = f"{_sanitize_context_identifier(primary_ctx)}__{_sanitize_context_identifier(secondary_label)}"
-    return os.path.join(".state", f"switchover-{slug}.json")
+    return os.path.join(_get_default_state_dir(), f"switchover-{slug}.json")
 
 
 def _execute_operation(

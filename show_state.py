@@ -20,6 +20,10 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from lib import __version__, __version_date__
+from lib.validation import InputValidator, ValidationError
+
+
+STATE_DIR_ENV_VAR = "ACM_SWITCHOVER_STATE_DIR"
 
 # ANSI colors for terminal output
 COLORS = {
@@ -105,8 +109,23 @@ def format_timestamp(iso_timestamp: str) -> str:
         return iso_timestamp or "unknown"
 
 
-def find_state_files(state_dir: str = ".state") -> List[str]:
+def _default_state_dir() -> str:
+    env_state_dir = os.environ.get(STATE_DIR_ENV_VAR)
+    if env_state_dir and env_state_dir.strip():
+        try:
+            InputValidator.validate_safe_filesystem_path(
+                env_state_dir.strip(), STATE_DIR_ENV_VAR
+            )
+            return env_state_dir.strip()
+        except ValidationError:
+            # Viewer tool: ignore unsafe env var and fall back to default
+            return ".state"
+    return ".state"
+
+
+def find_state_files(state_dir: Optional[str] = None) -> List[str]:
     """Find all state files in the state directory."""
+    state_dir = state_dir or _default_state_dir()
     pattern = os.path.join(state_dir, "switchover-*.json")
     return sorted(glob.glob(pattern))
 
@@ -266,7 +285,9 @@ def list_state_files(use_color: bool = True):
     state_files = find_state_files()
 
     if not state_files:
-        print("No state files found in .state/ directory")
+        print(
+            "No state files found in default state directory (override with ACM_SWITCHOVER_STATE_DIR or pass a state file path)."
+        )
         return
 
     print_header("Available State Files", use_color)
@@ -315,7 +336,7 @@ Examples:
     parser.add_argument(
         "state_file",
         nargs="?",
-        help="Path to state file (default: most recent in .state/)",
+        help="Path to state file (default: most recent in default state dir; override with ACM_SWITCHOVER_STATE_DIR)",
     )
     parser.add_argument(
         "--list",
