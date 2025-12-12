@@ -11,8 +11,8 @@ cd rh-acm-switchover
 # Install dependencies
 pip install -r requirements.txt
 
-# OR use interactive quick-start
-./quick-start.sh
+# Or install with pip to get console scripts
+pip install .
 
 ```
 
@@ -85,7 +85,7 @@ python acm_switchover.py \
   --method passive
 
 # Reverse switchover (return to original hub)
-# Swap --primary-context and --secondary-context values
+# Swap --primary-context and --secondary-context; ensure persistent state dir in containers
 python acm_switchover.py \
   --primary-context <secondary> \
   --secondary-context <primary> \

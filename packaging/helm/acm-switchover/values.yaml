@@ -13,6 +13,7 @@ affinity: {}
 rbac:
   create: true
   namespace: acm-switchover
+  clusterWide: false
 
 kubeconfig:
   enabled: false

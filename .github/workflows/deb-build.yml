@@ -1,0 +1,22 @@
+name: DEB Build
+
+on:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deb build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y devscripts debhelper python3 python3-pip
+      - name: Build Python wheel
+        run: |
+          python3 -m pip install build
+          python3 -m build .
+      - name: Build DEB package
+        working-directory: packaging/deb
+        run: |
+          dpkg-buildpackage -us -uc

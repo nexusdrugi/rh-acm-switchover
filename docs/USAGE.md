@@ -224,7 +224,7 @@ No manual intervention needed - version-aware handling is automatic.
 
 ## Returning to Original Hub (Reverse Switchover)
 
-To return to the original hub after a switchover, perform a **reverse switchover** by swapping the primary and secondary contexts. This is the recommended approach as it uses the same proven switchover workflow.
+To return to the original hub after a switchover, perform a **reverse switchover** by swapping the primary and secondary contexts. This is the recommended approach as it uses the same proven switchover workflow. In container or Helm environments, ensure `ACM_SWITCHOVER_STATE_DIR` points to a persistent volume.
 
 > **Prerequisite:** Your original switchover must have used `--old-hub-action secondary` to set up passive sync on the old hub. This is why `secondary` is the recommended value for this option.
 
