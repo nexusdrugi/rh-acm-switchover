@@ -434,8 +434,10 @@ class TestPostActivationVerification:
 class TestKlusterletReconnect:
     """Test cases for force klusterlet reconnect functionality."""
 
-    def test_force_klusterlet_reconnect_success(self, mock_secondary_client, mock_state_manager):
+    @patch("modules.post_activation.wait_for_condition")
+    def test_force_klusterlet_reconnect_success(self, mock_wait, mock_secondary_client, mock_state_manager):
         """Test successful klusterlet reconnect with import secret."""
+        mock_wait.return_value = True
         verify = PostActivationVerification(
             secondary_client=mock_secondary_client,
             state_manager=mock_state_manager,

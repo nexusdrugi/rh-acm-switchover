@@ -5,7 +5,7 @@ Tests cover PrimaryPreparation class for preparing the primary hub.
 
 import sys
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -237,8 +237,12 @@ class TestPrimaryPreparation:
 
         mock_primary_client.patch_managed_cluster.assert_not_called()
 
-    def test_scale_down_thanos(self, primary_prep_with_obs, mock_primary_client):
+    @patch("modules.primary_prep.wait_for_condition")
+    def test_scale_down_thanos(
+        self, mock_wait, primary_prep_with_obs, mock_primary_client
+    ):
         """Test scaling down Thanos compactor."""
+        mock_wait.return_value = True
         mock_primary_client.scale_statefulset.return_value = {"status": "scaled"}
         mock_primary_client.get_pods.return_value = (
             []
@@ -251,6 +255,7 @@ class TestPrimaryPreparation:
             name="observability-thanos-compact",
             replicas=0,
         )
+        mock_wait.assert_called_once()
 
     def test_prepare_error_handling(
         self, primary_prep_with_obs, mock_primary_client, mock_state_manager

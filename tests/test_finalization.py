@@ -81,16 +81,19 @@ class TestFinalization:
         assert fin.state == mock_state_manager
         assert fin.backup_manager is not None
 
+    @patch("modules.finalization.wait_for_condition")
     @patch("modules.finalization.time")
     def test_finalize_success(
         self,
         mock_time,
+        mock_wait,
         finalization,
         mock_secondary_client,
         mock_state_manager,
         mock_backup_manager,
     ):
         """Test successful finalization workflow."""
+        mock_wait.return_value = True
         # Mock time to avoid loops
         mock_time.time.side_effect = [0, 1, 2, 3]
 
