@@ -3,6 +3,7 @@ Primary hub preparation module for ACM switchover.
 """
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from lib.constants import (
     BACKUP_NAMESPACE,
@@ -13,6 +14,7 @@ from lib.constants import (
 from lib.exceptions import SwitchoverError
 from lib.kube_client import KubeClient
 from lib.utils import StateManager, is_acm_version_ge
+from lib.waiter import wait_for_condition
 from kubernetes.client.rest import ApiException
 
 logger = logging.getLogger("acm_switchover")
@@ -154,7 +156,8 @@ class PrimaryPreparation:
             logger.warning("No ManagedClusters found")
             return
 
-        count = 0
+        # Identify clusters that need patching
+        clusters_to_process = []
         for mc in managed_clusters:
             mc_name = mc.get("metadata", {}).get("name")
 
@@ -171,20 +174,38 @@ class PrimaryPreparation:
                     mc_name,
                 )
                 continue
+            
+            clusters_to_process.append(mc_name)
 
-            # Add annotation
-            patch = {
-                "metadata": {
-                    "annotations": {
-                        "import.open-cluster-management.io/disable-auto-import": ""
+        if not clusters_to_process:
+            logger.info("No ManagedClusters need updates")
+            return
+
+        def _patch_cluster(mc_name: str) -> int:
+            try:
+                patch = {
+                    "metadata": {
+                        "annotations": {
+                            "import.open-cluster-management.io/disable-auto-import": ""
+                        }
                     }
                 }
+                self.primary.patch_managed_cluster(name=mc_name, patch=patch)
+                logger.debug("Added disable-auto-import annotation to %s", mc_name)
+                return 1
+            except Exception as e:
+                logger.error("Failed to patch ManagedCluster %s: %s", mc_name, e)
+                return 0
+
+        # Process in parallel
+        count = 0
+        with ThreadPoolExecutor(max_workers=20) as executor:
+            futures = {
+                executor.submit(_patch_cluster, name): name 
+                for name in clusters_to_process
             }
-
-            self.primary.patch_managed_cluster(name=mc_name, patch=patch)
-
-            count += 1
-            logger.debug("Added disable-auto-import annotation to %s", mc_name)
+            for future in as_completed(futures):
+                count += future.result()
 
         logger.info("Disabled auto-import on %s ManagedCluster(s)", count)
 
@@ -204,22 +225,28 @@ class PrimaryPreparation:
                 logger.info("[DRY-RUN] Skipping Thanos compactor pod verification")
                 return
 
-            # Wait a moment and verify no pods running
-            import time
+            # Wait for pods to terminate
+            def _check_pods_terminated():
+                pods = self.primary.get_pods(
+                    namespace=OBSERVABILITY_NAMESPACE,
+                    label_selector=THANOS_COMPACTOR_LABEL_SELECTOR,
+                )
+                if not pods:
+                    return True, "no pods running"
+                return False, f"{len(pods)} pod(s) remaining"
 
-            time.sleep(5)
-
-            pods = self.primary.get_pods(
-                namespace=OBSERVABILITY_NAMESPACE,
-                label_selector=THANOS_COMPACTOR_LABEL_SELECTOR,
+            success = wait_for_condition(
+                "Thanos compactor termination",
+                _check_pods_terminated,
+                timeout=60,
+                interval=5,
+                logger=logger,
             )
 
-            if pods:
-                logger.warning(
-                    "Thanos compactor still has %s pod(s) running", len(pods)
-                )
-            else:
+            if success:
                 logger.info("Thanos compactor scaled down successfully")
+            else:
+                logger.warning("Thanos compactor pods still running after timeout")
 
         except (RuntimeError, ValueError) as e:
             logger.error("Failed to scale down Thanos compactor: %s", e)
