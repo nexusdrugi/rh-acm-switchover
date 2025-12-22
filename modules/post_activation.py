@@ -642,7 +642,24 @@ class PostActivationVerification:
                         logger.debug("Error applying %s/%s: %s", kind, name, e)
 
             # Step 4: Restart the klusterlet deployment
-            time.sleep(2)  # Brief pause for secret to be visible
+            # Wait for secret to be visible
+            def _check_secret_visible():
+                try:
+                    v1.read_namespaced_secret(
+                        name="bootstrap-hub-kubeconfig",
+                        namespace="open-cluster-management-agent",
+                    )
+                    return True, "secret visible"
+                except ApiException:
+                    return False, "secret not yet visible"
+            
+            wait_for_condition(
+                "bootstrap-hub-kubeconfig secret visibility",
+                _check_secret_visible,
+                timeout=30,
+                interval=1,
+                logger=logger
+            )
 
             try:
                 # Trigger a rollout restart by patching the deployment

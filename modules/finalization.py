@@ -25,6 +25,7 @@ from lib.constants import (
 from lib.exceptions import SwitchoverError
 from lib.kube_client import KubeClient
 from lib.utils import StateManager, dry_run_skip, is_acm_version_ge
+from lib.waiter import wait_for_condition
 
 from .backup_schedule import BackupScheduleManager
 from .decommission import Decommission
@@ -583,8 +584,26 @@ class Finalization:
             )
             logger.info("Deleted old BackupSchedule %s", schedule_name)
 
-            # Wait a moment for deletion to complete
-            time.sleep(5)
+            # Wait for deletion to complete
+            def _check_schedule_deleted():
+                exists = self.secondary.get_custom_resource(
+                    group="cluster.open-cluster-management.io",
+                    version="v1beta1",
+                    plural="backupschedules",
+                    name=schedule_name,
+                    namespace=BACKUP_NAMESPACE,
+                )
+                if not exists:
+                    return True, "BackupSchedule deleted"
+                return False, "BackupSchedule still exists"
+
+            wait_for_condition(
+                f"BackupSchedule {schedule_name} deletion",
+                _check_schedule_deleted,
+                timeout=60,
+                interval=2,
+                logger=logger,
+            )
 
             # Recreate with same spec
             new_schedule = {
