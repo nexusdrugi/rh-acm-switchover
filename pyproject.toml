@@ -1,6 +1,6 @@
 [project]
 name = "rh-acm-switchover"
-version = "1.4.0"
+version = "1.5.0"
 description = "ACM Hub Switchover automation tooling"
 requires-python = ">=3.9"
 readme = "README.md"

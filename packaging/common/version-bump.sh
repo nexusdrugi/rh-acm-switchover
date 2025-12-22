@@ -20,8 +20,8 @@ sed -i -E "s/^(__version_date__\s*=\s*\").*(\")/\1${new_date}\2/" "$python_init"
 
 constants_sh="$repo_root/scripts/constants.sh"
 if [[ -f "$constants_sh" ]]; then
-  sed -i -E "s/^(SCRIPT_VERSION=).*/\1\"${new_version}\"/" "$constants_sh"
-  sed -i -E "s/^(SCRIPT_VERSION_DATE=).*/\1\"${new_date}\"/" "$constants_sh"
+  sed -i -E "s/^(export[[:space:]]+SCRIPT_VERSION=).*/\1\"${new_version}\"/" "$constants_sh"
+  sed -i -E "s/^(export[[:space:]]+SCRIPT_VERSION_DATE=).*/\1\"${new_date}\"/" "$constants_sh"
 fi
 
 readme_md="$repo_root/README.md"
@@ -53,6 +53,12 @@ fi
 deb_changelog="$repo_root/packaging/deb/debian/changelog"
 if [[ -f "$deb_changelog" ]]; then
   perl -0777 -pe "s/(\\(\\d+\\.\\d+\\.\\d+\\))/${new_version}/ if $.=1" "$deb_changelog" > "$deb_changelog.tmp" && mv "$deb_changelog.tmp" "$deb_changelog" || true
+fi
+
+# Container labels
+containerfile="$repo_root/container-bootstrap/Containerfile"
+if [[ -f "$containerfile" ]]; then
+  sed -i -E "s/^(LABEL[^\\n]*version=\").*(\".*)/\\1${new_version}\\2/" "$containerfile"
 fi
 
 echo "Updated version to ${new_version} (${new_date})"
