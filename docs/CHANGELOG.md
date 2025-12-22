@@ -11,11 +11,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - State file defaults now honor `ACM_SWITCHOVER_STATE_DIR` when `--state-file` is not provided; explicit `--state-file` always takes precedence. The state viewer aligns with the same default, and docs were updated to describe the order.
 
-#### Documentation
+#### Performance
+- **Parallel ManagedCluster Operations**:
+  - Parallelized `disable-auto-import` annotation updates on primary hub (uses `ThreadPoolExecutor` with max 10 workers)
+  - Parallelized `ManagedCluster` deletion during decommission
+  - Significant speedup for environments with many managed clusters
 
+#### Reliability
+- **Deterministic Waiters**: Replaced fixed `time.sleep` calls with smart polling `wait_for_condition`
+  - Backup creation and verification now polls efficiently
+  - Klusterlet connection verification uses active polling
+  - Reduced wasted time waiting for operations that complete quickly
+
+#### Documentation
 - Added RBAC section to main README
 - Updated prerequisites to include RBAC permissions
 - Added links to RBAC deployment guides
+
+### Changed
+
+- **Thanos Compactor Wait**: Improved wait logic for Thanos compactor scale-down to be more robust
+
+
 
 ## [1.5.0] - 2025-12-12
 
