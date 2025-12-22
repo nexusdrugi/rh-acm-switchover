@@ -66,7 +66,8 @@ Examples:
     )
     parser.add_argument(
         "--version",
-        action="store_true",
+        action="version",
+        version="%(prog)s " + __version__ + " (" + __version_date__ + ")",
         help="Print version and exit",
     )
 
@@ -76,10 +77,6 @@ Examples:
 def main():
     """Main entry point."""
     args = parse_args()
-
-    if args.version:
-        print(f"{__version__} ({__version_date__})")
-        return
 
     # Set up logging
     setup_logging(verbose=args.verbose, log_format="text")

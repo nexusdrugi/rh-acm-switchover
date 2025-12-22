@@ -179,7 +179,8 @@ Examples:
     )
     parser.add_argument(
         "--version",
-        action="store_true",
+        action="version",
+        version=f"%(prog)s {__version__} ({__version_date__})",
         help="Print version and exit",
     )
 
@@ -462,14 +463,13 @@ def run_decommission(
 
 def main():
     """Main entry point."""
+    if "--version" in sys.argv or "-V" in sys.argv:
+        print(f"{__version__} ({__version_date__})")
+        return
     args = parse_args()
 
     # Set up logging early so validate_args can use logger
     logger = setup_logging(args.verbose, args.log_format)
-
-    if args.version:
-        print(f"{__version__} ({__version_date__})")
-        return
 
     validate_args(args, logger)
     resolved_state_file = _resolve_state_file(
