@@ -3,6 +3,7 @@ Decommission module for old primary hub.
 """
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from lib.constants import (
     ACM_NAMESPACE,
@@ -160,30 +161,46 @@ class Decommission:
             logger.info("No ManagedClusters found")
             return
 
-        deleted_count = 0
+        # Identify clusters to delete
+        clusters_to_delete = []
         for mc in managed_clusters:
             mc_name = mc.get("metadata", {}).get("name")
-
-            # Skip local-cluster
             if mc_name == "local-cluster":
                 logger.info("Skipping local-cluster")
                 continue
+            clusters_to_delete.append(mc_name)
 
+        if not clusters_to_delete:
+            logger.info("No ManagedClusters to delete")
+            return
+
+        def _delete_cluster(mc_name: str) -> int:
             if self.dry_run:
                 logger.info("[DRY-RUN] Would delete ManagedCluster: %s", mc_name)
-                deleted_count += 1
-                continue
+                return 1
 
-            logger.info("Deleting ManagedCluster: %s", mc_name)
+            try:
+                logger.info("Deleting ManagedCluster: %s", mc_name)
+                self.primary.delete_custom_resource(
+                    group="cluster.open-cluster-management.io",
+                    version="v1",
+                    plural="managedclusters",
+                    name=mc_name,
+                )
+                return 1
+            except Exception as e:
+                logger.error("Failed to delete ManagedCluster %s: %s", mc_name, e)
+                return 0
 
-            self.primary.delete_custom_resource(
-                group="cluster.open-cluster-management.io",
-                version="v1",
-                plural="managedclusters",
-                name=mc_name,
-            )
-
-            deleted_count += 1
+        # Process in parallel
+        deleted_count = 0
+        with ThreadPoolExecutor(max_workers=20) as executor:
+            futures = {
+                executor.submit(_delete_cluster, name): name 
+                for name in clusters_to_delete
+            }
+            for future in as_completed(futures):
+                deleted_count += future.result()
 
         if self.dry_run:
             logger.info("[DRY-RUN] Would delete %s ManagedCluster(s)", deleted_count)
