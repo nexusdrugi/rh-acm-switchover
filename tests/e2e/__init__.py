@@ -8,9 +8,23 @@ collection, and pytest integration.
 
 from .orchestrator import E2EOrchestrator, RunConfig
 from .phase_handlers import PhaseHandlers
+from .monitoring import (
+    Alert,
+    AlertThresholds,
+    MetricsLogger,
+    MonitoringContext,
+    ResourceMonitor,
+    ResourceSnapshot,
+)
 
 __all__ = [
     "E2EOrchestrator",
     "RunConfig",
     "PhaseHandlers",
+    "Alert",
+    "AlertThresholds",
+    "MetricsLogger",
+    "MonitoringContext",
+    "ResourceMonitor",
+    "ResourceSnapshot",
 ]
