@@ -9,7 +9,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 from lib.constants import ACM_NAMESPACE, OBSERVABILITY_NAMESPACE
 from lib.kube_client import KubeClient
@@ -304,6 +304,7 @@ class PhaseHandlers:
         skip_observability_checks: bool = False,
         skip_rbac_validation: bool = False,
         manage_auto_import_strategy: bool = False,
+        phase_callback: Optional[Callable[[str, str], None]] = None,
     ) -> List[PhaseResult]:
         """
         Run all switchover phases in sequence.
@@ -321,6 +322,8 @@ class PhaseHandlers:
             skip_observability_checks: Whether to skip observability checks
             skip_rbac_validation: Whether to skip RBAC validation
             manage_auto_import_strategy: Whether to manage auto-import strategy
+            phase_callback: Optional callback called before each phase with (phase_name, "before")
+                           and after each phase with (phase_name, "after")
 
         Returns:
             List of PhaseResult for each phase executed
@@ -333,6 +336,9 @@ class PhaseHandlers:
         self.logger.info("PHASE 1: PREFLIGHT VALIDATION")
         self.logger.info("-" * 40)
 
+        if phase_callback:
+            phase_callback("preflight", "before")
+
         preflight_result = self.run_preflight(
             primary_client,
             secondary_client,
@@ -340,6 +346,9 @@ class PhaseHandlers:
             skip_rbac_validation=skip_rbac_validation,
         )
         results.append(preflight_result)
+
+        if phase_callback:
+            phase_callback("preflight", "after")
 
         if not preflight_result.success:
             self.logger.error("Preflight validation failed, aborting cycle")
@@ -374,6 +383,9 @@ class PhaseHandlers:
         self.logger.info("PHASE 2: PRIMARY HUB PREPARATION")
         self.logger.info("-" * 40)
 
+        if phase_callback:
+            phase_callback("primary_prep", "before")
+
         primary_prep_result = self.run_primary_prep(
             primary_client,
             state_manager,
@@ -382,6 +394,9 @@ class PhaseHandlers:
             dry_run=dry_run,
         )
         results.append(primary_prep_result)
+
+        if phase_callback:
+            phase_callback("primary_prep", "after")
 
         if not primary_prep_result.success:
             self.logger.error("Primary prep failed, aborting cycle")
@@ -393,6 +408,9 @@ class PhaseHandlers:
         self.logger.info("PHASE 3: SECONDARY HUB ACTIVATION")
         self.logger.info("-" * 40)
 
+        if phase_callback:
+            phase_callback("activation", "before")
+
         activation_result = self.run_activation(
             secondary_client,
             state_manager,
@@ -400,6 +418,9 @@ class PhaseHandlers:
             manage_auto_import_strategy=manage_auto_import_strategy,
         )
         results.append(activation_result)
+
+        if phase_callback:
+            phase_callback("activation", "after")
 
         if not activation_result.success:
             self.logger.error("Activation failed, aborting cycle")
@@ -411,6 +432,9 @@ class PhaseHandlers:
         self.logger.info("PHASE 4: POST-ACTIVATION VERIFICATION")
         self.logger.info("-" * 40)
 
+        if phase_callback:
+            phase_callback("post_activation", "before")
+
         post_activation_result = self.run_post_activation(
             secondary_client,
             state_manager,
@@ -418,6 +442,9 @@ class PhaseHandlers:
             dry_run=dry_run,
         )
         results.append(post_activation_result)
+
+        if phase_callback:
+            phase_callback("post_activation", "after")
 
         if not post_activation_result.success:
             self.logger.error("Post-activation verification failed, aborting cycle")
@@ -428,6 +455,9 @@ class PhaseHandlers:
         self.logger.info("-" * 40)
         self.logger.info("PHASE 5: FINALIZATION")
         self.logger.info("-" * 40)
+
+        if phase_callback:
+            phase_callback("finalization", "before")
 
         finalization_result = self.run_finalization(
             secondary_client,

@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from lib import KubeClient, Phase, StateManager
 
 from .phase_handlers import CycleResult, PhaseHandlers, PhaseResult
+from .failure_injection import FailureInjector, InjectionResult
 
 if TYPE_CHECKING:
     from .monitoring import MetricsLogger
@@ -46,6 +47,9 @@ class RunConfig:
     run_hours: Optional[float] = None
     max_failures: Optional[int] = None
     resume: bool = False
+    # Failure injection controls (Phase 3 resilience testing)
+    inject_failure: Optional[str] = None
+    inject_at_phase: str = "activation"
 
     def __post_init__(self):
         """Convert string paths to Path objects if needed."""
@@ -170,6 +174,8 @@ class E2EOrchestrator:
                 "run_hours": self.config.run_hours,
                 "max_failures": self.config.max_failures,
                 "resume": self.config.resume,
+                "inject_failure": self.config.inject_failure,
+                "inject_at_phase": self.config.inject_at_phase,
             },
             "environment": {
                 "git_sha": self._get_git_sha(),
@@ -508,6 +514,40 @@ class E2EOrchestrator:
 
         # Run all phases
         cycle_success = True
+        failure_injector = None
+        
+        # Set up failure injection if configured
+        if self.config.inject_failure:
+            failure_injector = FailureInjector(
+                client=secondary_client,  # Inject failures on secondary hub
+                scenario=self.config.inject_failure,
+                inject_at_phase=self.config.inject_at_phase,
+                dry_run=self.config.dry_run,
+            )
+            
+            def phase_callback(phase_name: str, timing: str) -> None:
+                """Callback to inject failure before specified phase."""
+                if timing == "before" and failure_injector.should_inject_at(phase_name):
+                    result = failure_injector.inject()
+                    if result.success:
+                        self.logger.warning(
+                            "Failure injected at phase %s: %s",
+                            phase_name, result.message
+                        )
+                        if self._metrics_logger:
+                            self._metrics_logger.log_event(
+                                "failure_injection",
+                                {
+                                    "scenario": result.scenario,
+                                    "phase": result.phase,
+                                    "success": result.success,
+                                    "message": result.message,
+                                    "details": result.details,
+                                }
+                            )
+        else:
+            phase_callback = None
+        
         try:
             phase_results = self.phase_handlers.run_all_phases(
                 primary_client=primary_client,
@@ -519,6 +559,7 @@ class E2EOrchestrator:
                 skip_observability_checks=self.config.skip_observability_checks,
                 skip_rbac_validation=self.config.skip_rbac_validation,
                 manage_auto_import_strategy=self.config.manage_auto_import_strategy,
+                phase_callback=phase_callback,
             )
 
             # Check if all phases succeeded
@@ -547,6 +588,14 @@ class E2EOrchestrator:
                     error=str(e),
                 )
             )
+        finally:
+            # Clean up any injected failures
+            if failure_injector:
+                cleanup_result = failure_injector.cleanup()
+                if cleanup_result.success:
+                    self.logger.info("Failure injection cleaned up: %s", cleanup_result.message)
+                else:
+                    self.logger.warning("Failure injection cleanup failed: %s", cleanup_result.message)
 
         end_time = datetime.now(timezone.utc)
 
