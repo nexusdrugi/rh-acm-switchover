@@ -18,6 +18,7 @@ The E2E testing framework provides:
 - **Pytest-based orchestration** — Primary testing interface (Python-native)
 - **Soak testing controls** — Time limits, max failures, resume capability (Phase 2)
 - **Real-time monitoring** — JSONL metrics, alert detection via `ResourceMonitor` (Phase 2)
+- **Failure injection testing** — Resilience testing with chaos scenarios (Phase 3)
 - **Metrics and artifacts** — Per-cycle manifests, states, timing, JSONL metrics
 - **Resume capability** — Continue from last successful cycle after failures
 - **Bash helpers** — Legacy scripts (deprecated, will be removed in v2.0)
@@ -26,9 +27,10 @@ The E2E testing framework provides:
 
 ### Core Components (Use These)
 
-- **`pytest` suite** — Primary entrypoint (`tests/e2e/test_e2e_switchover.py`, `test_e2e_dry_run.py`)
-- **`orchestrator.py`** — Python E2E orchestrator with soak controls
+- **`pytest` suite** — Primary entrypoint (`tests/e2e/test_e2e_switchover.py`, `test_e2e_dry_run.py`, `test_e2e_resilience.py`)
+- **`orchestrator.py`** — Python E2E orchestrator with soak controls and failure injection
 - **`monitoring.py`** — Python monitoring module (ResourceMonitor, MetricsLogger, Alert)
+- **`failure_injection.py`** — FailureInjector class for chaos testing scenarios (Phase 3)
 - **`e2e_analyzer.py`** — Analyze result folders and generate HTML reports
 - **`conftest.py`** — Pytest fixtures and CLI options
 
@@ -97,6 +99,11 @@ The pytest suite drives the Python orchestrator. Key options (CLI or env vars):
 - `--e2e-run-hours` — Time limit in hours; orchestrator stops when exceeded
 - `--e2e-max-failures` — Stop after N cycle failures
 - `--e2e-resume` — Resume from last completed cycle (reads `.resume_state.json`)
+
+**Failure Injection Options (Phase 3):**
+
+- `--e2e-inject-failure` — Failure scenario to inject: `pause-backup`, `delay-restore`, `kill-observability-pod`, or `random`
+- `--e2e-inject-at-phase` — Phase at which to inject failure (default: `activation`); choices: `preflight`, `primary_prep`, `activation`, `post_activation`, `finalization`
 
 Output structure for a run:
 
@@ -207,6 +214,49 @@ pytest tests/e2e -m "e2e and slow" \
    --e2e-max-failures 5 \
    --e2e-output-dir ./e2e-overnight-soak \
    --e2e-resume
+```
+
+### Resilience Testing with Failure Injection (Phase 3)
+
+**Pause backup mid-cycle:**
+
+```bash
+pytest -m e2e tests/e2e/test_e2e_resilience.py \
+  --primary-context mgmt1 \
+  --secondary-context mgmt2 \
+  --e2e-inject-failure=pause-backup \
+  --e2e-inject-at-phase=activation
+```
+
+**Kill observability pod during activation:**
+
+```bash
+pytest -m e2e tests/e2e/test_e2e_resilience.py \
+  --primary-context mgmt1 \
+  --secondary-context mgmt2 \
+  --e2e-inject-failure=kill-observability-pod \
+  --e2e-inject-at-phase=activation
+```
+
+**Delay restore with random scenario:**
+
+```bash
+pytest -m e2e tests/e2e/test_e2e_resilience.py \
+  --primary-context mgmt1 \
+  --secondary-context mgmt2 \
+  --e2e-cycles 5 \
+  --e2e-inject-failure=random
+```
+
+**Chaos test with multiple random failures:**
+
+```bash
+pytest -m "e2e and slow" tests/e2e/ \
+  --primary-context mgmt1 \
+  --secondary-context mgmt2 \
+  --e2e-cycles 20 \
+  --e2e-inject-failure=random \
+  --e2e-max-failures 5
 ```
 
 ## Monitoring and Alerting
@@ -415,6 +465,7 @@ The Python E2E orchestrator provides significant advantages over bash scripts:
 | Time-limited soak tests | ❌ No | ✅ `--e2e-run-hours` |
 | Resume failed tests | ❌ No | ✅ `--e2e-resume` |
 | Max failures limit | ❌ No | ✅ `--e2e-max-failures` |
+| Failure injection/resilience | ❌ No | ✅ Phase 3: `--e2e-inject-failure` |
 | Real-time monitoring | ⚠️ Separate script | ✅ Integrated |
 | Metrics format | CSV | JSONL (streaming) |
 | Alert detection | Manual | Automatic |
