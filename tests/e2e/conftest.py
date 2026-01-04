@@ -84,6 +84,29 @@ def pytest_addoption(parser):
         help="Cooldown seconds between cycles (env: E2E_COOLDOWN, default: 30)"
     )
 
+    group.addoption(
+        "--e2e-run-hours",
+        action="store",
+        default=os.environ.get("E2E_RUN_HOURS", None),
+        type=float,
+        help="Time limit in hours for soak testing (env: E2E_RUN_HOURS)"
+    )
+
+    group.addoption(
+        "--e2e-max-failures",
+        action="store",
+        default=os.environ.get("E2E_MAX_FAILURES", None),
+        type=int,
+        help="Stop after N failures (env: E2E_MAX_FAILURES)"
+    )
+
+    group.addoption(
+        "--e2e-resume",
+        action="store_true",
+        default=os.environ.get("E2E_RESUME", "").lower() in ("1", "true", "yes"),
+        help="Resume from last completed cycle (env: E2E_RESUME)"
+    )
+
 
 def pytest_configure(config):
     """Register E2E marker."""
@@ -126,6 +149,9 @@ def e2e_config(request, tmp_path_factory) -> RunConfig:
         output_dir=output_dir,
         stop_on_failure=request.config.getoption("--e2e-stop-on-failure"),
         cooldown_seconds=request.config.getoption("--e2e-cooldown"),
+        run_hours=request.config.getoption("--e2e-run-hours"),
+        max_failures=request.config.getoption("--e2e-max-failures"),
+        resume=request.config.getoption("--e2e-resume"),
     )
 
 
