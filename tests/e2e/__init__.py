@@ -16,6 +16,12 @@ from .monitoring import (
     ResourceMonitor,
     ResourceSnapshot,
 )
+from .failure_injection import (
+    FailureInjector,
+    FailureScenario,
+    InjectionPhase,
+    InjectionResult,
+)
 
 __all__ = [
     "E2EOrchestrator",
@@ -27,4 +33,8 @@ __all__ = [
     "MonitoringContext",
     "ResourceMonitor",
     "ResourceSnapshot",
+    "FailureInjector",
+    "FailureScenario",
+    "InjectionPhase",
+    "InjectionResult",
 ]
