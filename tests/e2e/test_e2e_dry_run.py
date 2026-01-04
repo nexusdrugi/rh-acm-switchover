@@ -502,3 +502,333 @@ class TestRunResultStructure:
         )
 
         assert result.total_duration_seconds == 9000.0  # 2.5 hours
+
+
+@pytest.mark.e2e
+class TestSoakControls:
+    """Tests for soak testing controls (run-hours, max-failures, resume)."""
+
+    def test_run_hours_config(self):
+        """Test that run_hours config is properly set."""
+        config = RunConfig(
+            primary_context="hub1",
+            secondary_context="hub2",
+            run_hours=2.5,
+        )
+        assert config.run_hours == 2.5
+
+    def test_max_failures_config(self):
+        """Test that max_failures config is properly set."""
+        config = RunConfig(
+            primary_context="hub1",
+            secondary_context="hub2",
+            max_failures=3,
+        )
+        assert config.max_failures == 3
+
+    def test_resume_config(self):
+        """Test that resume config is properly set."""
+        config = RunConfig(
+            primary_context="hub1",
+            secondary_context="hub2",
+            resume=True,
+        )
+        assert config.resume is True
+
+    def test_max_failures_stops_execution(self, tmp_path):
+        """Test that max_failures stops execution after N failures."""
+        config = RunConfig(
+            primary_context="test-primary",
+            secondary_context="test-secondary",
+            dry_run=True,
+            cycles=10,
+            output_dir=tmp_path,
+            max_failures=2,
+            cooldown_seconds=0,
+        )
+
+        orchestrator = E2EOrchestrator(config)
+
+        call_count = 0
+
+        def always_fail(cycle_num, primary, secondary):
+            nonlocal call_count
+            call_count += 1
+            return make_cycle_result(
+                cycle_id=f"cycle_{cycle_num:03d}",
+                cycle_num=cycle_num,
+                success=False,
+                primary_context=primary,
+                secondary_context=secondary,
+                error="Simulated failure",
+            )
+
+        with patch.object(orchestrator, "_run_cycle", side_effect=always_fail):
+            result = orchestrator.run_all_cycles()
+
+        assert result.failure_count == 2
+        assert call_count == 2, "Should stop after 2 failures (max_failures=2)"
+
+    def test_resume_state_saving(self, tmp_path):
+        """Test that resume state is saved after each cycle."""
+        config = RunConfig(
+            primary_context="hub-a",
+            secondary_context="hub-b",
+            dry_run=True,
+            cycles=3,
+            output_dir=tmp_path,
+            cooldown_seconds=0,
+        )
+
+        orchestrator = E2EOrchestrator(config)
+
+        with patch.object(orchestrator, "_run_cycle") as mock_run_cycle:
+            mock_run_cycle.return_value = make_cycle_result()
+            orchestrator.run_all_cycles()
+
+        # Resume state should be cleared after successful completion
+        resume_path = config.output_dir / ".resume_state.json"
+        assert not resume_path.exists(), "Resume state should be cleared after success"
+
+    def test_resume_state_preserved_on_failure(self, tmp_path):
+        """Test that resume state is preserved when stopped early due to failure."""
+        config = RunConfig(
+            primary_context="hub-a",
+            secondary_context="hub-b",
+            dry_run=True,
+            cycles=5,
+            output_dir=tmp_path,
+            stop_on_failure=True,
+            cooldown_seconds=0,
+        )
+
+        orchestrator = E2EOrchestrator(config)
+
+        call_count = 0
+
+        def fail_on_third(cycle_num, primary, secondary):
+            nonlocal call_count
+            call_count += 1
+            success = call_count != 3
+            return make_cycle_result(
+                cycle_id=f"cycle_{cycle_num:03d}",
+                cycle_num=cycle_num,
+                success=success,
+                primary_context=primary,
+                secondary_context=secondary,
+            )
+
+        with patch.object(orchestrator, "_run_cycle", side_effect=fail_on_third):
+            orchestrator.run_all_cycles()
+
+        # Resume state should exist since run ended early
+        resume_path = config.output_dir / ".resume_state.json"
+        assert resume_path.exists(), "Resume state should be saved when stopping early"
+
+        # Verify resume state contents
+        with open(resume_path) as f:
+            resume_state = json.load(f)
+
+        assert resume_state["last_completed_cycle"] == 3, "Should record cycle 3 as last completed"
+        assert resume_state["success_count"] == 2, "Should have 2 successful cycles"
+        assert resume_state["failure_count"] == 1, "Should have 1 failed cycle"
+
+    def test_resume_state_saved_on_max_failures(self, tmp_path):
+        """Test that resume state is saved when max_failures limit is reached."""
+        config = RunConfig(
+            primary_context="hub-a",
+            secondary_context="hub-b",
+            dry_run=True,
+            cycles=10,
+            output_dir=tmp_path,
+            max_failures=2,
+            cooldown_seconds=0,
+        )
+
+        orchestrator = E2EOrchestrator(config)
+
+        call_count = 0
+
+        def fail_every_other(cycle_num, primary, secondary):
+            nonlocal call_count
+            call_count += 1
+            # Fail on cycles 2 and 4
+            success = call_count not in (2, 4)
+            return make_cycle_result(
+                cycle_id=f"cycle_{cycle_num:03d}",
+                cycle_num=cycle_num,
+                success=success,
+                primary_context=primary,
+                secondary_context=secondary,
+            )
+
+        with patch.object(orchestrator, "_run_cycle", side_effect=fail_every_other):
+            result = orchestrator.run_all_cycles()
+
+        # Should have stopped after 4 cycles (2 failures reached)
+        assert result.failure_count == 2
+        assert call_count == 4
+
+        # Resume state should exist
+        resume_path = config.output_dir / ".resume_state.json"
+        assert resume_path.exists(), "Resume state should be saved when max_failures reached"
+
+        with open(resume_path) as f:
+            resume_state = json.load(f)
+
+        assert resume_state["last_completed_cycle"] == 4
+        assert resume_state["failure_count"] == 2
+
+    def test_soak_config_in_manifest(self, tmp_path):
+        """Test that soak controls appear in manifest."""
+        config = RunConfig(
+            primary_context="test-primary",
+            secondary_context="test-secondary",
+            dry_run=True,
+            cycles=1,
+            output_dir=tmp_path,
+            run_hours=4.0,
+            max_failures=5,
+            resume=True,
+        )
+
+        orchestrator = E2EOrchestrator(config)
+
+        with patch.object(orchestrator, "_run_cycle") as mock_run_cycle:
+            mock_run_cycle.return_value = make_cycle_result()
+            orchestrator.run_all_cycles()
+
+        # Check manifest contains soak controls
+        manifest_path = orchestrator.run_output_dir / "manifests" / "manifest.json"
+        with open(manifest_path) as f:
+            manifest = json.load(f)
+
+        assert manifest["config"]["run_hours"] == 4.0
+        assert manifest["config"]["max_failures"] == 5
+        assert manifest["config"]["resume"] is True
+
+
+@pytest.mark.e2e
+class TestMetricsLogging:
+    """Tests for JSONL metrics logging integration with orchestrator."""
+
+    def test_metrics_logger_initialization(self, tmp_path):
+        """Test that metrics logger is initialized by orchestrator."""
+        config = RunConfig(
+            primary_context="test-primary",
+            secondary_context="test-secondary",
+            dry_run=True,
+            cycles=1,
+            output_dir=tmp_path,
+            cooldown_seconds=0,
+        )
+
+        orchestrator = E2EOrchestrator(config)
+
+        # Before run_all_cycles, _metrics_logger is None
+        assert orchestrator._metrics_logger is None
+
+        # After run_all_cycles starts, metrics logger is initialized
+        with patch.object(orchestrator, "_run_cycle") as mock_run_cycle:
+            mock_run_cycle.return_value = make_cycle_result()
+            orchestrator.run_all_cycles()
+
+        # Metrics logger should be initialized
+        assert orchestrator._metrics_logger is not None
+
+    def test_metrics_directory_created(self, tmp_path):
+        """Test that metrics directory is created."""
+        config = RunConfig(
+            primary_context="test-primary",
+            secondary_context="test-secondary",
+            dry_run=True,
+            cycles=1,
+            output_dir=tmp_path,
+            cooldown_seconds=0,
+        )
+
+        orchestrator = E2EOrchestrator(config)
+
+        # Metrics directory should exist after initialization
+        metrics_dir = orchestrator.run_output_dir / "metrics"
+        assert metrics_dir.exists(), "Metrics directory should exist"
+
+    def test_metrics_logger_direct_logging(self, tmp_path):
+        """Test MetricsLogger writes to JSONL file correctly."""
+        from tests.e2e.monitoring import MetricsLogger
+
+        metrics_dir = tmp_path / "metrics"
+        logger = MetricsLogger(metrics_dir)
+
+        # Log some events
+        logger.log_cycle_start("cycle_001", 1, "primary", "secondary")
+        logger.log_phase_result("cycle_001", "preflight", True, 15.0)
+        logger.log_phase_result("cycle_001", "primary_prep", True, 30.0)
+        logger.log_cycle_end("cycle_001", True, 45.0)
+
+        # Check metrics file exists and has content
+        metrics_file = metrics_dir / "metrics.jsonl"
+        assert metrics_file.exists()
+
+        with open(metrics_file) as f:
+            lines = f.readlines()
+
+        assert len(lines) == 4
+        for line in lines:
+            data = json.loads(line)
+            assert "timestamp" in data
+            assert "metric_type" in data
+
+    def test_cycle_events_structure(self, tmp_path):
+        """Test that cycle events have correct structure."""
+        from tests.e2e.monitoring import MetricsLogger
+
+        metrics_dir = tmp_path / "metrics"
+        logger = MetricsLogger(metrics_dir)
+
+        logger.log_cycle_start("cycle_001", 1, "ctx-a", "ctx-b")
+        logger.log_cycle_end("cycle_001", True, 120.5)
+
+        metrics_file = metrics_dir / "metrics.jsonl"
+        with open(metrics_file) as f:
+            events = [json.loads(line) for line in f.readlines()]
+
+        # Check cycle_start event
+        start_event = next(e for e in events if e["metric_type"] == "cycle_start")
+        assert start_event["cycle_id"] == "cycle_001"
+        assert start_event["cycle_num"] == 1
+        assert start_event["primary_context"] == "ctx-a"
+        assert start_event["secondary_context"] == "ctx-b"
+
+        # Check cycle_end event
+        end_event = next(e for e in events if e["metric_type"] == "cycle_end")
+        assert end_event["cycle_id"] == "cycle_001"
+        assert end_event["success"] is True
+        assert end_event["duration_seconds"] == 120.5
+
+    def test_phase_results_structure(self, tmp_path):
+        """Test that phase results have correct structure."""
+        from tests.e2e.monitoring import MetricsLogger
+
+        metrics_dir = tmp_path / "metrics"
+        logger = MetricsLogger(metrics_dir)
+
+        logger.log_phase_result("cycle_001", "preflight", True, 15.3)
+        logger.log_phase_result("cycle_001", "activation", False, 30.0, error="Timeout")
+
+        metrics_file = metrics_dir / "metrics.jsonl"
+        with open(metrics_file) as f:
+            events = [json.loads(line) for line in f.readlines()]
+
+        assert len(events) == 2
+
+        # Check successful phase
+        success_event = next(e for e in events if e["phase_name"] == "preflight")
+        assert success_event["success"] is True
+        assert success_event["duration_seconds"] == 15.3
+        assert success_event["error"] is None
+
+        # Check failed phase
+        failed_event = next(e for e in events if e["phase_name"] == "activation")
+        assert failed_event["success"] is False
+        assert failed_event["error"] == "Timeout"
