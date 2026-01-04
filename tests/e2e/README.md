@@ -2,24 +2,41 @@
 
 This directory contains the end-to-end (E2E) testing tools for the ACM Hub Switchover process.
 
+## ⚠️ Important: Bash Scripts Deprecated
+
+**The bash scripts in this directory are deprecated and will be removed in version 2.0.**
+
+- ❌ `quick_start_e2e.sh` → ✅ Use `pytest -m e2e tests/e2e/`
+- ❌ `e2e_test_orchestrator.sh` → ✅ Use `pytest -m e2e tests/e2e/`
+- ❌ `phase_monitor.sh` → ✅ Use Python `ResourceMonitor` (automatic in pytest)
+
+**Migration Guide**: See [`MIGRATION.md`](./MIGRATION.md) for detailed instructions on migrating from bash to pytest.
+
 ## Overview
 
 The E2E testing framework provides:
-- **Pytest-based orchestration** for single or repeated switchover cycles
-- **Metrics and artifacts** written per cycle (manifest, states, metrics JSON, CSV summary)
-- **Real-time monitoring hooks** via the Python orchestrator (preferred)
-- **Alert detection** for common issues during switchover
-- **Bash helpers** kept for backward compatibility (deprecated)
+- **Pytest-based orchestration** — Primary testing interface (Python-native)
+- **Soak testing controls** — Time limits, max failures, resume capability (Phase 2)
+- **Real-time monitoring** — JSONL metrics, alert detection via `ResourceMonitor` (Phase 2)
+- **Metrics and artifacts** — Per-cycle manifests, states, timing, JSONL metrics
+- **Resume capability** — Continue from last successful cycle after failures
+- **Bash helpers** — Legacy scripts (deprecated, will be removed in v2.0)
 
 ## Files
 
-### Core Components
+### Core Components (Use These)
 
-- **`pytest` suite** — primary entrypoint; see `tests/e2e/test_e2e_switchover.py`
-- **`orchestrator.py`** — Python orchestrator invoked by the tests
-- **`phase_monitor.sh`** — legacy bash monitor (deprecated; use pytest instead)
-- **`e2e_analyzer.py`** — analyze existing result folders and generate HTML
-- **`quick_start_e2e.sh` / `e2e_test_orchestrator.sh`** — legacy bash wrappers (deprecated)
+- **`pytest` suite** — Primary entrypoint (`tests/e2e/test_e2e_switchover.py`, `test_e2e_dry_run.py`)
+- **`orchestrator.py`** — Python E2E orchestrator with soak controls
+- **`monitoring.py`** — Python monitoring module (ResourceMonitor, MetricsLogger, Alert)
+- **`e2e_analyzer.py`** — Analyze result folders and generate HTML reports
+- **`conftest.py`** — Pytest fixtures and CLI options
+
+### Deprecated Components (Don't Use)
+
+- **`phase_monitor.sh`** — ⚠️ DEPRECATED: Legacy bash monitor (use `monitoring.py` instead)
+- **`quick_start_e2e.sh`** — ⚠️ DEPRECATED: Legacy bash wrapper (use pytest instead)
+- **`e2e_test_orchestrator.sh`** — ⚠️ DEPRECATED: Legacy bash orchestrator (use pytest instead)
 
 ## Quick Start (Recommended)
 
@@ -279,12 +296,22 @@ Enable verbose logging with pytest’s `-v` and review per-cycle logs/metrics un
 
 ## Integration with CI/CD
 
-### GitHub Actions Example
+### GitHub Actions Example (Recommended)
 
 ```yaml
 - name: Run E2E Tests
   run: |
-    ./tests/e2e/quick_start_e2e.sh --dry-run --cycles 1
+    pytest -m e2e tests/e2e/ \
+      --e2e-dry-run \
+      --e2e-cycles 1 \
+      --junitxml=junit.xml
+    
+- name: Upload test results
+  uses: actions/upload-artifact@v4
+  if: always()
+  with:
+    name: e2e-test-results
+    path: junit.xml
     
 - name: Analyze Results
   if: always()
@@ -294,13 +321,18 @@ Enable verbose logging with pytest’s `-v` and review per-cycle logs/metrics un
       --output ./e2e-report.html
 ```
 
-### Jenkins Pipeline Example
+### Jenkins Pipeline Example (Recommended)
 
 ```groovy
 stage('E2E Testing') {
     steps {
-        sh './tests/e2e/quick_start_e2e.sh --cycles 3'
+        sh '''
+            pytest -m e2e tests/e2e/ \
+              --e2e-cycles 3 \
+              --junitxml=results.xml
+        '''
         sh 'python3 tests/e2e/e2e_analyzer.py --results-dir ./e2e-results-* --output ./e2e-report.html'
+        junit 'results.xml'
         publishHTML([
             allowMissing: false,
             alwaysLinkToLastBuild: true,
@@ -312,6 +344,27 @@ stage('E2E Testing') {
     }
 }
 ```
+
+### Legacy CI/CD Examples (Deprecated)
+
+<details>
+<summary>⚠️ Click to view deprecated bash script examples (use pytest instead)</summary>
+
+**GitHub Actions (deprecated):**
+```yaml
+- name: Run E2E Tests
+  run: |
+    ./tests/e2e/quick_start_e2e.sh --dry-run --cycles 1
+```
+
+**Jenkins (deprecated):**
+```groovy
+sh './tests/e2e/quick_start_e2e.sh --cycles 3'
+```
+
+**Migrate to pytest**: See [MIGRATION.md](./MIGRATION.md) for updated examples.
+
+</details>
 
 ## Best Practices
 
@@ -343,3 +396,84 @@ For issues with the E2E testing framework:
 3. Validate environment prerequisites
 4. Check for known issues in the project repository
 5. Create detailed bug reports with logs and configuration
+
+## Deprecation Notice & Migration
+
+### Timeline
+
+| Version | Bash Scripts Status | Recommended Action |
+|---------|--------------------|--------------------|
+| 1.x | Deprecated but functional | Migrate to pytest now |
+| 2.0 | **REMOVED** | pytest only |
+
+### Why Migrate?
+
+The Python E2E orchestrator provides significant advantages over bash scripts:
+
+| Feature | Bash Scripts | Python Orchestrator |
+|---------|--------------|---------------------|
+| Time-limited soak tests | ❌ No | ✅ `--e2e-run-hours` |
+| Resume failed tests | ❌ No | ✅ `--e2e-resume` |
+| Max failures limit | ❌ No | ✅ `--e2e-max-failures` |
+| Real-time monitoring | ⚠️ Separate script | ✅ Integrated |
+| Metrics format | CSV | JSONL (streaming) |
+| Alert detection | Manual | Automatic |
+| CI/CD integration | Custom | pytest native |
+| Error handling | Basic | Transient error detection |
+| Test debugging | set -x | pytest -v, pdb |
+| API access | kubectl wrappers | Native K8s/ACM APIs |
+
+### Quick Migration Examples
+
+**Run 5 cycles:**
+```bash
+# Before (bash - deprecated)
+./tests/e2e/quick_start_e2e.sh --cycles 5
+
+# After (pytest - recommended)
+pytest -m e2e tests/e2e/ --e2e-cycles 5
+```
+
+**Run with monitoring:**
+```bash
+# Before (bash - deprecated)
+./tests/e2e/phase_monitor.sh --primary mgmt1 --secondary mgmt2 &
+./tests/e2e/e2e_test_orchestrator.sh --cycles 5
+
+# After (pytest - monitoring automatic)
+pytest -m e2e tests/e2e/ --e2e-cycles 5 --primary-context mgmt1 --secondary-context mgmt2
+```
+
+**Soak test with time limit:**
+```bash
+# Before (bash - not possible)
+# Had to manually kill after 4 hours
+
+# After (pytest - built-in)
+pytest -m e2e tests/e2e/ --e2e-cycles 100 --e2e-run-hours 4 --e2e-max-failures 5
+```
+
+**Resume failed test:**
+```bash
+# Before (bash - not possible)
+# Had to start over from cycle 1
+
+# After (pytest - built-in)
+pytest -m e2e tests/e2e/ --e2e-resume --e2e-output-dir ./previous-test
+```
+
+### Full Migration Guide
+
+See **[MIGRATION.md](./MIGRATION.md)** for:
+- Complete command mapping (bash → pytest)
+- Environment variable equivalents
+- Programmatic API usage
+- CI/CD integration examples
+- Troubleshooting common migration issues
+
+### Getting Help
+
+- **Migration questions**: See [MIGRATION.md](./MIGRATION.md)
+- **pytest options**: Run `pytest -m e2e tests/e2e/ --help`
+- **API documentation**: See docstrings in `orchestrator.py`, `monitoring.py`
+- **Examples**: Review test files in `tests/e2e/test_*.py`
