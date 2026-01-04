@@ -107,12 +107,32 @@ def pytest_addoption(parser):
         help="Resume from last completed cycle (env: E2E_RESUME)"
     )
 
+    group.addoption(
+        "--e2e-inject-failure",
+        action="store",
+        default=os.environ.get("E2E_INJECT_FAILURE", None),
+        choices=["pause-backup", "delay-restore", "kill-observability-pod", "random"],
+        help="Inject failure scenario during cycle (env: E2E_INJECT_FAILURE)"
+    )
+
+    group.addoption(
+        "--e2e-inject-at-phase",
+        action="store",
+        default=os.environ.get("E2E_INJECT_AT_PHASE", "activation"),
+        choices=["preflight", "primary_prep", "activation", "post_activation", "finalization"],
+        help="Phase at which to inject failure (env: E2E_INJECT_AT_PHASE, default: activation)"
+    )
+
 
 def pytest_configure(config):
-    """Register E2E marker."""
+    """Register E2E and resilience markers."""
     config.addinivalue_line(
         "markers",
         "e2e: End-to-end tests requiring real clusters"
+    )
+    config.addinivalue_line(
+        "markers",
+        "resilience: Resilience tests with failure injection"
     )
 
 
@@ -152,6 +172,8 @@ def e2e_config(request, tmp_path_factory) -> RunConfig:
         run_hours=request.config.getoption("--e2e-run-hours"),
         max_failures=request.config.getoption("--e2e-max-failures"),
         resume=request.config.getoption("--e2e-resume"),
+        inject_failure=request.config.getoption("--e2e-inject-failure"),
+        inject_at_phase=request.config.getoption("--e2e-inject-at-phase"),
     )
 
 
