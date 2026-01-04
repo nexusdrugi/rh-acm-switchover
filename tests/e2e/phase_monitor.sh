@@ -3,11 +3,21 @@
 # Provides real-time monitoring and alerting for critical resources
 # Usage: ./phase_monitor.sh [--primary <ctx>] [--secondary <ctx>] [--phase <phase>] [--output-dir <dir>]
 #
-# DEPRECATION NOTICE:
-#   This bash script is deprecated in favor of Python-based monitoring.
-#   The Python E2E orchestrator includes integrated monitoring.
-#   For CI/automated testing, use: pytest -m e2e tests/e2e/
-#   This script will be removed in a future release.
+# ┌──────────────────────────────────────────────────────────────────────┐
+# │ ⚠️  DEPRECATION WARNING - THIS SCRIPT WILL BE REMOVED               │
+# ├──────────────────────────────────────────────────────────────────────┤
+# │ This bash script is DEPRECATED and will be removed in version 2.0   │
+# │                                                                       │
+# │ REPLACED BY: tests/e2e/monitoring.py (ResourceMonitor)             │
+# │                                                                       │
+# │ Python monitoring provides:                                          │
+# │   • JSONL metrics emission for analysis                             │
+# │   • Thread-based background monitoring                              │
+# │   • Automatic alert detection                                       │
+# │   • Integration with pytest orchestrator                            │
+# │                                                                       │
+# │ See: tests/e2e/MIGRATION.md for migration guide                     │
+# └──────────────────────────────────────────────────────────────────────┘
 
 set -euo pipefail
 
