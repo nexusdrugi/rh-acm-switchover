@@ -262,12 +262,35 @@ Verify rollback completion and data continuity after injected failures.
 | E2E-201 | Port phase_monitor.sh to Python | 6h | ✅ Done |
 | E2E-202 | Add JSONL metrics emission | 4h | ✅ Done |
 
-### Phase 3 Issues (NOT STARTED)
+### Phase 3 Status: ✅ COMPLETED (Resilience Testing)
 
-| ID | Title | Effort |
-|----|-------|--------|
-| E2E-300 | Implement failure injection scenarios | 6h |
-| E2E-301 | Add rollback validation test | 2h |
+| Step | Description | Status |
+|------|-------------|--------|
+| E2E-300 | Implement failure injection scenarios | ✅ Done |
+
+**Completed**: 2026-01-04
+
+### Phase 3 Files Created/Modified
+
+- `tests/e2e/failure_injection.py` - NEW: FailureInjector class with 3 scenarios (pause-backup, delay-restore, kill-observability-pod)
+- `tests/e2e/test_e2e_resilience.py` - NEW: 22 resilience tests covering injection scenarios
+- `tests/e2e/conftest.py` - Added CLI options: --e2e-inject-failure, --e2e-inject-at-phase
+- `tests/e2e/orchestrator.py` - Extended RunConfig with injection fields, added injection hooks
+- `tests/e2e/phase_handlers.py` - Added phase_callback parameter for injection timing
+- `tests/e2e/__init__.py` - Exported FailureInjector class
+- `lib/kube_client.py` - Added get_deployment() and delete_pod() methods
+
+### Phase 3 Features
+
+**Failure Injection Scenarios:**
+- `pause-backup`: Pauses BackupSchedule during cycle
+- `delay-restore`: Scales down Velero to delay restore operations
+- `kill-observability-pod`: Deletes MCO observability-observatorium-api pod
+- `random`: Randomly selects one of the above scenarios
+
+**CLI Options:**
+- `--e2e-inject-failure`: Select failure scenario to inject
+- `--e2e-inject-at-phase`: Choose phase at which to inject (default: activation)
 
 ## Running E2E Tests
 
@@ -313,6 +336,25 @@ pytest -m e2e \
   --e2e-run-hours=8 \
   --e2e-resume \
   tests/e2e/test_e2e_switchover.py::TestE2ESwitchover::test_multi_cycle_switchover
+```
+
+### Resilience Testing with Failure Injection (Phase 3)
+```bash
+# Inject pause-backup failure during activation phase
+pytest -m e2e \
+  --primary-context=mgmt1 \
+  --secondary-context=mgmt2 \
+  --e2e-inject-failure=pause-backup \
+  --e2e-inject-at-phase=activation \
+  tests/e2e/test_e2e_resilience.py
+
+# Inject random failure scenarios
+pytest -m e2e \
+  --primary-context=mgmt1 \
+  --secondary-context=mgmt2 \
+  --e2e-cycles=10 \
+  --e2e-inject-failure=random \
+  tests/e2e/test_e2e_switchover.py
 ```
 
 ### Manual (Bash, Deprecated)
