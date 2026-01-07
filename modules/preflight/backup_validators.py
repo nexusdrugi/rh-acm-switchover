@@ -7,6 +7,7 @@ from typing import Optional
 from lib.constants import (
     BACKUP_NAMESPACE,
     BACKUP_SCHEDULE_DEFAULT_NAME,
+    LOCAL_CLUSTER_NAME,
     RESTORE_PASSIVE_SYNC_NAME,
     SPEC_USE_MANAGED_SERVICE_ACCOUNT,
 )
@@ -289,7 +290,7 @@ class ManagedClusterBackupValidator(BaseValidator):
             joined_clusters = []
             for mc in managed_clusters:
                 mc_name = mc.get("metadata", {}).get("name", "unknown")
-                if mc_name == "local-cluster":
+                if mc_name == LOCAL_CLUSTER_NAME:
                     continue
 
                 # Check if cluster is joined (has Joined condition = True)

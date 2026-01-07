@@ -12,9 +12,15 @@ from lib.constants import (
     AUTO_IMPORT_STRATEGY_KEY,
     AUTO_IMPORT_STRATEGY_SYNC,
     BACKUP_NAMESPACE,
+    BACKUP_POLL_INTERVAL,
     BACKUP_SCHEDULE_DEFAULT_NAME,
+    BACKUP_SCHEDULE_DELETE_WAIT,
+    BACKUP_VERIFY_TIMEOUT,
     IMPORT_CONTROLLER_CONFIGMAP,
+    LOCAL_CLUSTER_NAME,
     MCE_NAMESPACE,
+    MCH_VERIFY_INTERVAL,
+    MCH_VERIFY_TIMEOUT,
     OBSERVABILITY_NAMESPACE,
     OBSERVABILITY_TERMINATE_INTERVAL,
     OBSERVABILITY_TERMINATE_TIMEOUT,
@@ -249,7 +255,7 @@ class Finalization:
         }
 
     @dry_run_skip(message="Skipping new backup verification")
-    def _verify_new_backups(self, timeout: int = 600):
+    def _verify_new_backups(self, timeout: int = BACKUP_VERIFY_TIMEOUT):
         """
         Verify new backups are being created.
 
@@ -308,7 +314,7 @@ class Finalization:
 
             elapsed = int(time.time() - start_time)
             logger.debug("Waiting for new backup... (elapsed: %ss)", elapsed)
-            time.sleep(30)
+            time.sleep(BACKUP_POLL_INTERVAL)
 
         logger.warning(
             f"No new backups detected after {timeout}s. " "BackupSchedule may take time to create first backup."
@@ -338,7 +344,7 @@ class Finalization:
         logger.info("BackupSchedule %s is enabled", schedule_name)
 
     @dry_run_skip(message="Skipping MultiClusterHub health verification")
-    def _verify_multiclusterhub_health(self, timeout: int = 300, interval: int = 10):
+    def _verify_multiclusterhub_health(self, timeout: int = MCH_VERIFY_TIMEOUT, interval: int = MCH_VERIFY_INTERVAL):
         """Ensure MultiClusterHub reports healthy and pods are running, with wait."""
 
         logger.info("Verifying MultiClusterHub health...")
@@ -568,7 +574,7 @@ class Finalization:
             logger.info("Deleted old BackupSchedule %s", schedule_name)
 
             # Wait a moment for deletion to complete
-            time.sleep(5)
+            time.sleep(BACKUP_SCHEDULE_DELETE_WAIT)
 
             # Recreate with same spec
             new_schedule = {
@@ -610,7 +616,7 @@ class Finalization:
         still_available = []
         for cluster in clusters:
             name = cluster.get("metadata", {}).get("name")
-            if name == "local-cluster":
+            if name == LOCAL_CLUSTER_NAME:
                 continue
 
             conditions = cluster.get("status", {}).get("conditions", [])

@@ -12,6 +12,7 @@ from lib.constants import (
     AUTO_IMPORT_STRATEGY_SYNC,
     BACKUP_NAMESPACE,
     IMPORT_CONTROLLER_CONFIGMAP,
+    LOCAL_CLUSTER_NAME,
     MCE_NAMESPACE,
     PATCH_VERIFY_MAX_RETRIES,
     PATCH_VERIFY_RETRY_DELAY,
@@ -368,7 +369,7 @@ class SecondaryActivation:
                 version="v1",
                 plural="managedclusters",
             )
-            has_non_local = any(mc.get("metadata", {}).get("name") != "local-cluster" for mc in mcs)
+            has_non_local = any(mc.get("metadata", {}).get("name") != LOCAL_CLUSTER_NAME for mc in mcs)
             if not has_non_local:
                 return
             # Determine current strategy
@@ -590,7 +591,7 @@ class SecondaryActivation:
         non_local_clusters = [
             mc.get("metadata", {}).get("name")
             for mc in managed_clusters
-            if mc.get("metadata", {}).get("name") != "local-cluster"
+            if mc.get("metadata", {}).get("name") != LOCAL_CLUSTER_NAME
         ]
 
         if len(non_local_clusters) >= MIN_MANAGED_CLUSTERS:

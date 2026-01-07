@@ -31,7 +31,7 @@ from lib import (
     __version_date__,
     setup_logging,
 )
-from lib.constants import EXIT_FAILURE, EXIT_INTERRUPT, EXIT_SUCCESS
+from lib.constants import EXIT_FAILURE, EXIT_INTERRUPT, EXIT_SUCCESS, STALE_STATE_THRESHOLD
 from lib.validation import InputValidator, ValidationError
 from modules import (
     Decommission,
@@ -264,7 +264,7 @@ def run_switchover(
         except (ValueError, TypeError) as e:
             logger.warning("Could not parse state timestamp: %s, treating as fresh", e)
             state_age = timedelta(seconds=0)
-        if state_age.total_seconds() > 900:  # 15 minutes (1/2 of minimum switchover time)
+        if state_age.total_seconds() > STALE_STATE_THRESHOLD:
             logger.warning("")
             logger.warning("⚠️  DETECTED STALE STATE FILE")
             logger.warning("Switchover appears to be already completed, but state file is %s old.",

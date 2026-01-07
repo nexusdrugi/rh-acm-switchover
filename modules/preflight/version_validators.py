@@ -13,6 +13,7 @@ from lib.constants import (
     AUTO_IMPORT_STRATEGY_SYNC,
     BACKUP_NAMESPACE,
     IMPORT_CONTROLLER_CONFIGMAP,
+    LOCAL_CLUSTER_NAME,
     MCE_NAMESPACE,
 )
 from lib.kube_client import KubeClient
@@ -503,7 +504,7 @@ class AutoImportStrategyValidator(BaseValidator):
             logger.debug("Error listing managedclusters for auto-import check: %s", exc)
             return 0
 
-        return sum(1 for mc in mcs if mc.get("metadata", {}).get("name") != "local-cluster")
+        return sum(1 for mc in mcs if mc.get("metadata", {}).get("name") != LOCAL_CLUSTER_NAME)
 
     def run(
         self,
