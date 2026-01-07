@@ -21,6 +21,7 @@ pip-audit>=2.6.0
 coverage>=7.3.0
 
 # E2E analyzer dependencies
-pandas>=2.0.0
+# pandas>=2.3.0 excludes vulnerable 2.2.x releases (CVE-2024-9880, CVE-2024-42992)
+pandas>=2.3.0
 matplotlib>=3.7.0
 seaborn>=0.12.0
