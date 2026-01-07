@@ -6,6 +6,8 @@ import logging
 import time
 from typing import Optional
 
+from kubernetes.client.rest import ApiException
+
 from lib.constants import (
     ACM_NAMESPACE,
     AUTO_IMPORT_STRATEGY_DEFAULT,
@@ -351,13 +353,19 @@ class Finalization:
         start = time.time()
 
         while True:
-            mch = self.secondary.get_custom_resource(
-                group="operator.open-cluster-management.io",
-                version="v1",
-                plural="multiclusterhubs",
-                name="multiclusterhub",
-                namespace=ACM_NAMESPACE,
-            )
+            try:
+                mch = self.secondary.get_custom_resource(
+                    group="operator.open-cluster-management.io",
+                    version="v1",
+                    plural="multiclusterhubs",
+                    name="multiclusterhub",
+                    namespace=ACM_NAMESPACE,
+                )
+            except ApiException as e:
+                if getattr(e, "status", None) == 404:
+                    mch = None
+                else:
+                    raise
 
             if not mch:
                 hubs = self.secondary.list_custom_resources(
