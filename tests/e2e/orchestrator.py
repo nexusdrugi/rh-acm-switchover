@@ -447,7 +447,7 @@ class E2EOrchestrator:
             for cycle in result.cycles:
                 for phase in cycle.phase_results:
                     status = "0" if phase.success else "1"
-                    # Approximate phase times from cycle times
+                    # Write actual phase timestamps/duration from phase results
                     f.write(
                         f"{cycle.cycle_id},{phase.phase_name},{status},"
                         f"{phase.start_time.isoformat()},{phase.end_time.isoformat()},"
