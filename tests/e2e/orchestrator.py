@@ -535,16 +535,14 @@ class E2EOrchestrator:
                             phase_name, result.message
                         )
                         if self._metrics_logger:
-                            self._metrics_logger.log_event(
-                                "failure_injection",
-                                {
-                                    "scenario": result.scenario,
-                                    "phase": result.phase,
-                                    "success": result.success,
-                                    "message": result.message,
-                                    "details": result.details,
-                                }
-                            )
+                            self._metrics_logger.log_metric({
+                                "metric_type": "failure_injection",
+                                "scenario": result.scenario,
+                                "phase": result.phase,
+                                "success": result.success,
+                                "message": result.message,
+                                "details": result.details,
+                            })
         else:
             phase_callback = None
         
