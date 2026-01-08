@@ -4,13 +4,6 @@ These tests verify that the old preflight_validators module
 still works as expected with deprecation warnings.
 """
 
-from modules.preflight_validators import (
-    BackupValidator,
-    NamespaceValidator,
-    ValidationReporter,
-    VersionValidator,
-)
-
 
 def test_backward_compatibility_imports_with_warning():
     """Test that importing from preflight_validators shows deprecation warning."""
@@ -45,6 +38,13 @@ def test_backward_compatibility_imports_with_warning():
 
 def test_backward_compatibility_classes_work():
     """Test that classes imported via backward compatibility work correctly."""
+    from modules.preflight_validators import (
+        BackupValidator,
+        NamespaceValidator,
+        ValidationReporter,
+        VersionValidator,
+    )
+
     reporter = ValidationReporter()
 
     # Test that classes can be instantiated
