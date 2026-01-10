@@ -117,7 +117,8 @@ podman run -it --rm \
   quay.io/tomazborstnar/acm-switchover:latest \
   --primary-context primary-hub \
   --secondary-context secondary-hub \
-  --method passive
+  --method passive \
+  --old-hub-action secondary
 ```
 
 ### 4. Execute Switchover (Full Restore)
@@ -129,20 +130,26 @@ podman run -it --rm \
   quay.io/tomazborstnar/acm-switchover:latest \
   --primary-context primary-hub \
   --secondary-context secondary-hub \
-  --method full
+  --method full \
+  --old-hub-action secondary
 ```
 
-### 5. Rollback to Primary
+### 5. Reverse Switchover (Switch Back to Original Primary)
+
+To switch back to your original primary hub after a successful switchover, perform a reverse switchover by swapping the context values:
 
 ```bash
 podman run -it --rm \
   -v ~/.kube:/app/.kube:ro \
   -v $(pwd)/state:/var/lib/acm-switchover \
   quay.io/tomazborstnar/acm-switchover:latest \
-  --rollback \
-  --primary-context primary-hub \
-  --secondary-context secondary-hub
+  --primary-context secondary-hub \
+  --secondary-context primary-hub \
+  --method passive \
+  --old-hub-action secondary
 ```
+
+> **Note**: The `--rollback` flag was removed in v1.3.0. Use a reverse switchover instead.
 
 ### 6. Decommission Old Hub
 

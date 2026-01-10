@@ -868,7 +868,22 @@ pip install -r requirements.txt
 
 ---
 
-[Unreleased]: https://github.com/tomazb/rh-acm-switchover/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/tomazb/rh-acm-switchover/compare/v1.4.10...HEAD
+[1.4.10]: https://github.com/tomazb/rh-acm-switchover/compare/v1.4.9...v1.4.10
+[1.4.9]: https://github.com/tomazb/rh-acm-switchover/compare/v1.4.8...v1.4.9
+[1.4.8]: https://github.com/tomazb/rh-acm-switchover/compare/v1.4.7...v1.4.8
+[1.4.7]: https://github.com/tomazb/rh-acm-switchover/compare/v1.4.6...v1.4.7
+[1.4.6]: https://github.com/tomazb/rh-acm-switchover/compare/v1.4.5...v1.4.6
+[1.4.5]: https://github.com/tomazb/rh-acm-switchover/compare/v1.4.4...v1.4.5
+[1.4.4]: https://github.com/tomazb/rh-acm-switchover/compare/v1.4.3...v1.4.4
+[1.4.3]: https://github.com/tomazb/rh-acm-switchover/compare/v1.4.2...v1.4.3
+[1.4.2]: https://github.com/tomazb/rh-acm-switchover/compare/v1.4.1...v1.4.2
+[1.4.1]: https://github.com/tomazb/rh-acm-switchover/compare/v1.4.0...v1.4.1
+[1.4.0]: https://github.com/tomazb/rh-acm-switchover/compare/v1.3.3...v1.4.0
+[1.3.3]: https://github.com/tomazb/rh-acm-switchover/compare/v1.3.2...v1.3.3
+[1.3.2]: https://github.com/tomazb/rh-acm-switchover/compare/v1.3.1...v1.3.2
+[1.3.1]: https://github.com/tomazb/rh-acm-switchover/compare/v1.3.0...v1.3.1
+[1.3.0]: https://github.com/tomazb/rh-acm-switchover/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/tomazb/rh-acm-switchover/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/tomazb/rh-acm-switchover/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/tomazb/rh-acm-switchover/releases/tag/v1.0.0
