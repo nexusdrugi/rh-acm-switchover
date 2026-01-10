@@ -79,7 +79,7 @@ def pytest_addoption(parser):
     group.addoption(
         "--e2e-cooldown",
         action="store",
-        default=int(os.environ.get("E2E_COOLDOWN", "30")),
+        default=os.environ.get("E2E_COOLDOWN", "30"),
         type=int,
         help="Cooldown seconds between cycles (env: E2E_COOLDOWN, default: 30)"
     )
