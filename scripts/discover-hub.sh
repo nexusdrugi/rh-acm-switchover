@@ -158,37 +158,6 @@ get_ocp_channel() {
     fi
 }
 
-# Get BackupSchedule state for a context
-# Returns: "active", "paused", "collision", or "none"
-get_backup_schedule_state() {
-    local ctx="$1"
-    
-    local schedule_name
-    schedule_name=$("$CLUSTER_CLI_BIN" --context="$ctx" get $RES_BACKUP_SCHEDULE -n "$BACKUP_NAMESPACE" \
-        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-    
-    if [[ -z "$schedule_name" ]]; then
-        echo "none"
-        return
-    fi
-    
-    local paused
-    paused=$("$CLUSTER_CLI_BIN" --context="$ctx" get $RES_BACKUP_SCHEDULE "$schedule_name" -n "$BACKUP_NAMESPACE" \
-        -o jsonpath='{.spec.paused}' 2>/dev/null || echo "")
-    
-    local phase
-    phase=$("$CLUSTER_CLI_BIN" --context="$ctx" get $RES_BACKUP_SCHEDULE "$schedule_name" -n "$BACKUP_NAMESPACE" \
-        -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
-    
-    if [[ "$phase" == "BackupCollision" ]]; then
-        echo "collision"
-    elif [[ "$paused" == "true" ]]; then
-        echo "paused"
-    else
-        echo "active"
-    fi
-}
-
 # Get restore state for a context
 # Returns: "passive-sync", "full-restore", "finished", "none"
 get_restore_state() {
