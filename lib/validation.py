@@ -20,7 +20,7 @@ import logging
 import re
 from typing import Pattern
 
-from lib.exceptions import ConfigurationError, SecurityValidationError, ValidationError
+from lib.exceptions import SecurityValidationError, ValidationError
 
 logger = logging.getLogger("acm_switchover")
 
