@@ -626,7 +626,7 @@ def main():
 
     try:
         primary, secondary = _initialize_clients(args, logger)
-    except (ValueError, RuntimeError, Exception) as exc:  # pragma: no cover - fatal init error
+    except Exception as exc:  # pragma: no cover - fatal init error
         logger.error("Failed to initialize Kubernetes clients: %s", exc)
         sys.exit(EXIT_FAILURE)
 
@@ -637,7 +637,7 @@ def main():
         logger.info("State saved to: %s", args.state_file)
         logger.info("Re-run the same command to resume from last successful step")
         sys.exit(EXIT_INTERRUPT)
-    except (RuntimeError, ValueError, Exception) as exc:
+    except Exception as exc:
         logger.error("\n✗ Unexpected error: %s", exc, exc_info=args.verbose)
         state.add_error(str(exc))
         sys.exit(EXIT_FAILURE)

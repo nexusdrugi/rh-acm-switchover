@@ -136,7 +136,7 @@ class Finalization:
             logger.error("Finalization failed: %s", e)
             self.state.add_error(str(e), "finalization")
             return False
-        except (RuntimeError, ValueError, Exception) as e:
+        except Exception as e:
             logger.error("Unexpected error during finalization: %s", e)
             self.state.add_error(f"Unexpected: {str(e)}", "finalization")
             return False

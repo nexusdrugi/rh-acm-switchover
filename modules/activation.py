@@ -173,7 +173,7 @@ class SecondaryActivation:
             logger.error("Secondary hub activation failed: %s", e)
             self.state.add_error(str(e), "activation")
             return False
-        except (RuntimeError, ValueError, Exception) as e:
+        except Exception as e:
             logger.error("Unexpected error during activation: %s", e)
             self.state.add_error(f"Unexpected: {str(e)}", "activation")
             return False
