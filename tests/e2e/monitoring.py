@@ -14,6 +14,7 @@ Features:
 
 import json
 import logging
+import os
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -233,6 +234,7 @@ class ResourceMonitor:
         self._alert_counts: Dict[str, int] = {}
         self._last_seen_states: Dict[str, datetime] = {}
         self._current_phase = "idle"
+        self._alerts_lock = threading.Lock()
 
     def set_phase(self, phase: str) -> None:
         """Set the current monitoring phase."""
@@ -541,11 +543,20 @@ class ResourceMonitor:
         # Log to metrics file
         self.metrics_logger.log_alert(alert)
 
-        # Write individual alert file
+        # Write individual alert file with atomic write and lock
         safe_resource = alert.resource.replace("/", "_")
         alert_file = self.alerts_dir / f"{alert.alert_type}_{alert.hub_type}_{safe_resource}.json"
-        with open(alert_file, "w", encoding="utf-8") as f:
-            json.dump(alert.to_dict(), f, indent=2)
+        with self._alerts_lock:
+            # Write to temp file and atomically replace to prevent partial reads
+            tmp_file = alert_file.with_suffix(".json.tmp")
+            try:
+                with open(tmp_file, "w", encoding="utf-8") as f:
+                    json.dump(alert.to_dict(), f, indent=2)
+                os.replace(tmp_file, alert_file)
+            except OSError:
+                # Fall back to direct write if atomic replace fails
+                with open(alert_file, "w", encoding="utf-8") as f:
+                    json.dump(alert.to_dict(), f, indent=2)
 
         # Log to console
         self.logger.warning(
