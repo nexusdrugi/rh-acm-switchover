@@ -471,4 +471,7 @@ class PhaseHandlers:
         )
         results.append(finalization_result)
 
+        if phase_callback:
+            phase_callback("finalization", "after")
+
         return results
