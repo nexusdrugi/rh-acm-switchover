@@ -705,7 +705,7 @@ Then modify phase handlers to call `save_state()` at end of phase or `flush_stat
 
 ### 10. Inefficient Kubeconfig Loading
 
-**File:** `modules/post_activation.py:716-754` (`_load_kubeconfig_data`)
+**File:** `modules/post_activation.py:720-758` (`_load_kubeconfig_data`)
 
 **Severity:** MEDIUM
 
