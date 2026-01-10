@@ -132,11 +132,11 @@ detect_cluster_cli() {
         check_fail "Neither oc nor kubectl CLI found"
     fi
 
-    # Check for jq (optional but recommended)
+    # Check for jq (required for JSON processing)
     if command -v jq &> /dev/null; then
         check_pass "jq is installed"
     else
-        check_warn "jq not found (optional, but recommended for some commands)"
+        check_fail "jq not found (required for JSON processing)"
     fi
 
     # Print CLI info if available

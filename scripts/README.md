@@ -202,7 +202,7 @@ Automates all prerequisite checks before starting an ACM switchover to catch con
 
 ### What It Checks
 
-1. **CLI Tools** - Verifies `oc`/`kubectl` and `jq` are installed
+1. **CLI Tools** - Verifies `oc`/`kubectl` and `jq` are installed (jq is required)
 2. **Kubernetes Contexts** - Confirms contexts exist and are accessible
 3. **Namespace Access** - Validates required namespaces on both hubs
 4. **ACM Versions** - Ensures versions match between hubs
