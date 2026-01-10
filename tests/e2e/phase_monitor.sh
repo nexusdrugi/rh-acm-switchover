@@ -148,9 +148,9 @@ check_cluster_alerts() {
         fi
     else
         # Reset alert state when cluster becomes available
-        unset LAST_SEEN_STATES[$state_key]
+        unset "LAST_SEEN_STATES[$state_key]"
         local alert_key="${state_key}_unavailable"
-        unset ALERT_COUNTS[$alert_key]
+        unset "ALERT_COUNTS[$alert_key]"
     fi
 }
 
@@ -238,9 +238,9 @@ check_backup_alerts() {
         fi
     else
         local failure_state_key="${hub_type}_backup_failure_started"
-        unset LAST_SEEN_STATES[$failure_state_key]
+        unset "LAST_SEEN_STATES[$failure_state_key]"
         local alert_key="${hub_type}_backup_failure_exceeded"
-        unset ALERT_COUNTS[$alert_key]
+        unset "ALERT_COUNTS[$alert_key]"
     fi
 }
 
