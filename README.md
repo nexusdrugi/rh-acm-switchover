@@ -119,18 +119,18 @@ cd rh-acm-switchover
 pip install -r requirements.txt
 ```
 
-### Option 2: Container Image (Coming Soon)
+### Option 2: Container Image
 
-> **Note:** Container image is not yet published. Use the source installation method above.
+> **Note:** Container image must be built locally. See the [Container Usage Guide](docs/getting-started/container.md) for build instructions.
 
 ```bash
-# Pull the latest image (NOT YET AVAILABLE)
-podman pull quay.io/tomazborstnar/acm-switchover:latest
+# Build the container image locally
+podman build -t acm-switchover:latest -f container-bootstrap/Containerfile .
 
 # Run validation
 podman run -it --rm \
   -v ~/.kube:/app/.kube:ro \
-  quay.io/tomazborstnar/acm-switchover:latest \
+  acm-switchover:latest \
   --validate-only \
   --primary-context primary-hub \
   --secondary-context secondary-hub
