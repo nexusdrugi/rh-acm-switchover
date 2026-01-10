@@ -8,6 +8,7 @@ __version_date__ = "2026-01-05"
 from .exceptions import (
     ConfigurationError,
     FatalError,
+    SecurityValidationError,
     SwitchoverError,
     TransientError,
     ValidationError,
@@ -32,6 +33,7 @@ __all__ = [
     "TransientError",
     "FatalError",
     "ValidationError",
+    "SecurityValidationError",
     "ConfigurationError",
     "Phase",
     "StateManager",
