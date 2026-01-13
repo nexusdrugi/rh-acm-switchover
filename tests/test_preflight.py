@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from lib.constants import ACM_NAMESPACE, BACKUP_NAMESPACE
-from modules.preflight_validators import (
+from modules.preflight import (
     BackupScheduleValidator,
     NamespaceValidator,
     ObservabilityDetector,
