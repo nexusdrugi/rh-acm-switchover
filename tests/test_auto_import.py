@@ -17,7 +17,7 @@ from lib.constants import (
 from lib.utils import StateManager
 from modules.activation import SecondaryActivation
 from modules.finalization import Finalization
-from modules.preflight_validators import AutoImportStrategyValidator, ValidationReporter
+from modules.preflight import AutoImportStrategyValidator, ValidationReporter
 
 
 @pytest.mark.unit
