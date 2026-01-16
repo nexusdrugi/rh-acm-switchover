@@ -17,6 +17,7 @@ from lib.constants import (
     CLUSTER_VERIFY_INTERVAL,
     CLUSTER_VERIFY_MAX_WORKERS,
     CLUSTER_VERIFY_TIMEOUT,
+    DEFAULT_KUBECONFIG_SIZE,
     INITIAL_CLUSTER_WAIT_TIMEOUT,
     LOCAL_CLUSTER_NAME,
     MANAGED_CLUSTER_AGENT_NAMESPACE,
@@ -976,15 +977,18 @@ class PostActivationVerification:
                             continue
                     else:
                         # Size check bypassed - log warning but continue loading
-                        kubeconfig_size = os.path.getsize(expanded_path)
-                        if kubeconfig_size > MAX_KUBECONFIG_SIZE:
-                            logger.warning(
-                                "Kubeconfig file large: %s (%d bytes, exceeds default limit %d bytes). "
-                                "Loading anyway for critical operation.",
-                                os.path.basename(expanded_path),
-                                kubeconfig_size,
-                                MAX_KUBECONFIG_SIZE,
-                            )
+                        # Only warn if size checking is meaningful (MAX_KUBECONFIG_SIZE > 0)
+                        # and file exceeds the default limit (not the overridden value)
+                        if MAX_KUBECONFIG_SIZE > 0:
+                            kubeconfig_size = os.path.getsize(expanded_path)
+                            if kubeconfig_size > DEFAULT_KUBECONFIG_SIZE:
+                                logger.warning(
+                                    "Kubeconfig file large: %s (%d bytes, exceeds default limit %d bytes). "
+                                    "Loading anyway for critical operation.",
+                                    os.path.basename(expanded_path),
+                                    kubeconfig_size,
+                                    DEFAULT_KUBECONFIG_SIZE,
+                                )
 
                     with open(expanded_path) as f:
                         data = yaml.safe_load(f) or {}
