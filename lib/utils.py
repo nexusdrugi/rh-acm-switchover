@@ -2,6 +2,7 @@
 Common utilities for ACM switchover automation.
 """
 
+import atexit
 import functools
 import json
 import logging
@@ -100,6 +101,11 @@ class StateManager:
 
     def __init__(self, state_file: str = ".state/switchover-state.json"):
         self.state_file = state_file
+        self._dirty = False  # Track if state has pending writes
+        self._active_temp_files: set[str] = set()  # Track active temp files for cleanup
+        # Register atexit handlers to flush pending state and clean up temp files on program exit
+        atexit.register(self._flush_on_exit)
+        atexit.register(self._cleanup_temp_files)
         self.state = self._load_state()
 
     def _load_state(self) -> Dict[str, Any]:
@@ -150,6 +156,9 @@ class StateManager:
         temp_file = self.state_file + ".tmp"
         lock_handle = None
 
+        # Track temp file for cleanup (atexit handler will clean up if process crashes)
+        self._active_temp_files.add(temp_file)
+
         try:
             if fcntl:
                 lock_file = self.state_file + ".lock"
@@ -174,14 +183,17 @@ class StateManager:
 
                 # Atomic rename (POSIX guarantees this is atomic on same filesystem)
                 os.replace(temp_file, self.state_file)
+                # Success - remove from tracking since file was successfully renamed
+                self._active_temp_files.discard(temp_file)
 
             except (OSError, ValueError, TypeError) as e:
                 # Clean up temp file if it exists
                 try:
                     if os.path.exists(temp_file):
                         os.remove(temp_file)
+                        self._active_temp_files.discard(temp_file)
                 except OSError:
-                    pass  # Best-effort cleanup
+                    pass  # Best-effort cleanup - atexit handler will try again
                 logging.error("Failed to write state file %s: %s", self.state_file, e)
                 raise
         finally:
@@ -193,20 +205,28 @@ class StateManager:
                 lock_handle.close()
 
     def save_state(self) -> None:
-        """Persist current state to disk."""
+        """Persist current state to disk if dirty."""
+        if self._dirty:
+            self.state["last_updated"] = _utc_timestamp()
+            self._write_state(self.state)
+            self._dirty = False
+
+    def flush_state(self) -> None:
+        """Force immediate write of state to disk (for critical checkpoints)."""
         self.state["last_updated"] = _utc_timestamp()
         self._write_state(self.state)
+        self._dirty = False
 
     def set_phase(self, phase: Phase) -> None:
         """Update current phase."""
         self.state["current_phase"] = phase.value
-        self.save_state()
+        self.flush_state()  # Phase transitions are critical checkpoints
 
     def mark_step_completed(self, step_name: str) -> None:
         """Mark a step as completed."""
         if not self.is_step_completed(step_name):
             self.state["completed_steps"].append({"name": step_name, "timestamp": _utc_timestamp()})
-            self.save_state()
+            self._dirty = True  # Mark as dirty, don't write immediately
 
     def is_step_completed(self, step_name: str) -> bool:
         """Check if a step was already completed."""
@@ -215,7 +235,7 @@ class StateManager:
     def set_config(self, key: str, value: Any) -> None:
         """Store configuration value."""
         self.state["config"][key] = value
-        self.save_state()
+        self._dirty = True  # Mark as dirty, don't write immediately
 
     def get_config(self, key: str, default: Any = None) -> Any:
         """Retrieve configuration value."""
@@ -230,12 +250,12 @@ class StateManager:
                 "timestamp": _utc_timestamp(),
             }
         )
-        self.save_state()
+        self.flush_state()  # Errors are critical checkpoints
 
     def reset(self) -> None:
         """Reset state to initial."""
         self.state = self._new_state()
-        self.save_state()
+        self.flush_state()  # Reset is a critical checkpoint
 
     def get_current_phase(self) -> Phase:
         """Get current phase as enum."""
@@ -249,7 +269,7 @@ class StateManager:
                 self.state_file,
             )
             self.state["current_phase"] = Phase.INIT.value
-            self.save_state()
+            self.flush_state()  # Phase correction is a critical checkpoint
             return Phase.INIT
 
     def ensure_contexts(self, primary_context: str, secondary_context: Optional[str]) -> None:
@@ -281,7 +301,29 @@ class StateManager:
             self.state = self._new_state()
 
         self.state["contexts"] = desired
-        self.save_state()
+        self.flush_state()  # Context changes are critical checkpoints
+
+    def _flush_on_exit(self) -> None:
+        """Flush pending state changes on program exit (atexit handler)."""
+        if self._dirty:
+            try:
+                self.save_state()
+            except Exception:
+                # Silently ignore errors during exit - we don't want to raise exceptions
+                # in atexit handlers as they can mask the real exit reason
+                pass
+
+    def _cleanup_temp_files(self) -> None:
+        """Clean up any remaining temp files on program exit (atexit handler).
+
+        This handles cases where the process crashes before temp files are cleaned up.
+        """
+        for temp_file in list(self._active_temp_files):
+            if os.path.exists(temp_file):
+                try:
+                    os.remove(temp_file)
+                except OSError:
+                    pass  # Best-effort cleanup
 
 
 class JSONFormatter(logging.Formatter):
