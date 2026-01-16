@@ -7,6 +7,7 @@ import functools
 import json
 import logging
 import os
+import signal
 import stat
 from datetime import datetime, timezone
 from enum import Enum
@@ -103,9 +104,18 @@ class StateManager:
         self.state_file = state_file
         self._dirty = False  # Track if state has pending writes
         self._active_temp_files: set[str] = set()  # Track active temp files for cleanup
+        self._flushing = False  # Track if we're currently flushing to avoid double-write
         # Register atexit handlers to flush pending state and clean up temp files on program exit
         atexit.register(self._flush_on_exit)
         atexit.register(self._cleanup_temp_files)
+        # Register signal handlers to flush dirty state before termination
+        # This ensures state is saved even on SIGTERM/SIGINT (atexit doesn't run on SIGKILL)
+        # Use wrapper functions since signal handlers must accept (signum, frame) signature
+        def signal_handler(signum: int, frame: Any) -> None:
+            self._flush_on_signal(signum, frame)
+
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
         self.state = self._load_state()
 
     def _load_state(self) -> Dict[str, Any]:
@@ -206,7 +216,7 @@ class StateManager:
 
     def save_state(self) -> None:
         """Persist current state to disk if dirty."""
-        if self._dirty:
+        if self._dirty and not self._flushing:
             self.state["last_updated"] = _utc_timestamp()
             self._write_state(self.state)
             self._dirty = False
@@ -303,15 +313,40 @@ class StateManager:
         self.state["contexts"] = desired
         self.flush_state()  # Context changes are critical checkpoints
 
+    def _flush_on_signal(self, signum: int, frame: Any) -> None:
+        """Flush pending state changes on termination signal (signal handler).
+
+        This handler is registered for SIGTERM and SIGINT to ensure dirty state
+        is persisted before the process terminates. This is critical because
+        atexit handlers don't run on SIGKILL and may not run reliably on SIGTERM.
+
+        Args:
+            signum: Signal number (SIGTERM or SIGINT)
+            frame: Current stack frame (unused)
+        """
+        if self._dirty and not self._flushing:
+            try:
+                self._flushing = True
+                self.save_state()
+            except Exception:
+                # Silently ignore errors during signal handling - we don't want to raise
+                # exceptions in signal handlers as they can mask the real exit reason
+                pass
+            finally:
+                self._flushing = False
+
     def _flush_on_exit(self) -> None:
         """Flush pending state changes on program exit (atexit handler)."""
-        if self._dirty:
+        if self._dirty and not self._flushing:
             try:
+                self._flushing = True
                 self.save_state()
             except Exception:
                 # Silently ignore errors during exit - we don't want to raise exceptions
                 # in atexit handlers as they can mask the real exit reason
                 pass
+            finally:
+                self._flushing = False
 
     def _cleanup_temp_files(self) -> None:
         """Clean up any remaining temp files on program exit (atexit handler).
