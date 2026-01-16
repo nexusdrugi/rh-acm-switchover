@@ -38,6 +38,9 @@ SECRET_VISIBILITY_INTERVAL = 1
 # Parallel cluster verification settings
 CLUSTER_VERIFY_MAX_WORKERS = 10
 
+# Maximum kubeconfig file size (10MB) to prevent memory exhaustion
+MAX_KUBECONFIG_SIZE = 10 * 1024 * 1024
+
 # Namespaces
 BACKUP_NAMESPACE = "open-cluster-management-backup"
 OBSERVABILITY_NAMESPACE = "open-cluster-management-observability"

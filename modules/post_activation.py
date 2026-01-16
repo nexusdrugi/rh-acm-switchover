@@ -7,6 +7,7 @@ import logging
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Dict, List, Optional
 
 import yaml
 from kubernetes import client, config
@@ -19,6 +20,7 @@ from lib.constants import (
     INITIAL_CLUSTER_WAIT_TIMEOUT,
     LOCAL_CLUSTER_NAME,
     MANAGED_CLUSTER_AGENT_NAMESPACE,
+    MAX_KUBECONFIG_SIZE,
     OBSERVABILITY_NAMESPACE,
     OBSERVABILITY_POD_TIMEOUT,
     POD_READINESS_TOLERANCE,
@@ -28,6 +30,7 @@ from lib.constants import (
 from lib.exceptions import SwitchoverError
 from lib.kube_client import KubeClient
 from lib.utils import StateManager, dry_run_skip
+from lib.validation import ValidationError
 from lib.waiter import wait_for_condition
 
 logger = logging.getLogger("acm_switchover")
@@ -47,6 +50,24 @@ class PostActivationVerification:
         self.state = state_manager
         self.has_observability = has_observability
         self.dry_run = dry_run
+        self._cached_managed_clusters: Optional[List[Dict]] = None  # Cache for managed clusters
+
+    def _get_managed_clusters(self, force_refresh: bool = False) -> List[Dict]:
+        """Get managed clusters with caching.
+
+        Args:
+            force_refresh: If True, bypass cache and fetch fresh data
+
+        Returns:
+            List of managed cluster resources
+        """
+        if self._cached_managed_clusters is None or force_refresh:
+            self._cached_managed_clusters = self.secondary.list_custom_resources(
+                group="cluster.open-cluster-management.io",
+                version="v1",
+                plural="managedclusters",
+            )
+        return self._cached_managed_clusters
 
     def verify(self) -> bool:
         """
@@ -402,11 +423,7 @@ class PostActivationVerification:
             return
 
         logger.info("Ensuring disable-auto-import annotations are cleared...")
-        managed_clusters = self.secondary.list_custom_resources(
-            group="cluster.open-cluster-management.io",
-            version="v1",
-            plural="managedclusters",
-        )
+        managed_clusters = self._get_managed_clusters()
 
         flagged = []
         for mc in managed_clusters:
@@ -454,11 +471,7 @@ class PostActivationVerification:
             return
 
         # Get list of managed clusters with their API server URLs
-        managed_clusters = self.secondary.list_custom_resources(
-            group="cluster.open-cluster-management.io",
-            version="v1",
-            plural="managedclusters",
-        )
+        managed_clusters = self._get_managed_clusters()
 
         # Build list of (cluster_name, api_url) tuples, excluding local-cluster
         cluster_info = []
@@ -583,112 +596,23 @@ class PostActivationVerification:
         Returns:
             True if successful, False otherwise
         """
-        import time as time_module
-
         try:
             logger.info("Force-reconnecting klusterlet for %s to new hub...", cluster_name)
 
             # Step 1: Get the import secret from the new hub
-            import_secret = self.secondary.get_secret(
-                namespace=cluster_name,
-                name=f"{cluster_name}-import",
-            )
-            if not import_secret:
-                logger.warning("No import secret found for %s on new hub", cluster_name)
+            import_yaml = self._get_import_secret(cluster_name)
+            if not import_yaml:
                 return False
-
-            import_yaml_b64 = import_secret.get("data", {}).get("import.yaml", "")
-            if not import_yaml_b64:
-                logger.warning("Import secret for %s has no import.yaml data", cluster_name)
-                return False
-
-            import_yaml = base64.b64decode(import_yaml_b64).decode("utf-8")
 
             # Step 2: Connect to the managed cluster and delete the bootstrap secret
-            config.load_kube_config(context=context_name)
-            v1 = client.CoreV1Api()
-
-            try:
-                v1.delete_namespaced_secret(
-                    name="bootstrap-hub-kubeconfig",
-                    namespace=MANAGED_CLUSTER_AGENT_NAMESPACE,
-                )
-                logger.debug("Deleted bootstrap-hub-kubeconfig secret on %s", cluster_name)
-            except ApiException as e:
-                if e.status != 404:
-                    logger.warning("Failed to delete bootstrap secret on %s: %s", cluster_name, e)
+            self._delete_bootstrap_secret(context_name, cluster_name)
 
             # Step 3: Apply the import manifest to recreate the bootstrap secret
-            # Parse the import YAML and apply each resource
-            import_docs = list(yaml.safe_load_all(import_yaml))
-            apps_v1 = client.AppsV1Api()
-
-            for doc in import_docs:
-                if not doc:
-                    continue
-                kind = doc.get("kind", "")
-                name = doc.get("metadata", {}).get("name", "")
-                namespace = doc.get("metadata", {}).get("namespace")
-
-                try:
-                    if kind == "Secret" and name == "bootstrap-hub-kubeconfig":
-                        # This is the key secret we need to recreate
-                        v1.create_namespaced_secret(
-                            namespace=namespace,
-                            body=doc,
-                        )
-                        logger.debug(
-                            "Created bootstrap-hub-kubeconfig secret on %s",
-                            cluster_name,
-                        )
-                except ApiException as e:
-                    if e.status == 409:  # Already exists
-                        pass
-                    else:
-                        logger.debug("Error applying %s/%s: %s", kind, name, e)
+            self._apply_import_manifest(context_name, import_yaml, cluster_name)
 
             # Step 4: Wait for secret to be visible, then restart the klusterlet deployment
-            def secret_exists() -> tuple:
-                """Check if bootstrap-hub-kubeconfig secret exists."""
-                try:
-                    v1.read_namespaced_secret(
-                        name="bootstrap-hub-kubeconfig",
-                        namespace=MANAGED_CLUSTER_AGENT_NAMESPACE,
-                    )
-                    return (True, "secret exists")
-                except ApiException as e:
-                    if e.status == 404:
-                        return (False, "secret not found")
-                    return (False, f"error: {e.status}")
-
-            secret_ready = wait_for_condition(
-                description=f"bootstrap-hub-kubeconfig secret on {cluster_name}",
-                condition_fn=secret_exists,
-                timeout=SECRET_VISIBILITY_TIMEOUT,
-                interval=SECRET_VISIBILITY_INTERVAL,
-                logger=logger,
-            )
-
-            if not secret_ready:
-                logger.warning("bootstrap-hub-kubeconfig secret not visible on %s after timeout", cluster_name)
-
-            try:
-                # Trigger a rollout restart by patching the deployment
-                patch = {
-                    "spec": {
-                        "template": {
-                            "metadata": {"annotations": {"acm-switchover/restart": str(int(time_module.time()))}}
-                        }
-                    }
-                }
-                apps_v1.patch_namespaced_deployment(
-                    name="klusterlet",
-                    namespace=MANAGED_CLUSTER_AGENT_NAMESPACE,
-                    body=patch,
-                )
-                logger.debug("Triggered klusterlet restart on %s", cluster_name)
-            except ApiException as e:
-                logger.warning("Failed to restart klusterlet on %s: %s", cluster_name, e)
+            self._wait_for_secret_visibility(context_name, cluster_name)
+            self._restart_klusterlet(context_name, cluster_name)
 
             logger.info("Force-reconnected klusterlet for %s", cluster_name)
             return True
@@ -696,6 +620,154 @@ class PostActivationVerification:
         except (ApiException, Exception) as e:
             logger.warning("Failed to force-reconnect klusterlet for %s: %s", cluster_name, e)
             return False
+
+    def _get_import_secret(self, cluster_name: str) -> Optional[str]:
+        """Get and decode the import secret from the new hub.
+
+        Args:
+            cluster_name: Name of the ManagedCluster
+
+        Returns:
+            Decoded import YAML string, or None if not found
+        """
+        import_secret = self.secondary.get_secret(
+            namespace=cluster_name,
+            name=f"{cluster_name}-import",
+        )
+        if not import_secret:
+            logger.warning("No import secret found for %s on new hub", cluster_name)
+            return None
+
+        import_yaml_b64 = import_secret.get("data", {}).get("import.yaml", "")
+        if not import_yaml_b64:
+            logger.warning("Import secret for %s has no import.yaml data", cluster_name)
+            return None
+
+        return base64.b64decode(import_yaml_b64).decode("utf-8")
+
+    def _delete_bootstrap_secret(self, context_name: str, cluster_name: str) -> None:
+        """Delete the bootstrap-hub-kubeconfig secret on the managed cluster.
+
+        Args:
+            context_name: Kubeconfig context to use for connecting to the cluster
+            cluster_name: Name of the ManagedCluster
+        """
+        # Load the correct context before creating API client
+        config.load_kube_config(context=context_name)
+        v1 = client.CoreV1Api()
+        try:
+            v1.delete_namespaced_secret(
+                name="bootstrap-hub-kubeconfig",
+                namespace=MANAGED_CLUSTER_AGENT_NAMESPACE,
+            )
+            logger.debug("Deleted bootstrap-hub-kubeconfig secret on %s", cluster_name)
+        except ApiException as e:
+            if e.status != 404:
+                logger.warning("Failed to delete bootstrap secret on %s: %s", cluster_name, e)
+
+    def _apply_import_manifest(self, context_name: str, import_yaml: str, cluster_name: str) -> None:
+        """Apply the import manifest to recreate the bootstrap secret.
+
+        Args:
+            context_name: Kubeconfig context to use for connecting to the cluster
+            import_yaml: Decoded import YAML string
+            cluster_name: Name of the ManagedCluster
+        """
+        # Load the correct context before creating API clients
+        config.load_kube_config(context=context_name)
+        v1 = client.CoreV1Api()
+
+        # Parse the import YAML and apply each resource
+        import_docs = list(yaml.safe_load_all(import_yaml))
+
+        for doc in import_docs:
+            if not doc:
+                continue
+            kind = doc.get("kind", "")
+            name = doc.get("metadata", {}).get("name", "")
+            namespace = doc.get("metadata", {}).get("namespace")
+
+            try:
+                if kind == "Secret" and name == "bootstrap-hub-kubeconfig":
+                    # This is the key secret we need to recreate
+                    v1.create_namespaced_secret(
+                        namespace=namespace,
+                        body=doc,
+                    )
+                    logger.debug(
+                        "Created bootstrap-hub-kubeconfig secret on %s",
+                        cluster_name,
+                    )
+            except ApiException as e:
+                if e.status == 409:  # Already exists
+                    pass
+                else:
+                    logger.debug("Error applying %s/%s: %s", kind, name, e)
+
+    def _wait_for_secret_visibility(self, context_name: str, cluster_name: str) -> None:
+        """Wait for the bootstrap-hub-kubeconfig secret to be visible.
+
+        Args:
+            context_name: Kubeconfig context to use for connecting to the cluster
+            cluster_name: Name of the ManagedCluster
+        """
+        # Load the correct context before creating API client
+        config.load_kube_config(context=context_name)
+        v1 = client.CoreV1Api()
+
+        def secret_exists() -> tuple:
+            """Check if bootstrap-hub-kubeconfig secret exists."""
+            try:
+                v1.read_namespaced_secret(
+                    name="bootstrap-hub-kubeconfig",
+                    namespace=MANAGED_CLUSTER_AGENT_NAMESPACE,
+                )
+                return (True, "secret exists")
+            except ApiException as e:
+                if e.status == 404:
+                    return (False, "secret not found")
+                return (False, f"error: {e.status}")
+
+        secret_ready = wait_for_condition(
+            description=f"bootstrap-hub-kubeconfig secret on {cluster_name}",
+            condition_fn=secret_exists,
+            timeout=SECRET_VISIBILITY_TIMEOUT,
+            interval=SECRET_VISIBILITY_INTERVAL,
+            logger=logger,
+        )
+
+        if not secret_ready:
+            logger.warning("bootstrap-hub-kubeconfig secret not visible on %s after timeout", cluster_name)
+
+    def _restart_klusterlet(self, context_name: str, cluster_name: str) -> None:
+        """Restart the klusterlet deployment on the managed cluster.
+
+        Args:
+            context_name: Kubeconfig context to use for connecting to the cluster
+            cluster_name: Name of the ManagedCluster
+        """
+        import time as time_module
+
+        # Load the correct context before creating API client
+        config.load_kube_config(context=context_name)
+        apps_v1 = client.AppsV1Api()
+        try:
+            # Trigger a rollout restart by patching the deployment
+            patch = {
+                "spec": {
+                    "template": {
+                        "metadata": {"annotations": {"acm-switchover/restart": str(int(time_module.time()))}}
+                    }
+                }
+            }
+            apps_v1.patch_namespaced_deployment(
+                name="klusterlet",
+                namespace=MANAGED_CLUSTER_AGENT_NAMESPACE,
+                body=patch,
+            )
+            logger.debug("Triggered klusterlet restart on %s", cluster_name)
+        except ApiException as e:
+            logger.warning("Failed to restart klusterlet on %s: %s", cluster_name, e)
 
     def _get_hub_api_server(self) -> str:
         """Get the API server URL for the new hub."""
@@ -742,6 +814,17 @@ class PostActivationVerification:
                     continue
 
                 try:
+                    # Check file size before loading to prevent memory exhaustion
+                    kubeconfig_size = os.path.getsize(expanded_path)
+                    if kubeconfig_size > MAX_KUBECONFIG_SIZE:
+                        logger.warning(
+                            "Kubeconfig file too large: %s (%d bytes, max %d bytes). Skipping.",
+                            os.path.basename(expanded_path),
+                            kubeconfig_size,
+                            MAX_KUBECONFIG_SIZE,
+                        )
+                        continue
+
                     with open(expanded_path) as f:
                         data = yaml.safe_load(f) or {}
                         merged["contexts"].extend(data.get("contexts", []))
