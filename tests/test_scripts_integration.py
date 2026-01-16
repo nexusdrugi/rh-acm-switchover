@@ -644,6 +644,7 @@ def test_preflight_success_passive_method(mock_oc_success):
     assert "Observability namespace exists" in out
     assert "MultiClusterObservability CR found" in out
     assert "'thanos-object-storage' secret exists" in out
+    assert "autoImportStrategy not applicable" in out
 
 
 @pytest.mark.integration
