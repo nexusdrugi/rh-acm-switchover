@@ -151,25 +151,25 @@ fi
 # Check 4: Verify ACM versions
 section_header "4. Checking ACM Versions"
 
-PRIMARY_VERSION=$(oc --context="$PRIMARY_CONTEXT" get $RES_MCH -n "$ACM_NAMESPACE" -o jsonpath='{.items[0].status.currentVersion}' 2>/dev/null || echo "unknown")
-SECONDARY_VERSION=$(oc --context="$SECONDARY_CONTEXT" get $RES_MCH -n "$ACM_NAMESPACE" -o jsonpath='{.items[0].status.currentVersion}' 2>/dev/null || echo "unknown")
+ACM_PRIMARY_VERSION=$(oc --context="$PRIMARY_CONTEXT" get $RES_MCH -n "$ACM_NAMESPACE" -o jsonpath='{.items[0].status.currentVersion}' 2>/dev/null || echo "unknown")
+ACM_SECONDARY_VERSION=$(oc --context="$SECONDARY_CONTEXT" get $RES_MCH -n "$ACM_NAMESPACE" -o jsonpath='{.items[0].status.currentVersion}' 2>/dev/null || echo "unknown")
 
-if [[ "$PRIMARY_VERSION" != "unknown" ]]; then
-    check_pass "Primary hub ACM version: $PRIMARY_VERSION"
+if [[ "$ACM_PRIMARY_VERSION" != "unknown" ]]; then
+    check_pass "Primary hub ACM version: $ACM_PRIMARY_VERSION"
 else
     check_fail "Primary hub: Could not detect ACM version"
 fi
 
-if [[ "$SECONDARY_VERSION" != "unknown" ]]; then
-    check_pass "Secondary hub ACM version: $SECONDARY_VERSION"
+if [[ "$ACM_SECONDARY_VERSION" != "unknown" ]]; then
+    check_pass "Secondary hub ACM version: $ACM_SECONDARY_VERSION"
 else
     check_fail "Secondary hub: Could not detect ACM version"
 fi
 
-if [[ "$PRIMARY_VERSION" == "$SECONDARY_VERSION" ]] && [[ "$PRIMARY_VERSION" != "unknown" ]]; then
+if [[ "$ACM_PRIMARY_VERSION" == "$ACM_SECONDARY_VERSION" ]] && [[ "$ACM_PRIMARY_VERSION" != "unknown" ]]; then
     check_pass "ACM versions match between hubs"
 else
-    check_fail "ACM version mismatch: Primary=$PRIMARY_VERSION, Secondary=$SECONDARY_VERSION"
+    check_fail "ACM version mismatch: Primary=$ACM_PRIMARY_VERSION, Secondary=$ACM_SECONDARY_VERSION"
 fi
 
 # Gather managed cluster counts for both hubs (used in summary and later checks)
@@ -206,8 +206,8 @@ echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${BLUE}Hub Summary${NC}"
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-print_hub_summary "$PRIMARY_CONTEXT" "$PRIMARY_VERSION" "primary" "$PRIMARY_MC_AVAILABLE" "$PRIMARY_MC_TOTAL" "$PRIMARY_STATE_DESC"
-print_hub_summary "$SECONDARY_CONTEXT" "$SECONDARY_VERSION" "secondary" "$SECONDARY_MC_AVAILABLE" "$SECONDARY_MC_TOTAL" "$SECONDARY_STATE_DESC"
+print_hub_summary "$PRIMARY_CONTEXT" "$ACM_PRIMARY_VERSION" "primary" "$PRIMARY_MC_AVAILABLE" "$PRIMARY_MC_TOTAL" "$PRIMARY_STATE_DESC"
+print_hub_summary "$SECONDARY_CONTEXT" "$ACM_SECONDARY_VERSION" "secondary" "$SECONDARY_MC_AVAILABLE" "$SECONDARY_MC_TOTAL" "$SECONDARY_STATE_DESC"
 echo ""
 
 # Check 5: Verify OADP operator
@@ -401,12 +401,12 @@ PRIMARY_CV_OUTPUT=$(oc --context="$PRIMARY_CONTEXT" get clusterversion version -
 if [[ -n "$PRIMARY_CV_OUTPUT" ]]; then
     # Check if cluster is upgrading (Progressing=True means upgrade in progress)
     PRIMARY_UPGRADING=$(echo "$PRIMARY_CV_OUTPUT" | jq -r '.status.conditions[]? | select(.type=="Progressing" and .status=="True") | .message' || true)
-    PRIMARY_VERSION=$(echo "$PRIMARY_CV_OUTPUT" | jq -r '.status.desired.version // "unknown"' || true)
+    PRIMARY_OCP_VERSION=$(echo "$PRIMARY_CV_OUTPUT" | jq -r '.status.desired.version // "unknown"' || true)
     if [[ -n "$PRIMARY_UPGRADING" && "$PRIMARY_UPGRADING" != "null" ]]; then
-        check_fail "Primary hub: Cluster upgrade in progress (version: $PRIMARY_VERSION)"
+        check_fail "Primary hub: Cluster upgrade in progress (version: $PRIMARY_OCP_VERSION)"
         echo -e "${RED}       Message: $PRIMARY_UPGRADING${NC}"
     else
-        check_pass "Primary hub: Cluster is stable (version: $PRIMARY_VERSION, no upgrade in progress)"
+        check_pass "Primary hub: Cluster is stable (version: $PRIMARY_OCP_VERSION, no upgrade in progress)"
     fi
 else
     check_pass "Primary hub: ClusterVersion not available (non-OpenShift cluster or insufficient permissions)"
@@ -416,12 +416,12 @@ fi
 SECONDARY_CV_OUTPUT=$(oc --context="$SECONDARY_CONTEXT" get clusterversion version -o json 2>/dev/null || true)
 if [[ -n "$SECONDARY_CV_OUTPUT" ]]; then
     SECONDARY_UPGRADING=$(echo "$SECONDARY_CV_OUTPUT" | jq -r '.status.conditions[]? | select(.type=="Progressing" and .status=="True") | .message' || true)
-    SECONDARY_VERSION=$(echo "$SECONDARY_CV_OUTPUT" | jq -r '.status.desired.version // "unknown"' || true)
+    SECONDARY_OCP_VERSION=$(echo "$SECONDARY_CV_OUTPUT" | jq -r '.status.desired.version // "unknown"' || true)
     if [[ -n "$SECONDARY_UPGRADING" && "$SECONDARY_UPGRADING" != "null" ]]; then
-        check_fail "Secondary hub: Cluster upgrade in progress (version: $SECONDARY_VERSION)"
+        check_fail "Secondary hub: Cluster upgrade in progress (version: $SECONDARY_OCP_VERSION)"
         echo -e "${RED}       Message: $SECONDARY_UPGRADING${NC}"
     else
-        check_pass "Secondary hub: Cluster is stable (version: $SECONDARY_VERSION, no upgrade in progress)"
+        check_pass "Secondary hub: Cluster is stable (version: $SECONDARY_OCP_VERSION, no upgrade in progress)"
     fi
 else
     check_pass "Secondary hub: ClusterVersion not available (non-OpenShift cluster or insufficient permissions)"
@@ -703,7 +703,7 @@ fi
 section_header "15. Checking Auto-Import Strategy (ACM 2.14+ only)"
 
 # Check primary hub
-if is_acm_214_or_higher "$PRIMARY_VERSION"; then
+if is_acm_214_or_higher "$ACM_PRIMARY_VERSION"; then
     PRIMARY_STRATEGY=$(get_auto_import_strategy "$PRIMARY_CONTEXT")
     if [[ "$PRIMARY_STRATEGY" == "error" ]]; then
         check_fail "Primary hub: Could not retrieve autoImportStrategy (connection or API error)"
@@ -717,11 +717,11 @@ if is_acm_214_or_higher "$PRIMARY_VERSION"; then
         echo -e "${YELLOW}       See: $AUTO_IMPORT_STRATEGY_DOC_URL${NC}"
     fi
 else
-    check_pass "Primary hub: ACM $PRIMARY_VERSION (autoImportStrategy not applicable, requires 2.14+)"
+    check_pass "Primary hub: ACM $ACM_PRIMARY_VERSION (autoImportStrategy not applicable, requires 2.14+)"
 fi
 
 # Check secondary hub
-if is_acm_214_or_higher "$SECONDARY_VERSION"; then
+if is_acm_214_or_higher "$ACM_SECONDARY_VERSION"; then
     SECONDARY_STRATEGY=$(get_auto_import_strategy "$SECONDARY_CONTEXT")
     if [[ "$SECONDARY_STRATEGY" == "error" ]]; then
         check_fail "Secondary hub: Could not retrieve autoImportStrategy (connection or API error)"
@@ -747,7 +747,7 @@ if is_acm_214_or_higher "$SECONDARY_VERSION"; then
         echo -e "${YELLOW}       See: $AUTO_IMPORT_STRATEGY_DOC_URL${NC}"
     fi
 else
-    check_pass "Secondary hub: ACM $SECONDARY_VERSION (autoImportStrategy not applicable, requires 2.14+)"
+    check_pass "Secondary hub: ACM $ACM_SECONDARY_VERSION (autoImportStrategy not applicable, requires 2.14+)"
 fi
 
 # Summary and exit
