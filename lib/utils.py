@@ -327,7 +327,9 @@ class StateManager:
         if self._dirty and not self._flushing:
             try:
                 self._flushing = True
-                self.save_state()
+                self.state["last_updated"] = _utc_timestamp()
+                self._write_state(self.state)
+                self._dirty = False
             except Exception:
                 # Silently ignore errors during signal handling - we don't want to raise
                 # exceptions in signal handlers as they can mask the real exit reason
@@ -340,7 +342,9 @@ class StateManager:
         if self._dirty and not self._flushing:
             try:
                 self._flushing = True
-                self.save_state()
+                self.state["last_updated"] = _utc_timestamp()
+                self._write_state(self.state)
+                self._dirty = False
             except Exception:
                 # Silently ignore errors during exit - we don't want to raise exceptions
                 # in atexit handlers as they can mask the real exit reason
