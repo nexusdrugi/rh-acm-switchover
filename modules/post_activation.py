@@ -465,7 +465,8 @@ class PostActivationVerification:
             return
 
         # Load kubeconfig data for context lookup
-        kubeconfig_data = self._load_kubeconfig_data()
+        # Use max_size=0 to bypass size check for critical klusterlet verification
+        kubeconfig_data = self._load_kubeconfig_data(max_size=0)
         if not kubeconfig_data:
             logger.warning("Could not load kubeconfig, skipping klusterlet verification")
             return
@@ -789,12 +790,19 @@ class PostActivationVerification:
 
         return ""
 
-    def _load_kubeconfig_data(self) -> dict:
+    def _load_kubeconfig_data(self, max_size: Optional[int] = None) -> dict:
         """Load and merge kubeconfig data from all KUBECONFIG paths.
 
         Handles the KUBECONFIG environment variable which can contain multiple
         colon-separated paths (e.g., '/path/one:/path/two:~/.kube/config').
         Contexts, clusters, and users are merged from all files.
+
+        Args:
+            max_size: Maximum file size in bytes. If None, uses MAX_KUBECONFIG_SIZE.
+                     If 0 or negative, bypasses size check entirely (for critical operations).
+
+        Returns:
+            Merged kubeconfig data dict with contexts, clusters, and users.
         """
         try:
             kubeconfig_env = os.environ.get("KUBECONFIG", "")
@@ -803,6 +811,18 @@ class PostActivationVerification:
                 paths = [p.strip() for p in kubeconfig_env.split(":") if p.strip()]
             else:
                 paths = [os.path.expanduser("~/.kube/config")]
+
+            # Determine size limit: use provided max_size, or default to MAX_KUBECONFIG_SIZE
+            if max_size is None:
+                size_limit = MAX_KUBECONFIG_SIZE
+                check_size = True
+            elif max_size <= 0:
+                # Bypass size check for critical operations
+                size_limit = None
+                check_size = False
+            else:
+                size_limit = max_size
+                check_size = True
 
             # Merge kubeconfig data from all paths
             merged: dict = {"contexts": [], "clusters": [], "users": []}
@@ -815,15 +835,27 @@ class PostActivationVerification:
 
                 try:
                     # Check file size before loading to prevent memory exhaustion
-                    kubeconfig_size = os.path.getsize(expanded_path)
-                    if kubeconfig_size > MAX_KUBECONFIG_SIZE:
-                        logger.warning(
-                            "Kubeconfig file too large: %s (%d bytes, max %d bytes). Skipping.",
-                            os.path.basename(expanded_path),
-                            kubeconfig_size,
-                            MAX_KUBECONFIG_SIZE,
-                        )
-                        continue
+                    if check_size:
+                        kubeconfig_size = os.path.getsize(expanded_path)
+                        if kubeconfig_size > size_limit:
+                            logger.warning(
+                                "Kubeconfig file too large: %s (%d bytes, max %d bytes). Skipping.",
+                                os.path.basename(expanded_path),
+                                kubeconfig_size,
+                                size_limit,
+                            )
+                            continue
+                    else:
+                        # Size check bypassed - log warning but continue loading
+                        kubeconfig_size = os.path.getsize(expanded_path)
+                        if kubeconfig_size > MAX_KUBECONFIG_SIZE:
+                            logger.warning(
+                                "Kubeconfig file large: %s (%d bytes, exceeds default limit %d bytes). "
+                                "Loading anyway for critical operation.",
+                                os.path.basename(expanded_path),
+                                kubeconfig_size,
+                                MAX_KUBECONFIG_SIZE,
+                            )
 
                     with open(expanded_path) as f:
                         data = yaml.safe_load(f) or {}
