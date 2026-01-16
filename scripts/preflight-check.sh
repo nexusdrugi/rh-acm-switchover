@@ -298,79 +298,99 @@ fi
 # Check 8: Verify Cluster Health (Nodes and ClusterOperators)
 section_header "8. Checking Cluster Health"
 
-# Check primary hub nodes
-PRIMARY_NODES_TOTAL=$(oc --context="$PRIMARY_CONTEXT" get nodes --no-headers 2>/dev/null | wc -l)
-if [[ $PRIMARY_NODES_TOTAL -gt 0 ]]; then
-    PRIMARY_NODES_READY=$(oc --context="$PRIMARY_CONTEXT" get nodes --no-headers 2>/dev/null | grep -c " Ready" || true)
-    if [[ $PRIMARY_NODES_READY -eq $PRIMARY_NODES_TOTAL ]]; then
-        check_pass "Primary hub: All $PRIMARY_NODES_TOTAL node(s) are Ready"
-    else
-        NOT_READY=$((PRIMARY_NODES_TOTAL - PRIMARY_NODES_READY))
-        check_fail "Primary hub: $NOT_READY of $PRIMARY_NODES_TOTAL node(s) are not Ready"
+# Function to check nodes using single JSON API call
+# Note: Always returns 0 to prevent aborting the script (set -e), allowing remaining checks to run
+check_nodes() {
+    local context="$1"
+    local hub_name="$2"
+    local nodes_json
+    nodes_json=$(oc --context="$context" get nodes -o json 2>/dev/null)
+    
+    if [[ -z "$nodes_json" ]]; then
+        check_fail "$hub_name: Could not retrieve nodes (insufficient permissions or cluster issue)"
+        return 0  # Return 0 to continue with remaining checks
     fi
-else
-    check_fail "Primary hub: Could not retrieve nodes (insufficient permissions or cluster issue)"
-fi
+    
+    local total ready not_ready
+    total=$(echo "$nodes_json" | jq -r '.items | length' 2>/dev/null || echo "0")
+    ready=$(echo "$nodes_json" | jq -r '[.items[] | select(.status.conditions[]? | select(.type=="Ready" and .status=="True"))] | length' 2>/dev/null || echo "0")
+    not_ready=$((total - ready))
+    
+    if [[ $total -eq 0 ]]; then
+        check_fail "$hub_name: Could not retrieve nodes (insufficient permissions or cluster issue)"
+        return 0  # Return 0 to continue with remaining checks
+    elif [[ $ready -eq $total ]]; then
+        check_pass "$hub_name: All $total node(s) are Ready"
+        return 0
+    else
+        check_fail "$hub_name: $not_ready of $total node(s) are not Ready"
+        return 0  # Return 0 to continue with remaining checks
+    fi
+}
+
+# Check primary hub nodes
+check_nodes "$PRIMARY_CONTEXT" "Primary hub"
 
 # Check secondary hub nodes
-SECONDARY_NODES_TOTAL=$(oc --context="$SECONDARY_CONTEXT" get nodes --no-headers 2>/dev/null | wc -l)
-if [[ $SECONDARY_NODES_TOTAL -gt 0 ]]; then
-    SECONDARY_NODES_READY=$(oc --context="$SECONDARY_CONTEXT" get nodes --no-headers 2>/dev/null | grep -c " Ready" || true)
-    if [[ $SECONDARY_NODES_READY -eq $SECONDARY_NODES_TOTAL ]]; then
-        check_pass "Secondary hub: All $SECONDARY_NODES_TOTAL node(s) are Ready"
-    else
-        NOT_READY=$((SECONDARY_NODES_TOTAL - SECONDARY_NODES_READY))
-        check_fail "Secondary hub: $NOT_READY of $SECONDARY_NODES_TOTAL node(s) are not Ready"
-    fi
-else
-    check_fail "Secondary hub: Could not retrieve nodes (insufficient permissions or cluster issue)"
-fi
+check_nodes "$SECONDARY_CONTEXT" "Secondary hub"
 
 # Check primary hub ClusterOperators (OpenShift specific)
-PRIMARY_CO_OUTPUT=$(oc --context="$PRIMARY_CONTEXT" get clusteroperators --no-headers 2>/dev/null || true)
-if [[ -n "$PRIMARY_CO_OUTPUT" ]]; then
-    PRIMARY_CO_TOTAL=$(echo "$PRIMARY_CO_OUTPUT" | wc -l)
-    # ClusterOperators are healthy if Available=True, Progressing=False, Degraded=False
-    PRIMARY_CO_DEGRADED=$(oc --context="$PRIMARY_CONTEXT" get clusteroperators -o json 2>/dev/null | \
-        jq -r '.items[] | select(.status.conditions[]? | select(.type=="Degraded" and .status=="True")) | .metadata.name' | wc -l || true)
-    PRIMARY_CO_UNAVAILABLE=$(oc --context="$PRIMARY_CONTEXT" get clusteroperators -o json 2>/dev/null | \
-        jq -r '.items[] | select(.status.conditions[]? | select(.type=="Available" and .status=="False")) | .metadata.name' | wc -l || true)
-    
-    if [[ $PRIMARY_CO_DEGRADED -eq 0 ]] && [[ $PRIMARY_CO_UNAVAILABLE -eq 0 ]]; then
-        check_pass "Primary hub: All $PRIMARY_CO_TOTAL ClusterOperator(s) are healthy"
-    else
-        UNHEALTHY=$((PRIMARY_CO_DEGRADED + PRIMARY_CO_UNAVAILABLE))
-        check_fail "Primary hub: $UNHEALTHY ClusterOperator(s) are degraded or unavailable"
-        # Show which operators are unhealthy
-        DEGRADED_LIST=$(oc --context="$PRIMARY_CONTEXT" get clusteroperators -o json 2>/dev/null | \
-            jq -r '.items[] | select(.status.conditions[]? | select(.type=="Degraded" and .status=="True")) | .metadata.name' || true)
-        if [[ -n "$DEGRADED_LIST" ]]; then
-            echo -e "${RED}       Degraded operators: $(echo $DEGRADED_LIST | tr '\n' ' ')${NC}"
+# Cache JSON output to avoid multiple API calls
+PRIMARY_CO_JSON=$(oc --context="$PRIMARY_CONTEXT" get clusteroperators -o json 2>/dev/null || true)
+if [[ -n "$PRIMARY_CO_JSON" ]]; then
+    PRIMARY_CO_OUTPUT=$(echo "$PRIMARY_CO_JSON" | jq -r '.items[] | .metadata.name' 2>/dev/null || true)
+    if [[ -n "$PRIMARY_CO_OUTPUT" ]]; then
+        PRIMARY_CO_TOTAL=$(echo "$PRIMARY_CO_OUTPUT" | wc -l)
+        # ClusterOperators are healthy if Available=True, Progressing=False, Degraded=False
+        PRIMARY_CO_DEGRADED=$(echo "$PRIMARY_CO_JSON" | \
+            jq -r '.items[] | select(.status.conditions[]? | select(.type=="Degraded" and .status=="True")) | .metadata.name' 2>/dev/null | wc -l || true)
+        PRIMARY_CO_UNAVAILABLE=$(echo "$PRIMARY_CO_JSON" | \
+            jq -r '.items[] | select(.status.conditions[]? | select(.type=="Available" and .status=="False")) | .metadata.name' 2>/dev/null | wc -l || true)
+        
+        if [[ $PRIMARY_CO_DEGRADED -eq 0 ]] && [[ $PRIMARY_CO_UNAVAILABLE -eq 0 ]]; then
+            check_pass "Primary hub: All $PRIMARY_CO_TOTAL ClusterOperator(s) are healthy"
+        else
+            UNHEALTHY=$((PRIMARY_CO_DEGRADED + PRIMARY_CO_UNAVAILABLE))
+            check_fail "Primary hub: $UNHEALTHY ClusterOperator(s) are degraded or unavailable"
+            # Show which operators are unhealthy
+            DEGRADED_LIST=$(echo "$PRIMARY_CO_JSON" | \
+                jq -r '.items[] | select(.status.conditions[]? | select(.type=="Degraded" and .status=="True")) | .metadata.name' 2>/dev/null || true)
+            if [[ -n "$DEGRADED_LIST" ]]; then
+                echo -e "${RED}       Degraded operators: $(echo "$DEGRADED_LIST" | tr '\n' ' ')${NC}"
+            fi
         fi
+    else
+        check_pass "Primary hub: ClusterOperators not available (non-OpenShift cluster or insufficient permissions)"
     fi
 else
     check_pass "Primary hub: ClusterOperators not available (non-OpenShift cluster or insufficient permissions)"
 fi
 
 # Check secondary hub ClusterOperators (OpenShift specific)
-SECONDARY_CO_OUTPUT=$(oc --context="$SECONDARY_CONTEXT" get clusteroperators --no-headers 2>/dev/null || true)
-if [[ -n "$SECONDARY_CO_OUTPUT" ]]; then
-    SECONDARY_CO_TOTAL=$(echo "$SECONDARY_CO_OUTPUT" | wc -l)
-    SECONDARY_CO_DEGRADED=$(oc --context="$SECONDARY_CONTEXT" get clusteroperators -o json 2>/dev/null | \
-        jq -r '.items[] | select(.status.conditions[]? | select(.type=="Degraded" and .status=="True")) | .metadata.name' | wc -l || true)
-    SECONDARY_CO_UNAVAILABLE=$(oc --context="$SECONDARY_CONTEXT" get clusteroperators -o json 2>/dev/null | \
-        jq -r '.items[] | select(.status.conditions[]? | select(.type=="Available" and .status=="False")) | .metadata.name' | wc -l || true)
-    
-    if [[ $SECONDARY_CO_DEGRADED -eq 0 ]] && [[ $SECONDARY_CO_UNAVAILABLE -eq 0 ]]; then
-        check_pass "Secondary hub: All $SECONDARY_CO_TOTAL ClusterOperator(s) are healthy"
-    else
-        UNHEALTHY=$((SECONDARY_CO_DEGRADED + SECONDARY_CO_UNAVAILABLE))
-        check_fail "Secondary hub: $UNHEALTHY ClusterOperator(s) are degraded or unavailable"
-        DEGRADED_LIST=$(oc --context="$SECONDARY_CONTEXT" get clusteroperators -o json 2>/dev/null | \
-            jq -r '.items[] | select(.status.conditions[]? | select(.type=="Degraded" and .status=="True")) | .metadata.name' || true)
-        if [[ -n "$DEGRADED_LIST" ]]; then
-            echo -e "${RED}       Degraded operators: $(echo $DEGRADED_LIST | tr '\n' ' ')${NC}"
+# Cache JSON output to avoid multiple API calls
+SECONDARY_CO_JSON=$(oc --context="$SECONDARY_CONTEXT" get clusteroperators -o json 2>/dev/null || true)
+if [[ -n "$SECONDARY_CO_JSON" ]]; then
+    SECONDARY_CO_OUTPUT=$(echo "$SECONDARY_CO_JSON" | jq -r '.items[] | .metadata.name' 2>/dev/null || true)
+    if [[ -n "$SECONDARY_CO_OUTPUT" ]]; then
+        SECONDARY_CO_TOTAL=$(echo "$SECONDARY_CO_OUTPUT" | wc -l)
+        SECONDARY_CO_DEGRADED=$(echo "$SECONDARY_CO_JSON" | \
+            jq -r '.items[] | select(.status.conditions[]? | select(.type=="Degraded" and .status=="True")) | .metadata.name' 2>/dev/null | wc -l || true)
+        SECONDARY_CO_UNAVAILABLE=$(echo "$SECONDARY_CO_JSON" | \
+            jq -r '.items[] | select(.status.conditions[]? | select(.type=="Available" and .status=="False")) | .metadata.name' 2>/dev/null | wc -l || true)
+        
+        if [[ $SECONDARY_CO_DEGRADED -eq 0 ]] && [[ $SECONDARY_CO_UNAVAILABLE -eq 0 ]]; then
+            check_pass "Secondary hub: All $SECONDARY_CO_TOTAL ClusterOperator(s) are healthy"
+        else
+            UNHEALTHY=$((SECONDARY_CO_DEGRADED + SECONDARY_CO_UNAVAILABLE))
+            check_fail "Secondary hub: $UNHEALTHY ClusterOperator(s) are degraded or unavailable"
+            DEGRADED_LIST=$(echo "$SECONDARY_CO_JSON" | \
+                jq -r '.items[] | select(.status.conditions[]? | select(.type=="Degraded" and .status=="True")) | .metadata.name' 2>/dev/null || true)
+            if [[ -n "$DEGRADED_LIST" ]]; then
+                echo -e "${RED}       Degraded operators: $(echo "$DEGRADED_LIST" | tr '\n' ' ')${NC}"
+            fi
         fi
+    else
+        check_pass "Secondary hub: ClusterOperators not available (non-OpenShift cluster or insufficient permissions)"
     fi
 else
     check_pass "Secondary hub: ClusterOperators not available (non-OpenShift cluster or insufficient permissions)"
@@ -525,6 +545,13 @@ section_header "10. Checking BackupSchedule useManagedServiceAccount (CRITICAL)"
 
 BACKUP_SCHEDULE=$(oc --context="$PRIMARY_CONTEXT" get $RES_BACKUP_SCHEDULE -n "$BACKUP_NAMESPACE" -o json 2>/dev/null)
 if [[ -n "$BACKUP_SCHEDULE" ]] && echo "$BACKUP_SCHEDULE" | jq -e '.items[0]' &>/dev/null; then
+    SCHEDULE_COUNT=$(echo "$BACKUP_SCHEDULE" | jq -r '.items | length' 2>/dev/null || echo "0")
+    
+    # Note: SCHEDULE_COUNT >= 1 is guaranteed by the jq -e '.items[0]' check above
+    if [[ $SCHEDULE_COUNT -gt 1 ]]; then
+        check_warn "Found $SCHEDULE_COUNT BackupSchedules - will check first one only"
+    fi
+    
     SCHEDULE_NAME=$(echo "$BACKUP_SCHEDULE" | jq -r '.items[0].metadata.name')
     USE_MSA=$(echo "$BACKUP_SCHEDULE" | jq -r '.items[0].spec.useManagedServiceAccount // false')
     
