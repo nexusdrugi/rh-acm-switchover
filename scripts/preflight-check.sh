@@ -304,7 +304,23 @@ check_nodes() {
     local context="$1"
     local hub_name="$2"
     local nodes_json
-    nodes_json=$(oc --context="$context" get nodes -o json 2>/dev/null)
+    local oc_stderr_file
+    oc_stderr_file="$(mktemp)"
+
+    if ! nodes_json=$(oc --context="$context" get nodes -o json 2>"$oc_stderr_file"); then
+        local oc_error
+        oc_error="$(<"$oc_stderr_file")"
+        rm -f "$oc_stderr_file"
+
+        if [[ -n "$oc_error" ]]; then
+            check_fail "$hub_name: Could not retrieve nodes: $oc_error"
+        else
+            check_fail "$hub_name: Could not retrieve nodes (insufficient permissions or cluster issue)"
+        fi
+        return 0  # Return 0 to continue with remaining checks
+    fi
+
+    rm -f "$oc_stderr_file"
     
     if [[ -z "$nodes_json" ]]; then
         check_fail "$hub_name: Could not retrieve nodes (insufficient permissions or cluster issue)"
