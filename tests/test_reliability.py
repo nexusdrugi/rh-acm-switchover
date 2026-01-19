@@ -2,11 +2,13 @@
 Tests for reliability features (retries, timeouts).
 """
 
+import errno
+import socket
 from unittest.mock import MagicMock, patch
 
 import pytest
 from kubernetes.client.rest import ApiException
-from urllib3.exceptions import HTTPError
+from urllib3.exceptions import HTTPError, MaxRetryError, NewConnectionError, TimeoutError as Urllib3TimeoutError
 
 from lib.kube_client import KubeClient, is_retryable_error
 
@@ -35,6 +37,28 @@ def test_is_retryable_error():
     assert not is_retryable_error(ApiException(status=403))
     assert not is_retryable_error(ApiException(status=404))
     assert not is_retryable_error(ValueError())
+
+    # Network-related errors that should be retryable
+    assert is_retryable_error(ConnectionError())
+    assert is_retryable_error(TimeoutError())
+    assert is_retryable_error(socket.timeout())
+    assert is_retryable_error(MaxRetryError(None, None, None))
+    assert is_retryable_error(NewConnectionError(None, None))
+    assert is_retryable_error(Urllib3TimeoutError())
+
+    # Network-related OSErrors (with specific errno) should be retryable
+    assert is_retryable_error(OSError(errno.ECONNREFUSED, "Connection refused"))
+    assert is_retryable_error(OSError(errno.ECONNRESET, "Connection reset"))
+    assert is_retryable_error(OSError(errno.ETIMEDOUT, "Connection timed out"))
+    assert is_retryable_error(OSError(errno.ENETUNREACH, "Network unreachable"))
+
+    # Non-network OSErrors should NOT be retryable (fail fast)
+    assert not is_retryable_error(OSError(errno.EACCES, "Permission denied"))
+    assert not is_retryable_error(OSError(errno.ENOENT, "No such file or directory"))
+    assert not is_retryable_error(OSError(errno.EISDIR, "Is a directory"))
+    assert not is_retryable_error(OSError(errno.EEXIST, "File exists"))
+    # OSError without errno should not be retryable
+    assert not is_retryable_error(OSError("Generic error"))
 
 
 @patch("tenacity.nap.sleep")
