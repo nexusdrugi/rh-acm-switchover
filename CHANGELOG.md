@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.11] - 2026-01-19
+
 ### Added
 
-- **StateManager write optimization**: Implemented dirty state tracking with `save_state()` (conditional writes) and `flush_state()` (critical checkpoints) to reduce disk I/O. Non-critical operations (`mark_step_completed()`, `set_config()`) mark state as dirty, while critical operations (`set_phase()`, `add_error()`, `reset()`, `ensure_contexts()`) force immediate writes.
+- **StateManager write optimization**: Implemented dirty state tracking with `save_state()` (conditional writes) and `flush_state()` (critical checkpoints) to reduce disk I/O.
 
 - **Automatic state protection**: Added signal handlers (SIGTERM/SIGINT) and atexit handlers to flush dirty state on program termination, preventing data loss even on unexpected exits. Includes temporary file cleanup to prevent orphaned files.
 
@@ -30,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Preflight script multiple BackupSchedule handling**: Added warning when multiple BackupSchedules are detected, checking the first one only.
 
 ### Fixed
+
+- **State durability on termination**: Persist step completion and config updates immediately to avoid losing dirty state between phase transitions or during abrupt termination.
+
+- **Klusterlet verification kubeconfig coverage**: Added regression coverage to ensure size limits are bypassed for klusterlet verification, preventing large kubeconfigs from being skipped.
 
 - **State persistence in tests**: Updated test cases to use `flush_state()` for critical checkpoints and `save_state()` for non-critical updates, ensuring proper state persistence testing.
 
@@ -894,7 +900,8 @@ pip install -r requirements.txt
 
 ---
 
-[Unreleased]: https://github.com/tomazb/rh-acm-switchover/compare/v1.4.10...HEAD
+[Unreleased]: https://github.com/tomazb/rh-acm-switchover/compare/v1.4.11...HEAD
+[1.4.11]: https://github.com/tomazb/rh-acm-switchover/compare/v1.4.10...v1.4.11
 [1.4.10]: https://github.com/tomazb/rh-acm-switchover/compare/v1.4.9...v1.4.10
 [1.4.9]: https://github.com/tomazb/rh-acm-switchover/compare/v1.4.8...v1.4.9
 [1.4.8]: https://github.com/tomazb/rh-acm-switchover/compare/v1.4.7...v1.4.8
