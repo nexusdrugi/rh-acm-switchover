@@ -27,9 +27,8 @@ logger = logging.getLogger("acm_switchover")
 # Kubernetes resource name validation patterns
 # Based on Kubernetes naming conventions: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/
 # DNS-1123 subdomain format: contains only lowercase alphanumeric characters, '-' or '.',
-# starts with a lowercase letter (first segment), subsequent segments can start with letter or digit,
-# ends with an alphanumeric character
-K8S_NAME_PATTERN: Pattern[str] = re.compile(r"^[a-z]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$")
+# starts with an alphanumeric character, ends with an alphanumeric character
+K8S_NAME_PATTERN: Pattern[str] = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$")
 K8S_NAME_MAX_LENGTH = 253
 
 # Kubernetes namespace validation pattern
@@ -81,8 +80,8 @@ class InputValidator:
         if not K8S_NAME_PATTERN.match(name):
             raise ValidationError(
                 f"Invalid {resource_type} name '{name}'. "
-                f"Must consist of lower case alphanumeric characters, '-', or '.', "
-                f"and must start and end with an alphanumeric character"
+                f"Must consist of lowercase alphanumeric characters, '-', or '.', "
+                f"must start and end with an alphanumeric character (DNS-1123 subdomain)"
             )
 
     @staticmethod
@@ -259,6 +258,8 @@ class InputValidator:
             SecurityValidationError: If path contains unsafe characters or patterns
             ValidationError: If path is empty
         """
+        import os
+
         if not path:
             raise ValidationError(f"{field_name} path cannot be empty")
 
@@ -281,19 +282,29 @@ class InputValidator:
         # Allow absolute paths in safe directories or workspace-relative paths
         # Permit /tmp, /var, and absolute paths under current working directory or $HOME
         if path.startswith("/"):
-            import os
+            # Resolve symlinks to prevent bypass via symlink chains
+            # Only resolve if path exists; for new files, validate the parent directory
+            if os.path.exists(path):
+                resolved_path = os.path.realpath(path)
+            else:
+                # For non-existent paths, resolve the parent directory if it exists
+                parent = os.path.dirname(path)
+                if parent and os.path.exists(parent):
+                    resolved_path = os.path.join(os.path.realpath(parent), os.path.basename(path))
+                else:
+                    resolved_path = path
 
             safe_prefixes = ["/tmp/", "/var/"]  # nosec B108 - path validation, not temp file usage
             # Allow paths under current working directory
             cwd = os.getcwd()
             if cwd:
-                safe_prefixes.append(cwd + "/")
+                safe_prefixes.append(os.path.realpath(cwd) + "/")
             # Allow paths under home directory
             home = os.path.expanduser("~")
             if home and home != "~":
-                safe_prefixes.append(home + "/")
+                safe_prefixes.append(os.path.realpath(home) + "/")
 
-            if not any(path.startswith(prefix) for prefix in safe_prefixes):
+            if not any(resolved_path.startswith(prefix) for prefix in safe_prefixes):
                 raise SecurityValidationError(
                     f"SECURITY: Absolute path '{path}' is not allowed for {field_name}. "
                     f"Use relative paths or paths within /tmp, /var, workspace root, or home directory to prevent filesystem escape attacks."
