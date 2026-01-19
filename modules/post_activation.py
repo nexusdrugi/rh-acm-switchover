@@ -34,7 +34,6 @@ from lib.constants import (
 from lib.exceptions import SwitchoverError
 from lib.kube_client import KubeClient
 from lib.utils import StateManager, dry_run_skip
-from lib.validation import ValidationError
 from lib.waiter import wait_for_condition
 
 logger = logging.getLogger("acm_switchover")
@@ -827,7 +826,14 @@ class PostActivationVerification:
                 if e.status == 409:  # Already exists
                     pass
                 else:
-                    logger.debug("Error applying %s/%s: %s", kind, name, e)
+                    # Log only status/reason to avoid leaking sensitive data from exception body
+                    logger.debug(
+                        "Error applying %s/%s: status=%s reason=%s",
+                        kind,
+                        name,
+                        getattr(e, 'status', None),
+                        getattr(e, 'reason', None),
+                    )
 
     def _wait_for_secret_visibility(self, context_name: str, cluster_name: str) -> None:
         """Wait for the bootstrap-hub-kubeconfig secret to be visible.
@@ -895,9 +901,15 @@ class PostActivationVerification:
             logger.warning("Failed to restart klusterlet on %s: %s", cluster_name, e)
 
     def _get_hub_api_server(self) -> str:
-        """Get the API server URL for the new hub."""
+        """Get the API server URL for the new hub.
+        
+        Note: Uses max_size=0 to bypass kubeconfig size limits since this is a
+        critical operation for klusterlet verification. Large kubeconfigs in
+        multi-context environments must still be readable for hub lookup.
+        """
         try:
-            kubeconfig_data = self._load_kubeconfig_data()
+            # Bypass size check (max_size=0) for critical hub lookup
+            kubeconfig_data = self._load_kubeconfig_data(max_size=0)
             if not kubeconfig_data:
                 return ""
 
