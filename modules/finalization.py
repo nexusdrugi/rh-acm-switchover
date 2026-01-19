@@ -207,7 +207,7 @@ class Finalization:
                     namespace=BACKUP_NAMESPACE,
                 )
                 logger.info("Deleted restore resource: %s", restore_name)
-            except (RuntimeError, ValueError, Exception) as e:
+            except Exception as e:
                 # Not found is OK, other errors should be logged
                 if "not found" not in str(e).lower():
                     logger.warning("Error deleting restore %s: %s", restore_name, e)
@@ -537,7 +537,7 @@ class Finalization:
                 namespace=BACKUP_NAMESPACE,
             )
             logger.info("Created passive sync restore on old primary hub")
-        except (RuntimeError, ValueError, Exception) as e:
+        except Exception as e:
             logger.warning("Failed to create passive sync restore on old primary: %s", e)
             logger.warning("You may need to manually create it for failback capability")
 
@@ -617,7 +617,7 @@ class Finalization:
             # Invalidate cache since we recreated the schedule
             self._cached_schedules = None
 
-        except (RuntimeError, ValueError, Exception) as e:
+        except Exception as e:
             logger.warning("Failed to recreate BackupSchedule: %s", e)
             logger.warning("You may need to manually delete and recreate the BackupSchedule")
 
@@ -787,5 +787,5 @@ class Finalization:
                     IMPORT_CONTROLLER_CONFIGMAP,
                     AUTO_IMPORT_STRATEGY_DEFAULT,
                 )
-        except (RuntimeError, ValueError, Exception) as e:
+        except Exception as e:
             logger.warning("Unable to verify/reset auto-import strategy: %s", e)

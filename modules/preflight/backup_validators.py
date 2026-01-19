@@ -136,7 +136,7 @@ class BackupValidator(BaseValidator):
                     f"latest backup {backup_name} in unexpected state: {phase}",
                     critical=True,
                 )
-        except (RuntimeError, ValueError, Exception) as exc:
+        except Exception as exc:
             self.add_result(
                 "Backup status",
                 False,
@@ -205,7 +205,7 @@ class BackupScheduleValidator(BaseValidator):
                     critical=True,
                 )
 
-        except (RuntimeError, ValueError, Exception) as exc:
+        except Exception as exc:
             self.add_result(
                 "BackupSchedule configuration",
                 False,
@@ -265,7 +265,7 @@ class PassiveSyncValidator(BaseValidator):
                     f"passive sync in unexpected state: {phase} - {message}",
                     critical=True,
                 )
-        except (RuntimeError, ValueError, Exception) as exc:
+        except Exception as exc:
             self.add_result(
                 "Passive sync restore",
                 False,
@@ -409,7 +409,7 @@ class ManagedClusterBackupValidator(BaseValidator):
                     critical=False,
                 )
 
-        except (RuntimeError, ValueError, Exception) as exc:
+        except Exception as exc:
             self.add_result(
                 "ManagedClusters in backup",
                 False,

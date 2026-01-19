@@ -299,7 +299,7 @@ class VersionValidator(BaseValidator):
                 critical=True,
             )
             return "unknown"
-        except (RuntimeError, ValueError, Exception) as exc:  # pragma: no cover - kube errors
+        except Exception as exc:  # pragma: no cover - kube errors
             self.add_result(
                 f"ACM version ({hub_name})",
                 False,
@@ -388,7 +388,7 @@ class HubComponentValidator(BaseValidator):
                     f"{BACKUP_NAMESPACE} namespace not found",
                     critical=True,
                 )
-        except (RuntimeError, ValueError, Exception) as exc:
+        except Exception as exc:
             self.add_result(
                 f"OADP operator ({hub_name})",
                 False,
@@ -441,7 +441,7 @@ class HubComponentValidator(BaseValidator):
                     "no DataProtectionApplication found",
                     critical=True,
                 )
-        except (RuntimeError, ValueError, Exception) as exc:
+        except Exception as exc:
             self.add_result(
                 f"DataProtectionApplication ({hub_name})",
                 False,

@@ -423,7 +423,7 @@ class SecondaryActivation:
                 data={AUTO_IMPORT_STRATEGY_KEY: AUTO_IMPORT_STRATEGY_SYNC},
             )
             self.state.set_config("auto_import_strategy_set", True)
-        except (RuntimeError, ValueError, Exception) as e:
+        except Exception as e:
             logger.warning("Unable to manage auto-import strategy: %s", e)
 
     def _create_full_restore(self):

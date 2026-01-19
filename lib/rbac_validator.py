@@ -523,8 +523,11 @@ def validate_rbac_permissions(
                 include_decommission=False, skip_observability=skip_observability
             )
             logger.error("\n%s", report)
+            # Include error count in exception message for debugging
+            error_count = sum(len(errs) for errs in secondary_errors.values())
             raise ValidationError(
-                "RBAC permission validation failed on secondary hub. " "See report above for details."
+                f"RBAC permission validation failed on secondary hub ({error_count} error(s)). "
+                "See report above for details."
             )
 
     logger.info("✓ RBAC permission validation completed successfully")
