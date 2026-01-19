@@ -2,14 +2,16 @@
 Common utilities for ACM switchover automation.
 """
 
+import atexit
 import functools
 import json
 import logging
 import os
+import signal
 import stat
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Callable, Dict, Optional, Tuple, TypeVar
+from typing import Any, Callable, Dict, Optional, Set, Tuple, TypeVar
 
 # File locking is best-effort; fcntl isn't available on Windows.
 try:
@@ -100,6 +102,27 @@ class StateManager:
 
     def __init__(self, state_file: str = ".state/switchover-state.json"):
         self.state_file = state_file
+        self._dirty = False  # Track if state has pending writes
+        self._active_temp_files: Set[str] = set()  # Track active temp files for cleanup
+        self._flushing = False  # Track if we're currently flushing to avoid double-write
+        self._previous_signal_handlers: Dict[int, Any] = {}
+        # Register atexit handlers to flush pending state and clean up temp files on program exit
+        atexit.register(self._flush_on_exit)
+        atexit.register(self._cleanup_temp_files)
+        # Register signal handlers to flush dirty state before termination
+        # This ensures state is saved even on SIGTERM/SIGINT (atexit doesn't run on SIGKILL)
+        # Use wrapper functions since signal handlers must accept (signum, frame) signature
+        def signal_handler(signum: int, frame: Any) -> None:
+            self._flush_on_signal(signum, frame)
+
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            try:
+                self._previous_signal_handlers[sig] = signal.getsignal(sig)
+                signal.signal(sig, signal_handler)
+            except ValueError:
+                # signal.signal() raises ValueError when called from non-main thread
+                # This is expected in test environments or when StateManager is used in workers
+                logging.debug("Cannot register signal handler for %s (not in main thread)", sig)
         self.state = self._load_state()
 
     def _load_state(self) -> Dict[str, Any]:
@@ -150,6 +173,9 @@ class StateManager:
         temp_file = self.state_file + ".tmp"
         lock_handle = None
 
+        # Track temp file for cleanup (atexit handler will clean up if process crashes)
+        self._active_temp_files.add(temp_file)
+
         try:
             if fcntl:
                 lock_file = self.state_file + ".lock"
@@ -174,14 +200,17 @@ class StateManager:
 
                 # Atomic rename (POSIX guarantees this is atomic on same filesystem)
                 os.replace(temp_file, self.state_file)
+                # Success - remove from tracking since file was successfully renamed
+                self._active_temp_files.discard(temp_file)
 
             except (OSError, ValueError, TypeError) as e:
                 # Clean up temp file if it exists
                 try:
                     if os.path.exists(temp_file):
                         os.remove(temp_file)
+                        self._active_temp_files.discard(temp_file)
                 except OSError:
-                    pass  # Best-effort cleanup
+                    pass  # Best-effort cleanup - atexit handler will try again
                 logging.error("Failed to write state file %s: %s", self.state_file, e)
                 raise
         finally:
@@ -193,19 +222,38 @@ class StateManager:
                 lock_handle.close()
 
     def save_state(self) -> None:
-        """Persist current state to disk."""
-        self.state["last_updated"] = _utc_timestamp()
-        self._write_state(self.state)
+        """Persist current state to disk if dirty."""
+        if self._dirty and not self._flushing:
+            try:
+                self._flushing = True
+                self.state["last_updated"] = _utc_timestamp()
+                self._write_state(self.state)
+                self._dirty = False
+            finally:
+                self._flushing = False
+
+    def flush_state(self) -> None:
+        """Force immediate write of state to disk (for critical checkpoints)."""
+        if self._flushing:
+            return
+        try:
+            self._flushing = True
+            self.state["last_updated"] = _utc_timestamp()
+            self._write_state(self.state)
+            self._dirty = False
+        finally:
+            self._flushing = False
 
     def set_phase(self, phase: Phase) -> None:
         """Update current phase."""
         self.state["current_phase"] = phase.value
-        self.save_state()
+        self.flush_state()  # Phase transitions are critical checkpoints
 
     def mark_step_completed(self, step_name: str) -> None:
         """Mark a step as completed."""
         if not self.is_step_completed(step_name):
             self.state["completed_steps"].append({"name": step_name, "timestamp": _utc_timestamp()})
+            self._dirty = True
             self.save_state()
 
     def is_step_completed(self, step_name: str) -> bool:
@@ -214,7 +262,10 @@ class StateManager:
 
     def set_config(self, key: str, value: Any) -> None:
         """Store configuration value."""
+        if self.state["config"].get(key) == value:
+            return
         self.state["config"][key] = value
+        self._dirty = True
         self.save_state()
 
     def get_config(self, key: str, default: Any = None) -> Any:
@@ -230,12 +281,12 @@ class StateManager:
                 "timestamp": _utc_timestamp(),
             }
         )
-        self.save_state()
+        self.flush_state()  # Errors are critical checkpoints
 
     def reset(self) -> None:
         """Reset state to initial."""
         self.state = self._new_state()
-        self.save_state()
+        self.flush_state()  # Reset is a critical checkpoint
 
     def get_current_phase(self) -> Phase:
         """Get current phase as enum."""
@@ -249,7 +300,7 @@ class StateManager:
                 self.state_file,
             )
             self.state["current_phase"] = Phase.INIT.value
-            self.save_state()
+            self.flush_state()  # Phase correction is a critical checkpoint
             return Phase.INIT
 
     def ensure_contexts(self, primary_context: str, secondary_context: Optional[str]) -> None:
@@ -281,7 +332,72 @@ class StateManager:
             self.state = self._new_state()
 
         self.state["contexts"] = desired
-        self.save_state()
+        self.flush_state()  # Context changes are critical checkpoints
+
+    def _flush_on_signal(self, signum: int, frame: Any) -> None:
+        """Flush pending state changes on termination signal (signal handler).
+
+        This handler is registered for SIGTERM and SIGINT to ensure dirty state
+        is persisted before the process terminates. This is critical because
+        atexit handlers don't run on SIGKILL and may not run reliably on SIGTERM.
+
+        Args:
+            signum: Signal number (SIGTERM or SIGINT)
+            frame: Current stack frame (unused)
+        """
+        if self._dirty and not self._flushing:
+            try:
+                self._flushing = True
+                self.state["last_updated"] = _utc_timestamp()
+                self._write_state(self.state)
+                self._dirty = False
+            except Exception as e:
+                # Log to stderr for visibility but don't raise - signal handlers
+                # shouldn't raise exceptions as they can mask the real exit reason
+                import sys
+                print(f"Error flushing state on signal: {e}", file=sys.stderr)
+            finally:
+                self._flushing = False
+        self._forward_signal(signum, frame)
+
+    def _forward_signal(self, signum: int, frame: Any) -> None:
+        """Invoke the previous signal handler or restore default behavior."""
+        previous = self._previous_signal_handlers.get(signum, signal.SIG_DFL)
+        if previous is signal.SIG_IGN:
+            return
+        if callable(previous):
+            previous(signum, frame)
+            return
+        signal.signal(signum, signal.SIG_DFL)
+        os.kill(os.getpid(), signum)
+
+    def _flush_on_exit(self) -> None:
+        """Flush pending state changes on program exit (atexit handler)."""
+        if self._dirty and not self._flushing:
+            try:
+                self._flushing = True
+                self.state["last_updated"] = _utc_timestamp()
+                self._write_state(self.state)
+                self._dirty = False
+            except Exception as e:
+                # Log to stderr for visibility but don't raise - atexit handlers
+                # shouldn't raise exceptions as they can mask the real exit reason
+                import sys
+                print(f"Error flushing state on exit: {e}", file=sys.stderr)
+            finally:
+                self._flushing = False
+
+    def _cleanup_temp_files(self) -> None:
+        """Clean up any remaining temp files on program exit (atexit handler).
+
+        This handles cases where the process crashes before temp files are cleaned up.
+        """
+        for temp_file in list(self._active_temp_files):
+            if os.path.exists(temp_file):
+                try:
+                    os.remove(temp_file)
+                except OSError:
+                    pass  # Best-effort cleanup
 
 
 class JSONFormatter(logging.Formatter):

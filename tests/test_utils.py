@@ -80,6 +80,16 @@ class TestStateManager:
         assert completed[0]["name"] == "step1"
         assert "timestamp" in completed[0]
 
+    def test_mark_step_completed_persists_immediately(self, tmp_path):
+        """Completed steps should be persisted without explicit save_state."""
+        state_path = tmp_path / "state-step.json"
+        sm = StateManager(str(state_path))
+
+        sm.mark_step_completed("step1")
+
+        reloaded = StateManager(str(state_path))
+        assert reloaded.is_step_completed("step1") is True
+
     def test_set_get_config(self, state_manager):
         """Test configuration storage."""
         state_manager.set_config("acm_version", "2.12.0")
@@ -88,6 +98,16 @@ class TestStateManager:
 
         # Test with default
         assert state_manager.get_config("missing", "default") == "default"
+
+    def test_set_config_persists_immediately(self, tmp_path):
+        """Config updates should be persisted without explicit save_state."""
+        state_path = tmp_path / "state-config.json"
+        sm = StateManager(str(state_path))
+
+        sm.set_config("key", "value")
+
+        reloaded = StateManager(str(state_path))
+        assert reloaded.get_config("key") == "value"
 
     def test_add_error(self, state_manager):
         """Test error recording."""
@@ -117,6 +137,7 @@ class TestStateManager:
         state_manager.set_phase(Phase.PRIMARY_PREP)
         state_manager.mark_step_completed("backup_paused")
         state_manager.set_config("observability", True)
+        state_manager.save_state()  # Ensure dirty state is persisted
 
         # Load in new instance
         loaded_state = StateManager(str(temp_state_file))
@@ -180,7 +201,7 @@ class TestStateManager:
         """Unknown persisted phase should reset to INIT with warning."""
         sm = StateManager(str(temp_state_file))
         sm.state["current_phase"] = "mystery-phase"
-        sm.save_state()
+        sm.flush_state()  # Force write even if not dirty
 
         # Reload to simulate separate run
         sm_reloaded = StateManager(str(temp_state_file))

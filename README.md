@@ -1,6 +1,6 @@
 # ACM Hub Switchover Automation
 
-**Version 1.4.10** (2026-01-05)
+**Version 1.4.11** (2026-01-19)
 
 Automated, idempotent script for switching over Red Hat Advanced Cluster Management (ACM) from a primary hub to a secondary hub cluster.
 
@@ -271,11 +271,19 @@ The script maintains a JSON state file tracking:
 - Detected configuration (ACM version, Observability presence)
 - Errors encountered
 
+**Optimized State Persistence:**
+
+The state manager uses intelligent write batching to optimize performance:
+- **Non-critical updates** (step completion, configuration) are batched and written only when needed
+- **Critical checkpoints** (phase transitions, errors, resets) are immediately persisted
+- **Automatic protection**: State is automatically flushed on program termination (SIGTERM/SIGINT/atexit) to prevent data loss
+
 This enables:
 
 - Resume from failure point
 - Audit trail of operations
 - Context awareness across sessions
+- Reduced disk I/O for better performance
 
 ## Safety Features
 
