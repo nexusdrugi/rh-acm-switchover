@@ -294,9 +294,8 @@ class SecondaryActivation:
         # Get resourceVersion from before patch for comparison
         before_resource_version = restore_before.get("metadata", {}).get("resourceVersion", "")
 
-        # Track whether we've seen version changes and correct values
+        # Track whether we've seen version changes
         seen_version_change = False
-        correct_value_seen = False
 
         # Verify patch with retry loop and resourceVersion comparison
         # This handles API sync delays more robustly than a single sleep
@@ -332,7 +331,6 @@ class SecondaryActivation:
             if after_resource_version != before_resource_version:
                 seen_version_change = True
                 if after_mc_backup == VELERO_BACKUP_LATEST:
-                    correct_value_seen = True
                     logger.info(
                         "AFTER PATCH (re-read): %s = %s",
                         SPEC_VELERO_MANAGED_CLUSTERS_BACKUP_NAME,
