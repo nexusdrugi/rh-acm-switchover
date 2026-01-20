@@ -26,4 +26,5 @@ coverage.xml
 
 # Local environment files
 .env
-.cursor/README.md
+.cursor/
+
