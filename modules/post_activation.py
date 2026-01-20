@@ -1134,7 +1134,11 @@ class PostActivationVerification:
                 # Verify clusters[0] is a dict before accessing it
                 if not isinstance(clusters[0], dict):
                     return "unreachable"
-                klusterlet_hub = clusters[0].get("cluster", {}).get("server", "")
+                cluster_info = clusters[0].get("cluster", {})
+                # Verify cluster_info is a dict before accessing server
+                if not isinstance(cluster_info, dict):
+                    return "unreachable"
+                klusterlet_hub = cluster_info.get("server", "")
                 if not klusterlet_hub:
                     return "unreachable"
             except (yaml.YAMLError, AttributeError, TypeError, IndexError):
