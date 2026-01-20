@@ -9,6 +9,7 @@ RBAC permissions to execute ACM switchover operations.
 import argparse
 import logging
 import sys
+import traceback
 
 from lib import KubeClient, RBACValidator, __version__, __version_date__, setup_logging
 
@@ -218,8 +219,6 @@ def main():
     except Exception as e:
         logger.error("Error during RBAC validation: %s", str(e))
         if args.verbose:
-            import traceback
-
             traceback.print_exc()
         sys.exit(1)
 

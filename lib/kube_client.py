@@ -5,8 +5,10 @@ This module includes comprehensive input validation for Kubernetes resource
 names, namespaces, and other parameters to improve security and reliability.
 """
 
+import errno
 import functools
 import logging
+import socket
 import time
 from typing import Any, Callable, Dict, List, Optional
 
@@ -20,7 +22,7 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential,
 )
-from urllib3.exceptions import HTTPError
+from urllib3.exceptions import HTTPError, MaxRetryError, NewConnectionError, TimeoutError as Urllib3TimeoutError
 
 from lib.validation import InputValidator, ValidationError
 
@@ -28,11 +30,40 @@ logger = logging.getLogger("acm_switchover")
 
 
 def is_retryable_error(exception: BaseException) -> bool:
-    """Check if exception is retryable."""
+    """Check if exception is retryable.
+
+    Handles:
+    - API server errors (5xx) and rate limiting (429)
+    - Network-related errors (connection failures, timeouts)
+    - urllib3 errors (HTTPError, MaxRetryError, NewConnectionError, TimeoutError)
+    """
     if isinstance(exception, ApiException):
         # Retry on server errors (5xx) and too many requests (429)
         return 500 <= exception.status < 600 or exception.status == 429
-    if isinstance(exception, HTTPError):
+    # Network-related exceptions that should be retried
+    if isinstance(exception, (HTTPError, MaxRetryError, NewConnectionError, Urllib3TimeoutError)):
+        return True
+    # Connection and timeout errors (network-specific)
+    if isinstance(exception, (ConnectionError, TimeoutError)):
+        return True
+    # Socket timeout (specific network timeout)
+    if isinstance(exception, socket.timeout):
+        return True
+    # OSError with network-related errno values (avoid retrying file/permission errors)
+    # Use getattr for errno constants that may not exist on all platforms (e.g., Windows)
+    retryable_errnos = {
+        errno.ECONNREFUSED,  # Connection refused
+        errno.ECONNRESET,  # Connection reset by peer
+        errno.ENETUNREACH,  # Network is unreachable
+        errno.ETIMEDOUT,  # Connection timed out
+        errno.EAGAIN,  # Resource temporarily unavailable (may be network-related)
+    }
+    # Add platform-specific errno constants if available
+    for errno_name in ("ECONNABORTED", "EHOSTUNREACH", "EWOULDBLOCK"):
+        errno_val = getattr(errno, errno_name, None)
+        if errno_val is not None:
+            retryable_errnos.add(errno_val)
+    if isinstance(exception, OSError) and exception.errno in retryable_errnos:
         return True
     return False
 
@@ -477,7 +508,14 @@ class KubeClient:
 
         Returns:
             List of resource dicts
+
+        Raises:
+            ValidationError: If namespace is invalid
         """
+        # Validate namespace if provided
+        if namespace:
+            InputValidator.validate_kubernetes_namespace(namespace)
+
         items: List[Dict] = []
         continue_token: Optional[str] = None
 

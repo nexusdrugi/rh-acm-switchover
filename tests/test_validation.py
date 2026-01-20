@@ -168,6 +168,8 @@ class TestKubernetesResourceValidation:
             "my.pod.name",
             "my-pod-name",
             "a",  # single letter
+            "1",  # single digit (valid per DNS-1123 subdomain)
+            "123pod",  # starts with digit (valid per DNS-1123 subdomain)
             "a" + "b" * 252,  # max length (253 chars, starts with letter)
         ]
 
@@ -181,7 +183,7 @@ class TestKubernetesResourceValidation:
             "My-Pod",  # uppercase
             "my pod",  # space
             "my@pod",  # invalid character
-            "123pod",  # starts with number
+            # Note: "123pod" is valid per DNS-1123 subdomain rules (can start with alphanumeric)
             "my-pod-",  # ends with hyphen
             "a" * 254,  # too long
             "my..pod",  # consecutive dots
