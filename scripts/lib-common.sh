@@ -330,6 +330,105 @@ print_hub_summary() {
 }
 
 # =============================================================================
+# Observability Helpers
+# =============================================================================
+
+# Get count of running pods matching a label or name prefix
+# Usage: get_running_pod_count "$CONTEXT" "$NAMESPACE" "$LABEL" "$NAME_PREFIX"
+# Returns the count of running pods (0 if none found)
+get_running_pod_count() {
+    local ctx="$1"
+    local namespace="$2"
+    local label="$3"
+    local name_prefix="$4"
+    local count=0
+
+    # Try by label first
+    if [[ -n "$label" ]]; then
+        count=$("$CLUSTER_CLI_BIN" --context="$ctx" get pods -n "$namespace" -l "$label" --no-headers 2>/dev/null | grep -c "Running" || true)
+    fi
+
+    # Fallback to name prefix if label check returns 0
+    if [[ $count -eq 0 ]] && [[ -n "$name_prefix" ]]; then
+        count=$("$CLUSTER_CLI_BIN" --context="$ctx" get pods -n "$namespace" --no-headers 2>/dev/null | grep "^${name_prefix}" | grep -c "Running" || true)
+    fi
+
+    echo "${count:-0}"
+}
+
+# =============================================================================
+# Cluster Health Helpers
+# =============================================================================
+
+# Check ClusterOperators health on a given context
+# Usage: check_cluster_operators "$CONTEXT" "Hub name"
+# Returns 0 on success, sets check_pass/check_fail/check_warn as appropriate
+check_cluster_operators() {
+    local ctx="$1"
+    local hub_name="$2"
+    local co_json
+
+    co_json=$("$CLUSTER_CLI_BIN" --context="$ctx" get clusteroperators -o json 2>/dev/null || true)
+    if [[ -z "$co_json" ]]; then
+        check_pass "$hub_name: ClusterOperators not available (non-OpenShift cluster or insufficient permissions)"
+        return 0
+    fi
+
+    local co_output
+    co_output=$(echo "$co_json" | jq -r '.items[] | .metadata.name' 2>/dev/null || true)
+    if [[ -z "$co_output" ]]; then
+        check_pass "$hub_name: ClusterOperators not available (non-OpenShift cluster or insufficient permissions)"
+        return 0
+    fi
+
+    local co_total co_degraded co_unavailable
+    co_total=$(echo "$co_output" | wc -l)
+    co_degraded=$(echo "$co_json" | jq -r '.items[] | select(.status.conditions[]? | select(.type=="Degraded" and .status=="True")) | .metadata.name' 2>/dev/null | wc -l || true)
+    co_unavailable=$(echo "$co_json" | jq -r '.items[] | select(.status.conditions[]? | select(.type=="Available" and .status=="False")) | .metadata.name' 2>/dev/null | wc -l || true)
+
+    if [[ $co_degraded -eq 0 ]] && [[ $co_unavailable -eq 0 ]]; then
+        check_pass "$hub_name: All $co_total ClusterOperator(s) are healthy"
+    else
+        local unhealthy=$((co_degraded + co_unavailable))
+        check_fail "$hub_name: $unhealthy ClusterOperator(s) are degraded or unavailable"
+        local degraded_list
+        degraded_list=$(echo "$co_json" | jq -r '.items[] | select(.status.conditions[]? | select(.type=="Degraded" and .status=="True")) | .metadata.name' 2>/dev/null || true)
+        if [[ -n "$degraded_list" ]]; then
+            echo -e "${RED}       Degraded operators: $(echo "$degraded_list" | tr '\n' ' ')${NC}"
+        fi
+    fi
+
+    return 0
+}
+
+# Check ClusterVersion upgrade status on a given context
+# Usage: check_cluster_upgrade_status "$CONTEXT" "Hub name"
+check_cluster_upgrade_status() {
+    local ctx="$1"
+    local hub_name="$2"
+    local cv_output
+
+    cv_output=$("$CLUSTER_CLI_BIN" --context="$ctx" get clusterversion version -o json 2>/dev/null || true)
+    if [[ -z "$cv_output" ]]; then
+        check_pass "$hub_name: ClusterVersion not available (non-OpenShift cluster or insufficient permissions)"
+        return 0
+    fi
+
+    local upgrading ocp_version
+    upgrading=$(echo "$cv_output" | jq -r '.status.conditions[]? | select(.type=="Progressing" and .status=="True") | .message' || true)
+    ocp_version=$(echo "$cv_output" | jq -r '.status.desired.version // "unknown"' || true)
+
+    if [[ -n "$upgrading" && "$upgrading" != "null" ]]; then
+        check_fail "$hub_name: Cluster upgrade in progress (version: $ocp_version)"
+        echo -e "${RED}       Message: $upgrading${NC}"
+    else
+        check_pass "$hub_name: Cluster is stable (version: $ocp_version, no upgrade in progress)"
+    fi
+
+    return 0
+}
+
+# =============================================================================
 # Summary Output
 # =============================================================================
 
