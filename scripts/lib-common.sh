@@ -356,6 +356,30 @@ get_running_pod_count() {
     echo "${count:-0}"
 }
 
+# Get count of all pods (any state) matching a label or name prefix
+# Usage: get_pod_count "$CONTEXT" "$NAMESPACE" "$LABEL" "$NAME_PREFIX"
+# Returns the count of all pods regardless of state (0 if none found)
+# Use this for scale-down validation where any pod (Running, Pending, etc) indicates not scaled to 0
+get_pod_count() {
+    local ctx="$1"
+    local namespace="$2"
+    local label="$3"
+    local name_prefix="$4"
+    local count=0
+
+    # Try by label first
+    if [[ -n "$label" ]]; then
+        count=$("$CLUSTER_CLI_BIN" --context="$ctx" get pods -n "$namespace" -l "$label" --no-headers 2>/dev/null | wc -l || true)
+    fi
+
+    # Fallback to name prefix if label check returns 0
+    if [[ $count -eq 0 ]] && [[ -n "$name_prefix" ]]; then
+        count=$("$CLUSTER_CLI_BIN" --context="$ctx" get pods -n "$namespace" --no-headers 2>/dev/null | grep -c "^${name_prefix}" || true)
+    fi
+
+    echo "${count:-0}"
+}
+
 # =============================================================================
 # Cluster Health Helpers
 # =============================================================================
