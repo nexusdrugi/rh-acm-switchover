@@ -578,8 +578,8 @@ if oc --context="$PRIMARY_CONTEXT" get namespace "$OBSERVABILITY_NAMESPACE" &> /
         #   It's OK for MCO to exist if both Thanos compactor and observatorium-api are scaled to 0.
         # - If MCO is absent but observability pods still exist, warn (likely incomplete decommission).
         if oc --context="$SECONDARY_CONTEXT" get $RES_MCO observability -n "$OBSERVABILITY_NAMESPACE" &> /dev/null; then
-            SECONDARY_COMPACTOR_PODS=$(get_running_pod_count "$SECONDARY_CONTEXT" "$OBSERVABILITY_NAMESPACE" "app.kubernetes.io/name=thanos-compact" "$OBS_THANOS_COMPACT_POD")
-            SECONDARY_OBSERVATORIUM_API_PODS=$(get_running_pod_count "$SECONDARY_CONTEXT" "$OBSERVABILITY_NAMESPACE" "app.kubernetes.io/name=observatorium-api" "$OBS_API_POD")
+            SECONDARY_COMPACTOR_PODS=$(get_pod_count "$SECONDARY_CONTEXT" "$OBSERVABILITY_NAMESPACE" "app.kubernetes.io/name=thanos-compact" "$OBS_THANOS_COMPACT_POD")
+            SECONDARY_OBSERVATORIUM_API_PODS=$(get_pod_count "$SECONDARY_CONTEXT" "$OBSERVABILITY_NAMESPACE" "app.kubernetes.io/name=observatorium-api" "$OBS_API_POD")
 
             if [[ $SECONDARY_COMPACTOR_PODS -gt 0 ]] || [[ $SECONDARY_OBSERVATORIUM_API_PODS -gt 0 ]]; then
                 check_fail "Secondary hub: MultiClusterObservability is active (thanos-compact=$SECONDARY_COMPACTOR_PODS, observatorium-api=$SECONDARY_OBSERVATORIUM_API_PODS). Scale both to 0 before switchover."
