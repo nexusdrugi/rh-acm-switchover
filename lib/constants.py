@@ -101,8 +101,20 @@ DISABLE_AUTO_IMPORT_ANNOTATION = "import.open-cluster-management.io/disable-auto
 # Local cluster name (hub's self-managed cluster, excluded from counts)
 LOCAL_CLUSTER_NAME = "local-cluster"
 
-# Stale state detection threshold (15 minutes = half of minimum switchover time)
-STALE_STATE_THRESHOLD = 900
+# Stale state detection threshold (default: 6 hours)
+# Can be overridden via ACM_SWITCHOVER_STALE_HOURS environment variable
+DEFAULT_STALE_STATE_THRESHOLD_HOURS = 6
+try:
+    _env_stale_hours = os.environ.get("ACM_SWITCHOVER_STALE_HOURS")
+    if _env_stale_hours is not None:
+        _hours_value = float(_env_stale_hours)
+        if _hours_value <= 0:
+            raise ValueError("ACM_SWITCHOVER_STALE_HOURS must be positive")
+        STALE_STATE_THRESHOLD = int(_hours_value * 3600)
+    else:
+        STALE_STATE_THRESHOLD = DEFAULT_STALE_STATE_THRESHOLD_HOURS * 3600
+except (ValueError, TypeError):
+    STALE_STATE_THRESHOLD = DEFAULT_STALE_STATE_THRESHOLD_HOURS * 3600
 
 # Backup verification settings
 BACKUP_VERIFY_TIMEOUT = 600
