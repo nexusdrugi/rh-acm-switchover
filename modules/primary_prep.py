@@ -13,6 +13,7 @@ from lib.constants import (
     THANOS_COMPACTOR_LABEL_SELECTOR,
     THANOS_COMPACTOR_STATEFULSET,
     THANOS_SCALE_DOWN_WAIT,
+    DISABLE_AUTO_IMPORT_ANNOTATION,
 )
 from lib.exceptions import SwitchoverError
 from lib.kube_client import KubeClient
@@ -49,26 +50,20 @@ class PrimaryPreparation:
 
         try:
             # Step 1: Pause BackupSchedule
-            if not self.state.is_step_completed("pause_backup_schedule"):
-                self._pause_backup_schedule()
-                self.state.mark_step_completed("pause_backup_schedule")
-            else:
-                logger.info("Step already completed: pause_backup_schedule")
+            with self.state.step("pause_backup_schedule", logger) as should_run:
+                if should_run:
+                    self._pause_backup_schedule()
 
             # Step 2: Add disable-auto-import annotations
-            if not self.state.is_step_completed("disable_auto_import"):
-                self._disable_auto_import()
-                self.state.mark_step_completed("disable_auto_import")
-            else:
-                logger.info("Step already completed: disable_auto_import")
+            with self.state.step("disable_auto_import", logger) as should_run:
+                if should_run:
+                    self._disable_auto_import()
 
             # Step 3: Scale down Thanos compactor (if Observability present)
             if self.has_observability:
-                if not self.state.is_step_completed("scale_down_thanos"):
-                    self._scale_down_thanos_compactor()
-                    self.state.mark_step_completed("scale_down_thanos")
-                else:
-                    logger.info("Step already completed: scale_down_thanos")
+                with self.state.step("scale_down_thanos", logger) as should_run:
+                    if should_run:
+                        self._scale_down_thanos_compactor()
             else:
                 logger.info("Skipping Thanos compactor scaling (Observability not detected)")
 
@@ -171,7 +166,7 @@ class PrimaryPreparation:
 
             # Check if annotation already exists
             annotations = mc.get("metadata", {}).get("annotations", {})
-            if "import.open-cluster-management.io/disable-auto-import" in annotations:
+            if DISABLE_AUTO_IMPORT_ANNOTATION in annotations:
                 logger.debug(
                     "ManagedCluster %s already has disable-auto-import annotation",
                     mc_name,
@@ -179,7 +174,7 @@ class PrimaryPreparation:
                 continue
 
             # Add annotation
-            patch = {"metadata": {"annotations": {"import.open-cluster-management.io/disable-auto-import": ""}}}
+            patch = {"metadata": {"annotations": {DISABLE_AUTO_IMPORT_ANNOTATION: ""}}}
 
             self.primary.patch_managed_cluster(name=mc_name, patch=patch)
 

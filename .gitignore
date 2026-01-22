@@ -26,3 +26,5 @@ coverage.xml
 
 # Local environment files
 .env
+.cursor/
+

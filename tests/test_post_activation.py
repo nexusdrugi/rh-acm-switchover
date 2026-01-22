@@ -4,6 +4,7 @@ Tests cover PostActivationVerification class for verifying switchover success.
 """
 
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -14,10 +15,28 @@ from kubernetes.client.rest import ApiException
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import modules.post_activation as post_activation_module
-from lib.constants import CLUSTER_VERIFY_INTERVAL, OBSERVABILITY_NAMESPACE
+from lib.constants import (
+    CLUSTER_VERIFY_INTERVAL,
+    DISABLE_AUTO_IMPORT_ANNOTATION,
+    OBSERVABILITY_NAMESPACE,
+)
 from lib.exceptions import SwitchoverError
 
 PostActivationVerification = post_activation_module.PostActivationVerification
+
+
+def create_mock_step_context(is_step_completed_func, mark_step_completed_func):
+    """Create a mock step context manager that mimics StepContext behavior."""
+    @contextmanager
+    def mock_step(step_name, logger=None):
+        if is_step_completed_func(step_name):
+            if logger:
+                logger.info("Step already completed: %s", step_name)
+            yield False
+        else:
+            yield True
+            mark_step_completed_func(step_name)
+    return mock_step
 
 
 @pytest.fixture
@@ -28,9 +47,14 @@ def mock_secondary_client():
 
 @pytest.fixture
 def mock_state_manager():
-    """Create a mock StateManager."""
+    """Create a mock StateManager with step() context manager support."""
     mock = Mock()
     mock.is_step_completed.return_value = False
+    # Set up step() to return a proper context manager
+    mock.step.side_effect = create_mock_step_context(
+        mock.is_step_completed,
+        mock.mark_step_completed,
+    )
     return mock
 
 
@@ -301,7 +325,7 @@ class TestPostActivationVerification:
         post_verify_with_obs._restart_observatorium_api()
 
         mock_secondary_client.rollout_restart_deployment.assert_called_once_with(
-            namespace=OBSERVABILITY_NAMESPACE, name="observability-observatorium-api"
+            namespace=OBSERVABILITY_NAMESPACE, name=post_activation_module.OBSERVATORIUM_API_DEPLOYMENT
         )
         mock_secondary_client.get_pods.assert_called()
 
@@ -464,7 +488,7 @@ class TestPostActivationVerification:
             {
                 "metadata": {
                     "name": "cluster1",
-                    "annotations": {"import.open-cluster-management.io/disable-auto-import": ""},
+                    "annotations": {DISABLE_AUTO_IMPORT_ANNOTATION: ""},
                 }
             }
         ]

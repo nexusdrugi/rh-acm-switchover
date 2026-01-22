@@ -25,6 +25,7 @@ from lib.constants import (
     OBSERVABILITY_NAMESPACE,
     OBSERVABILITY_POD_TIMEOUT,
     OBSERVATORIUM_API_DEPLOYMENT,
+    DISABLE_AUTO_IMPORT_ANNOTATION,
     POD_READINESS_TOLERANCE,
     SECRET_VISIBILITY_INTERVAL,
     SECRET_VISIBILITY_TIMEOUT,
@@ -82,13 +83,42 @@ class PostActivationVerification:
         logger.info("Starting post-activation verification...")
 
         try:
-            # Step 6: Verify ManagedClusters connected
-            # First, try a brief wait to see if clusters connect on their own
-            if not self.state.is_step_completed("verify_clusters_connected"):
+            # Phase 1: Cluster connectivity verification
+            self._verify_cluster_connections()
+
+            # Phase 2: Auto-import cleanup verification
+            self._verify_auto_import_cleanup_step()
+
+            # Phase 3: Observability verification (if present)
+            if self.has_observability:
+                self._verify_observability_full()
+            else:
+                logger.info("Skipping Observability verification (not detected)")
+
+            logger.info("Post-activation verification completed successfully")
+            return True
+
+        except SwitchoverError as e:
+            logger.error("Post-activation verification failed: %s", e)
+            self.state.add_error(str(e), "post_activation_verification")
+            return False
+        except Exception as e:
+            logger.error("Unexpected error during post-activation verification: %s", e)
+            self.state.add_error(f"Unexpected: {str(e)}", "post_activation_verification")
+            return False
+
+    def _verify_cluster_connections(self) -> None:
+        """
+        Verify ManagedClusters are connected, with klusterlet fix fallback.
+
+        First tries a brief wait for clusters to connect automatically.
+        If that fails, attempts to fix klusterlet connections and waits again.
+        """
+        with self.state.step("verify_clusters_connected", logger) as should_run:
+            if should_run:
                 try:
                     # Initial brief wait - clusters may connect automatically
                     self._verify_managed_clusters_connected(timeout=INITIAL_CLUSTER_WAIT_TIMEOUT)
-                    self.state.mark_step_completed("verify_clusters_connected")
                 except SwitchoverError as e:
                     # Timeout - clusters not connected yet
                     logger.warning(
@@ -107,63 +137,41 @@ class PostActivationVerification:
                         "Waiting for ManagedClusters to reconnect after klusterlet fix..."
                     )
                     self._verify_managed_clusters_connected()
-                    self.state.mark_step_completed("verify_clusters_connected")
-            else:
-                logger.info("Step already completed: verify_clusters_connected")
 
-            if not self.state.is_step_completed("verify_auto_import_cleanup"):
-                self._verify_disable_auto_import_cleared()
-                self.state.mark_step_completed("verify_auto_import_cleanup")
-            else:
-                logger.info("Step already completed: verify_auto_import_cleanup")
-
-            # Optional: Verify klusterlet connections (non-blocking)
-            # This may have already been done above if clusters didn't connect initially
-            if not self.state.is_step_completed("verify_klusterlet_connections"):
+        # Optional: Verify klusterlet connections (non-blocking)
+        # This may have already been done above if clusters didn't connect initially
+        with self.state.step("verify_klusterlet_connections", logger) as should_run:
+            if should_run:
                 self._verify_klusterlet_connections()
-                self.state.mark_step_completed("verify_klusterlet_connections")
-            else:
-                logger.info("Step already completed: verify_klusterlet_connections")
 
-            # Steps 7-9: Observability verification (if present)
-            if self.has_observability:
-                if not self.state.is_step_completed("scale_up_observability_components"):
-                    self._scale_up_observability_components()
-                    self.state.mark_step_completed("scale_up_observability_components")
-                else:
-                    logger.info("Step already completed: scale_up_observability_components")
+    def _verify_auto_import_cleanup_step(self) -> None:
+        """Verify disable-auto-import annotations are cleared from ManagedClusters."""
+        with self.state.step("verify_auto_import_cleanup", logger) as should_run:
+            if should_run:
+                self._verify_disable_auto_import_cleared()
 
-                if not self.state.is_step_completed("restart_observatorium_api"):
-                    self._restart_observatorium_api()
-                    self.state.mark_step_completed("restart_observatorium_api")
-                else:
-                    logger.info("Step already completed: restart_observatorium_api")
+    def _verify_observability_full(self) -> None:
+        """
+        Execute all observability verification steps.
 
-                if not self.state.is_step_completed("verify_observability_pods"):
-                    self._verify_observability_pods()
-                    self.state.mark_step_completed("verify_observability_pods")
-                else:
-                    logger.info("Step already completed: verify_observability_pods")
+        Includes scaling up components, restarting API, verifying pods,
+        and checking metrics collection.
+        """
+        with self.state.step("scale_up_observability_components", logger) as should_run:
+            if should_run:
+                self._scale_up_observability_components()
 
-                if not self.state.is_step_completed("verify_metrics_collection"):
-                    self._verify_metrics_collection()
-                    self.state.mark_step_completed("verify_metrics_collection")
-                else:
-                    logger.info("Step already completed: verify_metrics_collection")
-            else:
-                logger.info("Skipping Observability verification (not detected)")
+        with self.state.step("restart_observatorium_api", logger) as should_run:
+            if should_run:
+                self._restart_observatorium_api()
 
-            logger.info("Post-activation verification completed successfully")
-            return True
+        with self.state.step("verify_observability_pods", logger) as should_run:
+            if should_run:
+                self._verify_observability_pods()
 
-        except SwitchoverError as e:
-            logger.error("Post-activation verification failed: %s", e)
-            self.state.add_error(str(e), "post_activation_verification")
-            return False
-        except Exception as e:
-            logger.error("Unexpected error during post-activation verification: %s", e)
-            self.state.add_error(f"Unexpected: {str(e)}", "post_activation_verification")
-            return False
+        with self.state.step("verify_metrics_collection", logger) as should_run:
+            if should_run:
+                self._verify_metrics_collection()
 
     @dry_run_skip(message="Skipping wait for ManagedCluster connections")
     def _verify_managed_clusters_connected(self, timeout: int = CLUSTER_VERIFY_TIMEOUT):
@@ -370,7 +378,7 @@ class PostActivationVerification:
 
         try:
             self.secondary.rollout_restart_deployment(
-                name="observability-observatorium-api",
+                name=OBSERVATORIUM_API_DEPLOYMENT,
                 namespace=OBSERVABILITY_NAMESPACE,
             )
 
@@ -546,7 +554,9 @@ class PostActivationVerification:
             return
 
         logger.info("Ensuring disable-auto-import annotations are cleared...")
-        managed_clusters = self._get_managed_clusters()
+        # Force refresh to ensure we have fresh data after klusterlet verification
+        # which may have taken time and annotations could have been cleared
+        managed_clusters = self._get_managed_clusters(force_refresh=True)
 
         flagged = []
         for mc in managed_clusters:
@@ -555,7 +565,7 @@ class PostActivationVerification:
                 continue
 
             annotations = mc.get("metadata", {}).get("annotations") or {}
-            if "import.open-cluster-management.io/disable-auto-import" in annotations:
+            if DISABLE_AUTO_IMPORT_ANNOTATION in annotations:
                 flagged.append(mc_name or "unknown")
 
         if flagged:
