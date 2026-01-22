@@ -248,6 +248,86 @@ class TestStateManager:
         assert reloaded.get_current_phase() == Phase.INIT
         assert reloaded.state["completed_steps"] == []
 
+    def test_get_state_age_valid_timestamp(self, state_manager):
+        """Test get_state_age returns timedelta for valid timestamp."""
+        # State was just created, so age should be very small
+        age = state_manager.get_state_age()
+        assert age is not None
+        assert age.total_seconds() < 5  # Should be less than 5 seconds
+
+    def test_get_state_age_with_z_suffix(self, tmp_path):
+        """Test get_state_age handles 'Z' suffix timestamps."""
+        import json
+
+        state_path = tmp_path / "z-suffix.json"
+        # Write state with 'Z' suffix timestamp (some systems produce this)
+        state_data = {
+            "version": "1.0",
+            "current_phase": "init",
+            "completed_steps": [],
+            "config": {},
+            "errors": [],
+            "last_updated": "2026-01-21T12:00:00Z",
+            "contexts": {"primary": None, "secondary": None},
+        }
+        state_path.write_text(json.dumps(state_data))
+
+        sm = StateManager(str(state_path))
+        age = sm.get_state_age()
+
+        assert age is not None
+        # Should be positive (timestamp is in the past)
+        assert age.total_seconds() > 0
+
+    @patch("lib.utils.logging")
+    def test_get_state_age_missing_timestamp(self, mock_logging, tmp_path):
+        """Test get_state_age returns None and logs warning for missing timestamp."""
+        import json
+
+        state_path = tmp_path / "missing-ts.json"
+        state_data = {
+            "version": "1.0",
+            "current_phase": "init",
+            "completed_steps": [],
+            "config": {},
+            "errors": [],
+            "last_updated": "",
+            "contexts": {"primary": None, "secondary": None},
+        }
+        state_path.write_text(json.dumps(state_data))
+
+        sm = StateManager(str(state_path))
+        age = sm.get_state_age()
+
+        assert age is None
+        mock_logging.warning.assert_called_with("State file missing last_updated timestamp")
+
+    @patch("lib.utils.logging")
+    def test_get_state_age_malformed_timestamp(self, mock_logging, tmp_path):
+        """Test get_state_age returns None and logs warning for malformed timestamp."""
+        import json
+
+        state_path = tmp_path / "bad-ts.json"
+        state_data = {
+            "version": "1.0",
+            "current_phase": "init",
+            "completed_steps": [],
+            "config": {},
+            "errors": [],
+            "last_updated": "not-a-timestamp",
+            "contexts": {"primary": None, "secondary": None},
+        }
+        state_path.write_text(json.dumps(state_data))
+
+        sm = StateManager(str(state_path))
+        age = sm.get_state_age()
+
+        assert age is None
+        # Should have logged a warning about parsing failure
+        assert mock_logging.warning.called
+        call_args = mock_logging.warning.call_args[0]
+        assert "Could not parse state timestamp" in call_args[0]
+
 
 @pytest.mark.unit
 class TestPhaseEnum:

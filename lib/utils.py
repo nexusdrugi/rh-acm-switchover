@@ -9,7 +9,7 @@ import logging
 import os
 import signal
 import stat
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, Optional, Set, Tuple, TypeVar
 
@@ -302,6 +302,27 @@ class StateManager:
             self.state["current_phase"] = Phase.INIT.value
             self.flush_state()  # Phase correction is a critical checkpoint
             return Phase.INIT
+
+    def get_state_age(self) -> Optional[timedelta]:
+        """Get the age of the state file based on last_updated timestamp.
+
+        Returns:
+            timedelta if the timestamp was successfully parsed, None if missing or invalid.
+            Logs a warning for missing or unparseable timestamps.
+        """
+        last_updated_str = self.state.get("last_updated", "")
+        if not last_updated_str:
+            logging.warning("State file missing last_updated timestamp")
+            return None
+
+        try:
+            # Handle both 'Z' suffix and explicit timezone offsets
+            if last_updated_str.endswith("Z"):
+                last_updated_str = last_updated_str[:-1] + "+00:00"
+            return datetime.now(timezone.utc) - datetime.fromisoformat(last_updated_str)
+        except (ValueError, TypeError) as e:
+            logging.warning("Could not parse state timestamp: %s", e)
+            return None
 
     def ensure_contexts(self, primary_context: str, secondary_context: Optional[str]) -> None:
         """Ensure stored contexts match the ones provided on the CLI."""
