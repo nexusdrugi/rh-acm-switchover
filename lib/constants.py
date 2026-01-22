@@ -75,7 +75,7 @@ BACKUP_SCHEDULE_DEFAULT_NAME = "acm-hub-backup"
 
 # Observability Components
 THANOS_COMPACTOR_STATEFULSET = "observability-thanos-compact"
-THANOS_COMPACTOR_LABEL_SELECTOR = "app=thanos-compact"
+THANOS_COMPACTOR_LABEL_SELECTOR = "app.kubernetes.io/name=thanos-compact"
 OBSERVATORIUM_API_DEPLOYMENT = "observability-observatorium-api"
 
 # ACM Spec Field Names
