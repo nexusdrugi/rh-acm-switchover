@@ -46,14 +46,16 @@ echo "========================================"
 echo "Timing Analysis:"
 echo "========================================"
 
-# Extract timing from logs
-cat > /tmp/analyze_timing.py << 'PYEOF'
+# Extract timing from logs - pass RESULTS_DIR to Python
+RESULTS_DIR_ABS=$(cd "$RESULTS_DIR" 2>/dev/null && pwd || echo "$RESULTS_DIR")
+cat > /tmp/analyze_timing.py << PYEOF
 import re
 import statistics
 from pathlib import Path
 
+results_dir = Path("$RESULTS_DIR_ABS")
 timings = []
-for log_file in sorted(Path("./e2e-soak-test-12h").glob("cycle_*.log")):
+for log_file in sorted(results_dir.glob("cycle_*.log")):
     content = log_file.read_text()
     # Look for "Switchover completed at" or phase timing
     if "SWITCHOVER COMPLETED SUCCESSFULLY" in content:
