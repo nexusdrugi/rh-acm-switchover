@@ -425,10 +425,12 @@ class PostActivationVerification:
         """Verify all Observability pods are running and ready."""
         logger.info("Verifying Observability pod health...")
 
-        # Use label selector to filter for app.kubernetes.io/part-of=observability
-        # This reduces the data volume by focusing on observability components
+        # Use label selector scoped to ACM observability components.
+        # The label app.kubernetes.io/part-of=observability is not consistently applied,
+        # while observability.open-cluster-management.io/name=observability is.
         pods = self.secondary.get_pods(
-            namespace=OBSERVABILITY_NAMESPACE, label_selector="app.kubernetes.io/part-of=observability"
+            namespace=OBSERVABILITY_NAMESPACE,
+            label_selector="observability.open-cluster-management.io/name=observability",
         )
 
         if not pods:
