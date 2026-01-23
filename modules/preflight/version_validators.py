@@ -139,6 +139,7 @@ class KubeconfigValidator(BaseValidator):
         """Check service account token expiration."""
         try:
             # Get current configuration to extract token
+            from kubernetes import client as k8s_client
             from kubernetes import config as k8s_config
 
             # Load the current kubeconfig
@@ -146,10 +147,10 @@ class KubeconfigValidator(BaseValidator):
 
             # Get the current configuration
             try:
-                current_config = k8s_config.Configuration.get_default_copy()
+                current_config = k8s_client.Configuration.get_default_copy()
             except Exception:
                 # Fallback for older kubernetes client versions
-                current_config = k8s_config.Configuration()
+                current_config = k8s_client.Configuration()
 
             # Extract token from Bearer auth
             auth_header = current_config.api_key.get("authorization", "")
