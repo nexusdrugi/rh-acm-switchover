@@ -565,8 +565,15 @@ if [[ "$METHOD" == "passive" ]]; then
                 jq -r '.items[0].status.conditions // [] | map("\(.type)=\(.status) reason=\(.reason // "n/a") msg=\(.message // "n/a")") | join("; ")')
             if [[ -n "$BSL_CONDITIONS" ]]; then
                 echo -e "${RED}       BSL conditions: $BSL_CONDITIONS${NC}"
+                # Check if BSL is explicitly unavailable
+                if echo "$BSL_CONDITIONS" | grep -qE "Available=False|Ready=False|Unavailable=True"; then
+                    echo -e "${RED}       Unavailable BSL means restores cannot proceed${NC}"
+                else
+                    echo -e "${RED}       Restore '$PASSIVE_RESTORE_NAME' failed - check restore status and BSL conditions above${NC}"
+                fi
+            else
+                echo -e "${RED}       Restore '$PASSIVE_RESTORE_NAME' failed - unable to retrieve BSL conditions${NC}"
             fi
-            echo -e "${RED}       Unavailable BSL means restores cannot proceed${NC}"
         fi
     else
         check_fail "Secondary hub: No passive sync restore found (required for Method 1). Expected a Restore with spec.syncRestoreWithNewBackups=true or named '$RESTORE_PASSIVE_SYNC_NAME'"

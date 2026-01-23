@@ -18,7 +18,11 @@ FAILED=$((TOTAL_CYCLES - PASSED))
 
 echo "Passed: $PASSED"
 echo "Failed: $FAILED"
-echo "Success Rate: $(awk "BEGIN {printf \"%.2f\", ($PASSED/$TOTAL_CYCLES)*100}")%"
+if [ "$TOTAL_CYCLES" -eq 0 ]; then
+    echo "Success Rate: N/A (no cycles found)"
+else
+    echo "Success Rate: $(awk "BEGIN {printf \"%.2f\", ($PASSED/$TOTAL_CYCLES)*100}")%"
+fi
 echo ""
 
 # Show failures if any
@@ -92,9 +96,9 @@ echo "========================================"
 echo "Phase Completion Summary:"
 echo "========================================"
 for phase in "PREFLIGHT" "PRIMARY_PREP" "ACTIVATION" "POST_ACTIVATION" "FINALIZATION"; do
-    COUNT=$(grep -c "PHASE.*${phase}" ${RESULTS_DIR}/cycle_*.log 2>/dev/null | awk -F: '{sum+=$2} END {print sum}')
-    COMPLETE=$(grep -c "${phase}.*complete" ${RESULTS_DIR}/cycle_*.log 2>/dev/null | awk -F: '{sum+=$2} END {print sum}')
-    echo "  $phase: $COMPLETE started"
+    COUNT=$(grep -c "PHASE.*${phase}" ${RESULTS_DIR}/cycle_*.log 2>/dev/null | awk -F: '{sum+=$2} END {print sum+0}')
+    COMPLETE=$(grep -c "${phase}.*complete" ${RESULTS_DIR}/cycle_*.log 2>/dev/null | awk -F: '{sum+=$2} END {print sum+0}')
+    echo "  $phase: $COUNT started, $COMPLETE completed"
 done
 echo ""
 

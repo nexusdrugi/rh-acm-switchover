@@ -7,9 +7,12 @@ echo "========================================"
 echo ""
 
 # Check if test is running
-if ps aux | grep -E "pytest.*e2e.*run-hours" | grep -v grep > /dev/null; then
+PIDS=$(pgrep -f "pytest.*e2e.*run-hours" 2>/dev/null || true)
+if [[ -n "$PIDS" ]]; then
     echo "✓ Test is RUNNING"
-    ps aux | grep -E "pytest.*e2e.*run-hours" | grep -v grep | awk '{printf "  PID: %s, CPU: %s%%, Memory: %s%%, Runtime: %s\n", $2, $3, $4, $10}'
+    ps -o pid,pcpu,pmem,etime --no-headers -p $PIDS 2>/dev/null | while read pid cpu mem etime; do
+        printf "  PID: %s, CPU: %s%%, Memory: %s%%, Elapsed: %s\n" "$pid" "$cpu" "$mem" "$etime"
+    done
 else
     echo "✗ Test is NOT running"
 fi
