@@ -187,6 +187,9 @@ get_restore_state() {
 
     if [[ "$sync_enabled" == "true" ]] && [[ "$phase" == "Enabled" ]]; then
         echo "passive-sync"
+    elif [[ "$sync_enabled" == "true" ]] && { [[ "$phase" == "Finished" ]] || [[ "$phase" == "Completed" ]]; }; then
+        # Finished/Completed are valid passive-sync states (per preflight validator)
+        echo "passive-sync"
     elif [[ "$sync_enabled" == "true" ]] && [[ -n "$phase" ]]; then
         if [[ -n "$last_message" ]]; then
             last_message=$(echo "$last_message" | tr '\n' ' ')
