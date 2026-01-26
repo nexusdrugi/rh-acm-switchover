@@ -137,7 +137,7 @@ if [[ -n "$RESTORE_NAME" ]]; then
             echo -e "${RED}       Restore message: $RESTORE_MESSAGE${NC}"
         fi
         BSL_CONDITIONS=$(oc --context="$NEW_HUB_CONTEXT" get $RES_BSL -n "$BACKUP_NAMESPACE" -o json 2>/dev/null | \
-            jq -r '.items[0].status.conditions // [] | map("\(.type)=\(.status) reason=\(.reason // "n/a") msg=\(.message // "n/a")") | join("; ")')
+            jq -r '.items[0].status.conditions // [] | map("\(.type)=\(.status) reason=\(.reason // "n/a") msg=\(.message // "n/a")") | join("; ")' || true)
         if [[ -n "$BSL_CONDITIONS" ]]; then
             echo -e "${RED}       BSL conditions: $BSL_CONDITIONS${NC}"
         fi
@@ -332,7 +332,7 @@ if [[ -n "$BSL_OUTPUT" ]]; then
         echo -e "${RED}       Unavailable BSL means restores cannot proceed${NC}"
         echo -e "${RED}       Backup storage may be inaccessible - verify credentials and connectivity${NC}"
         BSL_CONDITIONS=$(oc --context="$NEW_HUB_CONTEXT" get $RES_BSL "$BSL_NAME" -n "$BACKUP_NAMESPACE" -o json 2>/dev/null | \
-            jq -r '.status.conditions // [] | map("\(.type)=\(.status) reason=\(.reason // "n/a") msg=\(.message // "n/a")") | join("; ")')
+            jq -r '.status.conditions // [] | map("\(.type)=\(.status) reason=\(.reason // "n/a") msg=\(.message // "n/a")") | join("; ")' || true)
         if [[ -n "$BSL_CONDITIONS" ]]; then
             echo -e "${RED}       BSL conditions: $BSL_CONDITIONS${NC}"
         else
