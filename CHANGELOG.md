@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **KISS refactor: `Finalization._verify_old_hub_state()`**: Extracted 88-line observability scale-down logic into three helper methods (`_scale_down_old_hub_observability()`, `_wait_for_observability_scale_down()`, `_report_observability_scale_down_status()`) for clearer separation of concerns.
 
+### Fixed
+
+- **Preflight backup in-progress handling**: Preflight now waits for in-progress backups to complete before failing, reducing false negatives during rapid E2E cycles.
+- **Token expiration check**: Fixed kubeconfig token expiration check to use the correct Kubernetes client configuration class.
+- **Observability pod detection**: Updated observability pod selector to a label that exists on ACM observability pods.
+
 ## [1.4.11] - 2026-01-19
 
 ### Added
