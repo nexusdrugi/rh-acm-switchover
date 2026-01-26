@@ -2,11 +2,14 @@
 
 import logging
 import re
+import time
 from datetime import datetime, timezone
 from typing import List, Optional
 
 from lib.constants import (
     BACKUP_NAMESPACE,
+    BACKUP_POLL_INTERVAL,
+    BACKUP_VERIFY_TIMEOUT,
     BACKUP_SCHEDULE_DEFAULT_NAME,
     LOCAL_CLUSTER_NAME,
     RESTORE_PASSIVE_SYNC_NAME,
@@ -76,6 +79,49 @@ def _collect_bsl_unavailable_details(kube_client: KubeClient) -> str:
 
 class BackupValidator(BaseValidator):
     """Ensures backups exist and no job is stuck."""
+
+    def _wait_for_backups_complete(self, primary: KubeClient, in_progress: List[str]) -> List[str]:
+        """Wait for in-progress backups to complete within a timeout.
+
+        Args:
+            primary: Primary hub KubeClient instance
+            in_progress: List of backup names currently in progress
+
+        Returns:
+            List of backup names still in progress after waiting
+        """
+        if not in_progress:
+            return []
+
+        logger.info(
+            "Backup(s) in progress: %s. Waiting up to %ds for completion...",
+            ", ".join(in_progress),
+            BACKUP_VERIFY_TIMEOUT,
+        )
+
+        start_time = time.time()
+        remaining = in_progress
+
+        while remaining and (time.time() - start_time) < BACKUP_VERIFY_TIMEOUT:
+            time.sleep(BACKUP_POLL_INTERVAL)
+            try:
+                backups = primary.list_custom_resources(
+                    group="velero.io",
+                    version="v1",
+                    plural="backups",
+                    namespace=BACKUP_NAMESPACE,
+                )
+            except Exception as exc:
+                logger.debug("Failed to list backups while waiting: %s", exc)
+                return remaining
+
+            remaining = [
+                b.get("metadata", {}).get("name")
+                for b in backups
+                if b.get("status", {}).get("phase") == "InProgress"
+            ]
+
+        return remaining
 
     def _get_backup_age_info(self, completion_timestamp: Optional[str]) -> str:
         """
@@ -163,13 +209,34 @@ class BackupValidator(BaseValidator):
             ]
 
             if in_progress:
-                self.add_result(
-                    "Backup status",
-                    False,
-                    f"backup(s) in progress: {', '.join(in_progress)}",
-                    critical=True,
+                remaining = self._wait_for_backups_complete(primary, in_progress)
+                if remaining:
+                    self.add_result(
+                        "Backup status",
+                        False,
+                        f"backup(s) in progress after waiting {BACKUP_VERIFY_TIMEOUT}s: {', '.join(remaining)}",
+                        critical=True,
+                    )
+                    return
+
+                # Refresh backup list after waiting to ensure we inspect the latest completion state
+                backups = primary.list_custom_resources(
+                    group="velero.io",
+                    version="v1",
+                    plural="backups",
+                    namespace=BACKUP_NAMESPACE,
                 )
-            elif phase == "Completed":
+
+                backups.sort(
+                    key=lambda b: b.get("metadata", {}).get("creationTimestamp", ""),
+                    reverse=True,
+                )
+
+                latest_backup = backups[0]
+                backup_name = latest_backup.get("metadata", {}).get("name", "unknown")
+                phase = latest_backup.get("status", {}).get("phase", "unknown")
+
+            if phase == "Completed":
                 # Get backup completion timestamp to calculate age
                 completion_ts = latest_backup.get("status", {}).get("completionTimestamp")
                 age_info = self._get_backup_age_info(completion_ts)

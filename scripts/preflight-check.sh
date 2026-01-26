@@ -250,11 +250,26 @@ if [[ $BACKUPS -gt 0 ]]; then
     check_pass "Primary hub: Found $BACKUPS backup(s)"
     
     # Check for in-progress backups
-    IN_PROGRESS=$(oc --context="$PRIMARY_CONTEXT" get $RES_BACKUP -n "$BACKUP_NAMESPACE" -o jsonpath='{.items[?(@.status.phase=="InProgress")].metadata.name}' 2>/dev/null)
+    IN_PROGRESS=$(oc --context="$PRIMARY_CONTEXT" get $RES_BACKUP -n "$BACKUP_NAMESPACE" -o jsonpath='{.items[?(@.status.phase=="InProgress")].metadata.name}' 2>/dev/null || true)
     if [[ -z "$IN_PROGRESS" ]]; then
         check_pass "Primary hub: No backups in progress"
     else
-        check_fail "Primary hub: Backup(s) in progress: $IN_PROGRESS"
+        WAIT_SECONDS=${BACKUP_IN_PROGRESS_WAIT_SECONDS:-600}
+        POLL_SECONDS=${BACKUP_IN_PROGRESS_POLL_SECONDS:-30}
+        ELAPSED=0
+        echo -e "${YELLOW}⚠${NC} Primary hub: Backup(s) in progress; waiting up to ${WAIT_SECONDS}s for completion..."
+
+        while [[ -n "$IN_PROGRESS" && $ELAPSED -lt $WAIT_SECONDS ]]; do
+            sleep "$POLL_SECONDS"
+            ELAPSED=$((ELAPSED + POLL_SECONDS))
+            IN_PROGRESS=$(oc --context="$PRIMARY_CONTEXT" get $RES_BACKUP -n "$BACKUP_NAMESPACE" -o jsonpath='{.items[?(@.status.phase=="InProgress")].metadata.name}' 2>/dev/null || true)
+        done
+
+        if [[ -z "$IN_PROGRESS" ]]; then
+            check_pass "Primary hub: Backups completed within ${ELAPSED}s"
+        else
+            check_fail "Primary hub: Backup(s) in progress after waiting ${WAIT_SECONDS}s: $IN_PROGRESS"
+        fi
     fi
     
     # Check latest backup
