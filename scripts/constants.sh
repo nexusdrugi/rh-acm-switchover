@@ -84,10 +84,10 @@ export VALIDATOR_SA="acm-switchover-validator"
 export MANAGED_CLUSTER_NAMESPACE="open-cluster-management-agent"
 export MANAGED_CLUSTER_SA="klusterlet"
 
-# Timeouts / Thresholds
-export RESTORE_AGE_WARNING_SECONDS=3600 # 1 hour
-export BACKUP_IN_PROGRESS_WAIT_SECONDS=600 # 10 minutes
-export BACKUP_IN_PROGRESS_POLL_SECONDS=30
+# Timeouts / Thresholds (can be overridden via environment variables)
+export RESTORE_AGE_WARNING_SECONDS="${RESTORE_AGE_WARNING_SECONDS:-3600}" # 1 hour
+export BACKUP_IN_PROGRESS_WAIT_SECONDS="${BACKUP_IN_PROGRESS_WAIT_SECONDS:-600}" # 10 minutes
+export BACKUP_IN_PROGRESS_POLL_SECONDS="${BACKUP_IN_PROGRESS_POLL_SECONDS:-30}"
 
 # Exit Codes
 export EXIT_SUCCESS=0

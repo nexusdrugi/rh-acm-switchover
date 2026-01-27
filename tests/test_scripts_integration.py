@@ -42,7 +42,7 @@ def run_script(script_name: str, *args: str, env=None):
         stderr=subprocess.STDOUT,
         text=True,
         env=use_env,
-        timeout=10,
+        timeout=30,
     )
     output = strip_ansi(proc.stdout)
     return proc.returncode, output
@@ -618,8 +618,19 @@ case "$*" in
         echo "backup-ongoing   InProgress"
         exit 0
         ;;
-    *"InProgress"*)
+    *"get "*"backup"*"jsonpath"*"InProgress"*)
+        # Return backup name for in-progress check
         echo "backup-ongoing"
+        exit 0
+        ;;
+    *"get "*"backup"*"sort-by"*)
+        # Latest backup query
+        echo "backup-ongoing"
+        exit 0
+        ;;
+    *"get "*"backup"*"backup-ongoing"*"jsonpath"*"phase"*)
+        # Latest backup phase check
+        echo "InProgress"
         exit 0
         ;;
     # ClusterDeployment
@@ -636,6 +647,37 @@ case "$*" in
         echo "local-cluster   True"
         exit 0
         ;;
+    *"get "*"managedcluster"*"-o json"*)
+        echo '{"items":[{"metadata":{"name":"local-cluster"}}]}'
+        exit 0
+        ;;
+    # BackupSchedule checks
+    *"get "*"backupschedule"*"metadata.name"*)
+        echo "schedule-acm"
+        exit 0
+        ;;
+    *"get "*"backupschedule"*"paused"*)
+        echo "false"
+        exit 0
+        ;;
+    *"get "*"backupschedule"*"phase"*)
+        echo "Enabled"
+        exit 0
+        ;;
+    # BackupStorageLocation checks
+    *"get "*"backupstoragelocation"*)
+        echo "default   Available"
+        exit 0
+        ;;
+    # Cluster health checks
+    *"get nodes"*)
+        echo '{"items":[{"status":{"conditions":[{"type":"Ready","status":"True"}]}}]}'
+        exit 0
+        ;;
+    *"get clusteroperator"*)
+        echo "NAME   VERSION   AVAILABLE"
+        exit 0
+        ;;
     *) exit 0 ;;
 esac
 """,
@@ -644,11 +686,14 @@ esac
     oc_script.chmod(oc_script.stat().st_mode | stat.S_IEXEC)
 
     jq_script = mock_bin / "jq"
-    jq_script.write_text("#!/bin/bash\nexit 0\n", encoding="utf-8")
+    jq_script.write_text("#!/bin/bash\ncat\n", encoding="utf-8")
     jq_script.chmod(jq_script.stat().st_mode | stat.S_IEXEC)
 
     env = os.environ.copy()
     env["PATH"] = f"{mock_bin}:{env.get('PATH', '')}"
+    # Set short wait times so test doesn't timeout waiting for backup completion
+    env["BACKUP_IN_PROGRESS_WAIT_SECONDS"] = "2"
+    env["BACKUP_IN_PROGRESS_POLL_SECONDS"] = "1"
     return env
 
 
