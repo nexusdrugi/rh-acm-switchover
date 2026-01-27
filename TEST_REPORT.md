@@ -328,7 +328,7 @@ The tool is well-tested and ready for deployment with proper operational monitor
 
 ### Quick Test Run
 ```bash
-cd /home/tomaz/sources/rh-acm-switchover
+cd /path/to/rh-acm-switchover
 ./run_tests.sh
 ```
 
