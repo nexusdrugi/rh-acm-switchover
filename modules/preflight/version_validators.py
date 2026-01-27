@@ -279,6 +279,7 @@ class VersionValidator(BaseValidator):
                     version="v1",
                     plural="multiclusterhubs",
                     namespace=ACM_NAMESPACE,
+                    max_items=1,
                 )
                 if mchs:
                     mch = mchs[0]
@@ -413,6 +414,7 @@ class HubComponentValidator(BaseValidator):
                 version="v1alpha1",
                 plural="dataprotectionapplications",
                 namespace=BACKUP_NAMESPACE,
+                max_items=1,
             )
 
             if dpas:

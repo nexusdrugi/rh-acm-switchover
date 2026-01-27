@@ -500,6 +500,7 @@ class KubeClient:
         plural: str,
         namespace: Optional[str] = None,
         label_selector: Optional[str] = None,
+        max_items: Optional[int] = None,
     ) -> List[Dict]:
         """
         List custom resources.
@@ -510,9 +511,11 @@ class KubeClient:
             plural: Resource plural
             namespace: Namespace (None for cluster-scoped)
             label_selector: Label selector filter
+            max_items: Maximum number of items to return (None for unlimited).
+                      Use this to prevent memory exhaustion on large clusters.
 
         Returns:
-            List of resource dicts
+            List of resource dicts, limited to max_items if specified
 
         Raises:
             ValidationError: If namespace is invalid
@@ -523,6 +526,11 @@ class KubeClient:
         continue_token: Optional[str] = None
 
         while True:
+            # Check if we've hit the limit before fetching more
+            if max_items is not None and len(items) >= max_items:
+                logger.debug("Hit max_items limit %d, stopping fetch", max_items)
+                break
+
             try:
                 if namespace:
                     result = self.custom_api.list_namespaced_custom_object(
@@ -548,12 +556,20 @@ class KubeClient:
                     raise
                 raise
 
-            items.extend(result.get("items", []))
+            page_items = result.get("items", [])
+
+            # If we have a limit, only take what we need
+            if max_items is not None:
+                remaining = max_items - len(items)
+                items.extend(page_items[:remaining])
+            else:
+                items.extend(page_items)
 
             metadata = result.get("metadata") or {}
             continue_token = metadata.get("continue")
 
-            if not continue_token:
+            # Stop if no more pages or we've hit the limit
+            if not continue_token or (max_items is not None and len(items) >= max_items):
                 break
 
         return items
@@ -707,6 +723,7 @@ class KubeClient:
         plural: str,
         name: str,
         namespace: Optional[str] = None,
+        timeout_seconds: Optional[int] = None,
     ) -> bool:
         """Delete a custom resource.
 
@@ -716,6 +733,8 @@ class KubeClient:
             plural: Resource plural
             name: Resource name
             namespace: Namespace (None for cluster-scoped)
+            timeout_seconds: Request timeout in seconds. If None, uses client default.
+                           Prevents hanging on stuck API calls.
 
         Returns:
             True if deleted or already absent (idempotent)
@@ -729,6 +748,11 @@ class KubeClient:
             logger.info("[DRY-RUN] Would delete %s/%s", plural, name)
             return True
 
+        # Build optional kwargs for timeout
+        kwargs: Dict[str, Any] = {}
+        if timeout_seconds is not None:
+            kwargs["_request_timeout"] = timeout_seconds
+
         if namespace:
             self.custom_api.delete_namespaced_custom_object(
                 group=group,
@@ -736,9 +760,12 @@ class KubeClient:
                 namespace=namespace,
                 plural=plural,
                 name=name,
+                **kwargs,
             )
         else:
-            self.custom_api.delete_cluster_custom_object(group=group, version=version, plural=plural, name=name)
+            self.custom_api.delete_cluster_custom_object(
+                group=group, version=version, plural=plural, name=name, **kwargs
+            )
         return True
 
     def list_managed_clusters(self) -> List[Dict]:
