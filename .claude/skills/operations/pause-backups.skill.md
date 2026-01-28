@@ -30,10 +30,8 @@ oc get multiclusterhub -A -o jsonpath='{.items[0].status.currentVersion}' --cont
 # List BackupSchedules
 oc get backupschedule.cluster.open-cluster-management.io -n open-cluster-management-backup --context <primary>
 
-# Get the name
-BACKUP_SCHEDULE_NAME=$(oc get backupschedule.cluster.open-cluster-management.io \
-  -n open-cluster-management-backup --context <primary> \
-  -o jsonpath='{.items[0].metadata.name}')
+# Set the BackupSchedule name from the list above
+BACKUP_SCHEDULE_NAME="<paste-backupschedule-name-here>"
 
 echo "BackupSchedule name: $BACKUP_SCHEDULE_NAME"
 ```
@@ -68,10 +66,8 @@ oc get backupschedule.cluster.open-cluster-management.io "$BACKUP_SCHEDULE_NAME"
 > ⚠️ **IMPORTANT**: Save before deleting — you'll need this to recreate later
 
 ```bash
-# Get the name
-BACKUP_SCHEDULE_NAME=$(oc get backupschedule.cluster.open-cluster-management.io \
-  -n open-cluster-management-backup --context <primary> \
-  -o jsonpath='{.items[0].metadata.name}')
+# Set the BackupSchedule name from the list above
+BACKUP_SCHEDULE_NAME="<paste-backupschedule-name-here>"
 
 # Save to file
 oc get backupschedule.cluster.open-cluster-management.io "$BACKUP_SCHEDULE_NAME" \
@@ -144,7 +140,7 @@ oc get backup.velero.io -n open-cluster-management-backup --context <primary> \
 
 If backup in progress:
 - Wait for completion (typically 5-15 minutes)
-- If urgent, delete the backup CR (note: deleted backup will NOT be restorable; the data remains in object storage but ACM cannot use it):
+- If urgent, delete the backup CR (this removes only the CR; the backup will NOT be restorable):
   ```bash
   oc delete backup.velero.io <name> -n open-cluster-management-backup --context <primary>
   ```

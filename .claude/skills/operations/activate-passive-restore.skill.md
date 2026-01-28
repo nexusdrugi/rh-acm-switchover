@@ -184,6 +184,13 @@ If patching fails or you prefer a clean activation:
 oc delete restore.cluster.open-cluster-management.io restore-acm-passive-sync \
   -n open-cluster-management-backup --context <secondary>
 
+# Wait for deletion to complete
+until ! oc get restore.cluster.open-cluster-management.io restore-acm-passive-sync \
+  -n open-cluster-management-backup --context <secondary> &>/dev/null; do
+  echo "Waiting for restore deletion..."
+  sleep 2
+done
+
 # Create activation restore
 oc apply --context <secondary> -f - <<EOF
 apiVersion: cluster.open-cluster-management.io/v1beta1
