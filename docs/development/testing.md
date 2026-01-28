@@ -107,6 +107,41 @@ python -m pytest tests/e2e/ -v -m e2e
 
 See `tests/e2e/README.md` for details.
 
+### Full Real E2E (On Demand)
+
+These commands run real switchover cycles against actual hubs. Ensure the
+output directory exists before running (it is not created automatically):
+
+```bash
+mkdir -p ./e2e-results
+```
+
+Single-cycle real switchover (passive -> secondary):
+
+```bash
+python -m pytest tests/e2e/test_e2e_switchover.py -v -m e2e \
+  --primary-context mgmt1 \
+  --secondary-context mgmt2 \
+  --e2e-method passive \
+  --e2e-old-hub-action secondary \
+  --e2e-cycles 1 \
+  --e2e-output-dir ./e2e-results
+```
+
+Multi-cycle soak with limits:
+
+```bash
+python -m pytest tests/e2e/test_e2e_switchover.py -v -m e2e \
+  --primary-context mgmt1 \
+  --secondary-context mgmt2 \
+  --e2e-method passive \
+  --e2e-old-hub-action secondary \
+  --e2e-cycles 5 \
+  --e2e-run-hours 2 \
+  --e2e-max-failures 2 \
+  --e2e-output-dir ./e2e-results
+```
+
 ### Real-Cluster Validation (Example)
 
 Example real-cluster validation using the discovery + preflight scripts:
