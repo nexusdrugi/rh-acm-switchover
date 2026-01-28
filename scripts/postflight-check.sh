@@ -312,6 +312,35 @@ if [[ $BACKUP_SCHEDULE -gt 0 ]]; then
         else
             check_fail "Latest backup: '$LATEST_BACKUP' failed or in unexpected state: $LATEST_PHASE"
         fi
+
+        # Check backup age (should be recent for integrity verification)
+        if [[ -n "$LATEST_TIME" ]]; then
+            LATEST_EPOCH=$(date -d "$LATEST_TIME" +%s 2>/dev/null || echo 0)
+            CURRENT_EPOCH=$(date +%s)
+            if [[ $LATEST_EPOCH -gt 0 ]]; then
+                AGE_SECONDS=$((CURRENT_EPOCH - LATEST_EPOCH))
+                if [[ $AGE_SECONDS -gt 600 ]]; then
+                    check_fail "Latest backup is older than 10 minutes ($((AGE_SECONDS / 60)) mins ago)"
+                else
+                    check_pass "Latest backup age OK ($AGE_SECONDS seconds)"
+                fi
+            else
+                check_warn "Could not parse latest backup timestamp for age validation"
+            fi
+        fi
+
+        # Check Velero logs for backup errors
+        VELERO_LOG_OUTPUT=$(oc --context="$NEW_HUB_CONTEXT" logs -n "$BACKUP_NAMESPACE" deployment/velero -c velero --tail=500 2>/dev/null || true)
+        if [[ -n "$VELERO_LOG_OUTPUT" ]]; then
+            VELERO_LOG_ERRORS=$(echo "$VELERO_LOG_OUTPUT" | grep "$LATEST_BACKUP" | grep -iE "error|failed" | head -1 || true)
+            if [[ -n "$VELERO_LOG_ERRORS" ]]; then
+                check_fail "Velero logs show errors for backup '$LATEST_BACKUP' (see velero logs)"
+            else
+                check_pass "Velero logs show no errors for backup '$LATEST_BACKUP' (recent logs checked)"
+            fi
+        else
+            check_warn "Velero logs unavailable for backup verification (check manually)"
+        fi
     else
         check_warn "No recent backups found (may take time for first backup to run)"
     fi
@@ -415,6 +444,8 @@ if [[ -n "$OLD_HUB_CONTEXT" ]]; then
         else
             check_pass "Old hub: MultiClusterObservability CR not present (expected)"
         fi
+
+        check_warn "Do NOT re-enable Thanos compactor or Observatorium API on the old hub unless switching back"
     fi
     
     # Check if old hub has passive sync restore configured (for failback capability)

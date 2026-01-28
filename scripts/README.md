@@ -25,7 +25,7 @@ All scripts display their version number in the output header for troubleshootin
 ╔════════════════════════════════════════════════════════════╗
 ║   ACM Switchover Pre-flight Validation                    ║
 ╚════════════════════════════════════════════════════════════╝
-preflight-check.sh v1.3.0 (2025-12-11)
+preflight-check.sh v1.5.0 (2026-01-28)
 ```
 
 The version is defined in `constants.sh` and follows [Semantic Versioning](https://semver.org/):
@@ -229,7 +229,8 @@ Automates all prerequisite checks before starting an ACM switchover to catch con
 14. **Auto-Import Strategy** (ACM 2.14+ only) - Validates `autoImportStrategy` configuration:
     - Skipped for ACM versions < 2.14
     - Warns if non-default strategy is set on either hub
-    - For secondary hubs with existing clusters: advises temporary `ImportAndSync` before restore
+    - For secondary hubs with existing clusters and ImportOnly: advises immediate-import annotations (preferred)
+    - Mentions temporary `ImportAndSync` only for planned switchback scenarios
     - Links to Red Hat documentation for guidance
 
 ### Example Output
@@ -238,7 +239,7 @@ Automates all prerequisite checks before starting an ACM switchover to catch con
 ╔════════════════════════════════════════════════════════════╗
 ║   ACM Switchover Pre-flight Validation                    ║
 ╚════════════════════════════════════════════════════════════╝
-preflight-check.sh v1.3.0 (2025-12-11)
+preflight-check.sh v1.5.0 (2026-01-28)
 
 Primary Hub:    primary-hub
 Secondary Hub:  secondary-hub
@@ -391,6 +392,7 @@ Verifies that the ACM switchover completed successfully by validating all critic
 3. **Observability Components** - Checks all observability pods are running (Grafana, Observatorium, Thanos)
 4. **Metrics Collection** - Validates Grafana route and observatorium-api status
 5. **Backup Configuration** - Ensures BackupSchedule is enabled and creating backups
+   - Validates latest backup status, age, and scans recent Velero logs for errors
 5b. **BackupStorageLocation** - Verifies BSL is in "Available" phase (storage accessible for backups)
 6. **ACM Hub Components** - Verifies MultiClusterHub and ACM pods are healthy
 7. **Old Hub Comparison** (if `--old-hub-context` provided) - Checks old hub clusters are disconnected and that the old hub is not still acting as an active observability hub:
@@ -971,7 +973,7 @@ Provides shared helper functions and utilities used by both `preflight-check.sh`
 | **Color Variables** | `RED`, `GREEN`, `YELLOW`, `BLUE`, `NC` for formatted output |
 | **Counter Variables** | `TOTAL_CHECKS`, `PASSED_CHECKS`, `FAILED_CHECKS`, `WARNING_CHECKS` |
 | **Message Arrays** | `FAILED_MESSAGES`, `WARNING_MESSAGES` for summary reporting |
-| **`print_script_version`** | Print version line (e.g., `preflight-check.sh v1.3.0 (2025-12-11)`) |
+| **`print_script_version`** | Print version line (e.g., `preflight-check.sh v1.5.0 (2026-01-28)`) |
 | **`check_pass`** | Record a passing check with green checkmark |
 | **`check_fail`** | Record a failing check with red X, adds to failed messages |
 | **`check_warn`** | Record a warning with yellow triangle, adds to warning messages |

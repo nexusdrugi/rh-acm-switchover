@@ -581,15 +581,18 @@ if is_acm_214_or_higher "$ACM_SECONDARY_VERSION"; then
         echo -e "${YELLOW}       See: $AUTO_IMPORT_STRATEGY_DOC_URL${NC}"
     fi
     
-    # If secondary hub already has managed clusters, provide ImportAndSync guidance
-    if [[ $SECONDARY_MC_TOTAL -gt 0 ]]; then
-        check_warn "Secondary hub: Pre-existing clusters require autoImportStrategy change for restore"
-        echo -e "${YELLOW}       IMPORTANT for ACM 2.14+ restore with existing clusters:${NC}"
-        echo -e "${YELLOW}       1. BEFORE restore: Change autoImportStrategy to '$AUTO_IMPORT_STRATEGY_SYNC'${NC}"
-        echo -e "${YELLOW}          oc -n $MCE_NAMESPACE create configmap $IMPORT_CONTROLLER_CONFIGMAP \\${NC}"
-        echo -e "${YELLOW}            --from-literal=$AUTO_IMPORT_STRATEGY_KEY=$AUTO_IMPORT_STRATEGY_SYNC --dry-run=client -o yaml | oc apply -f -${NC}"
-        echo -e "${YELLOW}       2. AFTER restore completes: Remove the configmap to restore default behavior${NC}"
-        echo -e "${YELLOW}          oc -n $MCE_NAMESPACE delete configmap $IMPORT_CONTROLLER_CONFIGMAP${NC}"
+    # If secondary hub already has managed clusters, provide ImportOnly guidance
+    if [[ $SECONDARY_MC_TOTAL -gt 0 ]] && [[ "$SECONDARY_STRATEGY" == "default" || "$SECONDARY_STRATEGY" == "$AUTO_IMPORT_STRATEGY_DEFAULT" ]]; then
+        check_warn "Secondary hub: ImportOnly strategy with existing clusters"
+        echo -e "${YELLOW}       ACM 2.14+ default ImportOnly requires one of the following:${NC}"
+        echo -e "${YELLOW}       Option A (preferred): Add immediate-import annotation to non-local clusters${NC}"
+        echo -e "${YELLOW}         oc get managedcluster -o name | grep -v $LOCAL_CLUSTER_NAME | \\${NC}"
+        echo -e "${YELLOW}           xargs -I{} oc annotate {} import.open-cluster-management.io/immediate-import='' --overwrite${NC}"
+        echo -e "${YELLOW}       Option B (switchback scenarios): Temporarily set autoImportStrategy=${AUTO_IMPORT_STRATEGY_SYNC}${NC}"
+        echo -e "${YELLOW}         oc -n $MCE_NAMESPACE create configmap $IMPORT_CONTROLLER_CONFIGMAP \\${NC}"
+        echo -e "${YELLOW}           --from-literal=$AUTO_IMPORT_STRATEGY_KEY=$AUTO_IMPORT_STRATEGY_SYNC --dry-run=client -o yaml | oc apply -f -${NC}"
+        echo -e "${YELLOW}         Then remove the configmap after activation to restore default ImportOnly${NC}"
+        echo -e "${YELLOW}         oc -n $MCE_NAMESPACE delete configmap $IMPORT_CONTROLLER_CONFIGMAP${NC}"
         echo -e "${YELLOW}       See: $AUTO_IMPORT_STRATEGY_DOC_URL${NC}"
     fi
 else
