@@ -430,7 +430,7 @@ if [[ "$METHOD" == "passive" ]]; then
                 echo -e "${RED}       Restore message: $LAST_MESSAGE${NC}"
             fi
             BSL_CONDITIONS=$(oc --context="$SECONDARY_CONTEXT" get $RES_BSL -n "$BACKUP_NAMESPACE" -o json 2>/dev/null | \
-                jq -r '.items[0].status.conditions // [] | map("\(.type)=\(.status) reason=\(.reason // "n/a") msg=\(.message // "n/a")") | join("; ")')
+                jq -r '.items[0].status.conditions // [] | map("\(.type)=\(.status) reason=\(.reason // "n/a") msg=\(.message // "n/a")") | join("; ")' || true)
             if [[ -n "$BSL_CONDITIONS" ]]; then
                 echo -e "${RED}       BSL conditions: $BSL_CONDITIONS${NC}"
                 # Check if BSL is explicitly unavailable

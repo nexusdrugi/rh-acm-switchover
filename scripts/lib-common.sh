@@ -512,12 +512,12 @@ check_dpa_status() {
     local hub_name="$2"
 
     local dpa_count
-    dpa_count=$("$CLUSTER_CLI_BIN" --context="$ctx" get $RES_DPA -n "$BACKUP_NAMESPACE" --no-headers 2>/dev/null | wc -l)
+    dpa_count=$("$CLUSTER_CLI_BIN" --context="$ctx" get $RES_DPA -n "$BACKUP_NAMESPACE" --no-headers 2>/dev/null | wc -l || echo "0")
     
     if [[ $dpa_count -gt 0 ]]; then
         local dpa_name dpa_reconciled
-        dpa_name=$("$CLUSTER_CLI_BIN" --context="$ctx" get $RES_DPA -n "$BACKUP_NAMESPACE" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-        dpa_reconciled=$("$CLUSTER_CLI_BIN" --context="$ctx" get $RES_DPA "$dpa_name" -n "$BACKUP_NAMESPACE" -o jsonpath='{.status.conditions[?(@.type=="Reconciled")].status}' 2>/dev/null)
+        dpa_name=$("$CLUSTER_CLI_BIN" --context="$ctx" get $RES_DPA -n "$BACKUP_NAMESPACE" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+        dpa_reconciled=$("$CLUSTER_CLI_BIN" --context="$ctx" get $RES_DPA "$dpa_name" -n "$BACKUP_NAMESPACE" -o jsonpath='{.status.conditions[?(@.type=="Reconciled")].status}' 2>/dev/null || echo "")
         
         if [[ "$dpa_reconciled" == "True" ]]; then
             check_pass "$hub_name: DataProtectionApplication '$dpa_name' is reconciled"
@@ -536,12 +536,12 @@ check_bsl_status() {
     local hub_name="$2"
 
     local bsl_count
-    bsl_count=$("$CLUSTER_CLI_BIN" --context="$ctx" get $RES_BSL -n "$BACKUP_NAMESPACE" --no-headers 2>/dev/null | wc -l)
+    bsl_count=$("$CLUSTER_CLI_BIN" --context="$ctx" get $RES_BSL -n "$BACKUP_NAMESPACE" --no-headers 2>/dev/null | wc -l || echo "0")
     
     if [[ $bsl_count -gt 0 ]]; then
         local bsl_name bsl_phase
-        bsl_name=$("$CLUSTER_CLI_BIN" --context="$ctx" get $RES_BSL -n "$BACKUP_NAMESPACE" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-        bsl_phase=$("$CLUSTER_CLI_BIN" --context="$ctx" get $RES_BSL "$bsl_name" -n "$BACKUP_NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null)
+        bsl_name=$("$CLUSTER_CLI_BIN" --context="$ctx" get $RES_BSL -n "$BACKUP_NAMESPACE" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+        bsl_phase=$("$CLUSTER_CLI_BIN" --context="$ctx" get $RES_BSL "$bsl_name" -n "$BACKUP_NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
         
         if [[ "$bsl_phase" == "Available" ]]; then
             check_pass "$hub_name: BackupStorageLocation '$bsl_name' is Available"
@@ -551,7 +551,7 @@ check_bsl_status() {
             
             local bsl_conditions
             bsl_conditions=$("$CLUSTER_CLI_BIN" --context="$ctx" get $RES_BSL "$bsl_name" -n "$BACKUP_NAMESPACE" -o json 2>/dev/null | \
-                jq -r '.status.conditions // [] | map("\(.type)=\(.status) reason=\(.reason // "n/a") msg=\(.message // "n/a")") | join("; ")')
+                jq -r '.status.conditions // [] | map("\(.type)=\(.status) reason=\(.reason // "n/a") msg=\(.message // "n/a")") | join("; ")' || echo "")
             if [[ -n "$bsl_conditions" ]]; then
                 echo -e "${RED}       BSL conditions: $bsl_conditions${NC}"
             else
@@ -571,7 +571,7 @@ check_velero_pods() {
 
     if "$CLUSTER_CLI_BIN" --context="$ctx" get namespace "$BACKUP_NAMESPACE" &> /dev/null; then
         local velero_pods
-        velero_pods=$("$CLUSTER_CLI_BIN" --context="$ctx" get pods -n "$BACKUP_NAMESPACE" -l app.kubernetes.io/name=velero --no-headers 2>/dev/null | wc -l)
+        velero_pods=$("$CLUSTER_CLI_BIN" --context="$ctx" get pods -n "$BACKUP_NAMESPACE" -l app.kubernetes.io/name=velero --no-headers 2>/dev/null | wc -l || echo "0")
         if [[ $velero_pods -gt 0 ]]; then
             check_pass "$hub_name: OADP operator installed ($velero_pods Velero pod(s))"
         else
