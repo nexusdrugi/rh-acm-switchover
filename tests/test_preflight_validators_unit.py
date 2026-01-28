@@ -62,10 +62,15 @@ class TestBackupValidator:
         assert results[0]["critical"] is True
         assert "no backups found" in results[0]["message"]
 
-    def test_backup_in_progress(self, reporter, mock_kube_client):
+    def test_backup_in_progress(self, reporter, mock_kube_client, mocker):
         """Test critical failure when backup is in progress."""
+        # Mock time functions to simulate timeout immediately
+        # First call returns 0, second call returns timeout+1 to exit loop immediately
+        mocker.patch("modules.preflight.backup_validators.time.sleep")
+        mocker.patch("modules.preflight.backup_validators.time.time", side_effect=[0, 601])
+        
         validator = BackupValidator(reporter)
-        # Mock backups with one in progress
+        # Mock backups with one in progress - stays in progress through all polls
         mock_kube_client.list_custom_resources.return_value = [
             {
                 "metadata": {"name": "backup-in-progress", "creationTimestamp": "2025-12-31T10:00:00Z"},
