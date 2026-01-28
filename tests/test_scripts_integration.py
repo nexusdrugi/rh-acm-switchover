@@ -685,8 +685,62 @@ esac
     )
     oc_script.chmod(oc_script.stat().st_mode | stat.S_IEXEC)
 
+    # Create a mock jq that handles common expressions used in the scripts
+    # The mock needs to handle expressions like '.items | length' properly
+    # instead of just echoing the input (which breaks numeric comparisons)
     jq_script = mock_bin / "jq"
-    jq_script.write_text("#!/bin/bash\ncat\n", encoding="utf-8")
+    jq_script.write_text(
+        """#!/bin/bash
+# Mock jq that handles common expressions used in preflight/postflight scripts
+
+# Get the jq expression (first non-flag argument)
+EXPR=""
+for arg in "$@"; do
+    case "$arg" in
+        -r|--raw-output) ;;
+        --arg) shift; shift ;;  # Skip --arg name value
+        -*) ;;
+        *) EXPR="$arg"; break ;;
+    esac
+done
+
+# Read stdin
+INPUT=$(cat)
+
+# Handle common expressions
+case "$EXPR" in
+    ".items | length")
+        # Count items array length - return 0 for empty/missing
+        echo "0"
+        ;;
+    ".items[0].metadata.name"*)
+        # Return empty string for item name lookups
+        echo ""
+        ;;
+    ".items[0].status"*)
+        # Return empty for status lookups
+        echo ""
+        ;;
+    ".items[-1]"*)
+        # Return empty for last item lookups
+        echo ""
+        ;;
+    ".status.conditions"*)
+        # Return empty for conditions
+        echo ""
+        ;;
+    *)
+        # For unhandled expressions, delegate to real jq if available, else return empty
+        if command -v /usr/bin/jq &>/dev/null; then
+            echo "$INPUT" | /usr/bin/jq "$@" 2>/dev/null || echo ""
+        else
+            echo ""
+        fi
+        ;;
+esac
+""",
+        encoding="utf-8",
+    )
     jq_script.chmod(jq_script.stat().st_mode | stat.S_IEXEC)
 
     env = os.environ.copy()
