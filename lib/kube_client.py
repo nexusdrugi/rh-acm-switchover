@@ -22,7 +22,8 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential,
 )
-from urllib3.exceptions import HTTPError, MaxRetryError, NewConnectionError, TimeoutError as Urllib3TimeoutError
+from urllib3.exceptions import HTTPError, MaxRetryError, NewConnectionError
+from urllib3.exceptions import TimeoutError as Urllib3TimeoutError
 
 from lib.validation import InputValidator, ValidationError
 
@@ -487,9 +488,7 @@ class KubeClient:
                 name=name,
             )
         else:
-            resource = self.custom_api.get_cluster_custom_object(
-                group=group, version=version, plural=plural, name=name
-            )
+            resource = self.custom_api.get_cluster_custom_object(group=group, version=version, plural=plural, name=name)
         return resource
 
     @retry_api_call

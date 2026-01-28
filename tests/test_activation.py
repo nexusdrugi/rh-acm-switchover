@@ -31,6 +31,7 @@ SecondaryActivation = activation_module.SecondaryActivation
 
 def create_mock_step_context(is_step_completed_func, mark_step_completed_func):
     """Create a mock step context manager that mimics StepContext behavior."""
+
     @contextmanager
     def mock_step(step_name, logger=None):
         if is_step_completed_func(step_name):
@@ -40,6 +41,7 @@ def create_mock_step_context(is_step_completed_func, mark_step_completed_func):
         else:
             yield True
             mark_step_completed_func(step_name)
+
     return mock_step
 
 
@@ -327,7 +329,7 @@ class TestSecondaryActivation:
                     "status": {
                         "phase": "Enabled",
                         "veleroManagedClustersRestoreName": "test-velero-mc-restore",
-                    }
+                    },
                 }
             if kwargs.get("plural") == "restores" and kwargs.get("group") == "velero.io":
                 return {
@@ -362,9 +364,7 @@ class TestSecondaryActivation:
             assert mock_secondary_client.get_custom_resource.called
 
     @patch("modules.activation.wait_for_condition")
-    def test_activate_passive_restore_method(
-        self, mock_wait, mock_secondary_client, mock_state_manager
-    ):
+    def test_activate_passive_restore_method(self, mock_wait, mock_secondary_client, mock_state_manager):
         """Test passive activation using restore-acm-activate (Option B)."""
         mock_wait.return_value = True
         mock_state_manager.get_config.return_value = "2.13.0"

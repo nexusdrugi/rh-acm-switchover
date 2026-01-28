@@ -246,6 +246,7 @@ class StateManager:
         except Exception as e:
             if suppress_errors:
                 import sys
+
                 print(f"Error flushing state: {e}", file=sys.stderr)
                 return False
             raise
@@ -373,8 +374,10 @@ class StateManager:
 
         stored_primary = stored.get("primary")
         stored_secondary = stored.get("secondary")
-        has_progress = bool(self.state.get("completed_steps")) or self.state.get("errors") or (
-            self.state.get("current_phase") not in (None, Phase.INIT.value)
+        has_progress = (
+            bool(self.state.get("completed_steps"))
+            or self.state.get("errors")
+            or (self.state.get("current_phase") not in (None, Phase.INIT.value))
         )
 
         state_changed = False

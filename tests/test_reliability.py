@@ -8,7 +8,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from kubernetes.client.rest import ApiException
-from urllib3.exceptions import HTTPError, MaxRetryError, NewConnectionError, TimeoutError as Urllib3TimeoutError
+from urllib3.exceptions import HTTPError, MaxRetryError, NewConnectionError
+from urllib3.exceptions import TimeoutError as Urllib3TimeoutError
 
 from lib.kube_client import KubeClient, is_retryable_error
 

@@ -10,12 +10,12 @@ from kubernetes.client.rest import ApiException
 
 from lib.constants import (
     BACKUP_NAMESPACE,
+    DISABLE_AUTO_IMPORT_ANNOTATION,
     LOCAL_CLUSTER_NAME,
     OBSERVABILITY_NAMESPACE,
     THANOS_COMPACTOR_LABEL_SELECTOR,
     THANOS_COMPACTOR_STATEFULSET,
     THANOS_SCALE_DOWN_WAIT,
-    DISABLE_AUTO_IMPORT_ANNOTATION,
 )
 from lib.exceptions import SwitchoverError
 from lib.kube_client import KubeClient

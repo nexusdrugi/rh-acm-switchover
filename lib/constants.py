@@ -130,7 +130,10 @@ try:
     else:
         STALE_STATE_THRESHOLD = DEFAULT_STALE_STATE_THRESHOLD_HOURS * 3600
 except (ValueError, TypeError, OverflowError) as e:
-    print(f"Warning: Invalid value for ACM_SWITCHOVER_STALE_HOURS: {e}. Using default {DEFAULT_STALE_STATE_THRESHOLD_HOURS} hours.", file=sys.stderr)
+    print(
+        f"Warning: Invalid value for ACM_SWITCHOVER_STALE_HOURS: {e}. Using default {DEFAULT_STALE_STATE_THRESHOLD_HOURS} hours.",
+        file=sys.stderr,
+    )
     STALE_STATE_THRESHOLD = DEFAULT_STALE_STATE_THRESHOLD_HOURS * 3600
 
 # Backup verification settings

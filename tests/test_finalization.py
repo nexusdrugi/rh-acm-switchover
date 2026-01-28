@@ -4,8 +4,8 @@ Tests cover Finalization class for completing the switchover.
 """
 
 import sys
-from datetime import datetime, timezone
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import Mock, call, patch
 
@@ -21,6 +21,7 @@ Finalization = finalization_module.Finalization
 
 def create_mock_step_context(is_step_completed_func, mark_step_completed_func):
     """Create a mock step context manager that mimics StepContext behavior."""
+
     @contextmanager
     def mock_step(step_name, logger=None):
         if is_step_completed_func(step_name):
@@ -30,6 +31,7 @@ def create_mock_step_context(is_step_completed_func, mark_step_completed_func):
         else:
             yield True
             mark_step_completed_func(step_name)
+
     return mock_step
 
 
@@ -220,9 +222,7 @@ class TestFinalization:
         finalization._verify_backup_integrity(max_age_seconds=600)
 
     @patch("modules.finalization.wait_for_condition")
-    def test_verify_backup_integrity_waits_for_completion(
-        self, mock_wait, finalization, mock_secondary_client
-    ):
+    def test_verify_backup_integrity_waits_for_completion(self, mock_wait, finalization, mock_secondary_client):
         """Backup integrity should wait for the latest backup to complete."""
         backup_ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         mock_wait.return_value = True
@@ -271,9 +271,7 @@ class TestFinalization:
             old_hub_action="secondary",
             disable_observability_on_secondary=True,
         )
-        primary.list_custom_resources.return_value = [
-            {"metadata": {"name": "observability", "labels": {}}}
-        ]
+        primary.list_custom_resources.return_value = [{"metadata": {"name": "observability", "labels": {}}}]
         primary.get_pods.return_value = []
 
         fin._disable_observability_on_secondary()
@@ -348,7 +346,7 @@ class TestFinalization:
         self, mock_time, mock_secondary_client, mock_state_manager, mock_backup_manager
     ):
         """Test that _verify_old_hub_state is not called when old_hub_action is 'none'.
-        
+
         This ensures the CLI contract is respected: --old-hub-action none should
         leave the old hub unchanged for manual handling.
         """
@@ -356,7 +354,7 @@ class TestFinalization:
         mock_time.time.side_effect = [0, 1, 2, 3]
         mock_time.sleep.return_value = None
         backup_ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        
+
         primary = Mock()
         fin = Finalization(
             secondary_client=mock_secondary_client,
@@ -366,7 +364,7 @@ class TestFinalization:
             primary_has_observability=True,
             old_hub_action="none",
         )
-        
+
         # Mock all required responses with side_effect for sequential calls
         mock_secondary_client.list_custom_resources.side_effect = [
             [{"metadata": {"name": "schedule"}, "spec": {"paused": False}}],  # verify_backup_schedule_enabled
@@ -386,11 +384,11 @@ class TestFinalization:
             "status": {"phase": "Running"},
         }
         mock_secondary_client.get_pods.return_value = []
-        
+
         # Ensure we track if _verify_old_hub_state was called
-        with patch.object(fin, '_verify_old_hub_state') as mock_verify:
+        with patch.object(fin, "_verify_old_hub_state") as mock_verify:
             result = fin.finalize()
-            
+
             assert result is True
             # _verify_old_hub_state should NOT be called when old_hub_action is 'none'
             mock_verify.assert_not_called()
@@ -398,8 +396,8 @@ class TestFinalization:
             primary.scale_statefulset.assert_not_called()
             primary.scale_deployment.assert_not_called()
 
-    @patch('time.sleep')
-    @patch('time.time')
+    @patch("time.sleep")
+    @patch("time.time")
     def test_finalize_calls_verify_old_hub_state_when_action_secondary(
         self, mock_time_time, mock_time_sleep, mock_secondary_client, mock_state_manager, mock_backup_manager
     ):
@@ -408,11 +406,11 @@ class TestFinalization:
         mock_time_time.return_value = 0
         mock_time_sleep.return_value = None
         backup_ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        
+
         primary = Mock()
         primary.list_custom_resources.return_value = []
         primary.get_pods.return_value = []
-        
+
         fin = Finalization(
             secondary_client=mock_secondary_client,
             state_manager=mock_state_manager,
@@ -421,7 +419,7 @@ class TestFinalization:
             primary_has_observability=False,
             old_hub_action="secondary",
         )
-        
+
         # Mock all required responses with side_effect for sequential calls
         # Order: _cleanup_restore_resources, verify_backup_schedule_enabled, fix_backup_collision, verify_new_backups (2x)
         mock_secondary_client.list_custom_resources.side_effect = [
@@ -442,10 +440,10 @@ class TestFinalization:
             "status": {"phase": "Running"},
         }
         mock_secondary_client.get_pods.return_value = []
-        
-        with patch.object(fin, '_verify_old_hub_state') as mock_verify:
+
+        with patch.object(fin, "_verify_old_hub_state") as mock_verify:
             result = fin.finalize()
-            
+
             assert result is True
             # _verify_old_hub_state SHOULD be called when old_hub_action is 'secondary'
             mock_verify.assert_called_once()

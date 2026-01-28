@@ -524,6 +524,7 @@ class TestApiCallDecorator:
 
     def test_uses_method_name_as_default_resource_desc(self):
         """Decorator derives resource_desc from method name if not provided."""
+
         # The resource_desc is used in log messages; we just verify the decorator works
         @api_call(not_found_value=None)
         def get_some_resource():

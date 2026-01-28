@@ -27,6 +27,7 @@ PostActivationVerification = post_activation_module.PostActivationVerification
 
 def create_mock_step_context(is_step_completed_func, mark_step_completed_func):
     """Create a mock step context manager that mimics StepContext behavior."""
+
     @contextmanager
     def mock_step(step_name, logger=None):
         if is_step_completed_func(step_name):
@@ -36,6 +37,7 @@ def create_mock_step_context(is_step_completed_func, mark_step_completed_func):
         else:
             yield True
             mark_step_completed_func(step_name)
+
     return mock_step
 
 
@@ -95,9 +97,7 @@ class TestPostActivationVerification:
         assert verify.state == mock_state_manager
         assert verify.has_observability is True
 
-    def test_klusterlet_verification_bypasses_kubeconfig_size_limit(
-        self, mock_secondary_client, mock_state_manager
-    ):
+    def test_klusterlet_verification_bypasses_kubeconfig_size_limit(self, mock_secondary_client, mock_state_manager):
         """Klusterlet verification should bypass kubeconfig size limits."""
         verify = PostActivationVerification(
             secondary_client=mock_secondary_client,

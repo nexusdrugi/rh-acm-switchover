@@ -14,12 +14,13 @@ Usage:
 """
 
 import json
-import pytest
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from tests.e2e.orchestrator import RunConfig, E2EOrchestrator
+import pytest
+
+from tests.e2e.orchestrator import E2EOrchestrator, RunConfig
 from tests.e2e.phase_handlers import CycleResult, PhaseResult
 
 
@@ -679,11 +680,12 @@ class TestSoakControls:
         assert resume_state["last_completed_cycle"] == 4
         assert resume_state["failure_count"] == 2
         assert "start_time" in resume_state, "Resume state should include start_time"
-    
+
     def test_resume_preserves_start_time(self, tmp_path):
         """Test that resume preserves the original start_time for time limit enforcement."""
         # Manually save a resume state with specific start_time
         from datetime import datetime, timezone
+
         original_start = datetime(2026, 1, 4, 10, 0, 0, tzinfo=timezone.utc)
         resume_state = {
             "run_id": "test_run",
@@ -695,7 +697,7 @@ class TestSoakControls:
             "start_time": original_start.isoformat(),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
-        
+
         resume_path = tmp_path / ".resume_state.json"
         with open(resume_path, "w") as f:
             json.dump(resume_state, f)
@@ -713,8 +715,9 @@ class TestSoakControls:
         )
 
         orchestrator = E2EOrchestrator(config)
-        
+
         call_count = 0
+
         def fail_on_second(cycle_num, primary, secondary):
             nonlocal call_count
             call_count += 1
@@ -727,7 +730,7 @@ class TestSoakControls:
                 primary_context=primary,
                 secondary_context=secondary,
             )
-        
+
         with patch.object(orchestrator, "_run_cycle", side_effect=fail_on_second):
             orchestrator.run_all_cycles()
 
@@ -735,7 +738,7 @@ class TestSoakControls:
         assert resume_path.exists(), "Resume state should still exist"
         with open(resume_path) as f:
             new_state = json.load(f)
-        
+
         # The start_time should still be the original
         assert new_state["start_time"] == original_start.isoformat()
 

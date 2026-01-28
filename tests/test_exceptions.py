@@ -5,12 +5,12 @@ Tests for the exception module hierarchy and behavior.
 import pytest
 
 from lib.exceptions import (
+    ConfigurationError,
+    FatalError,
+    SecurityValidationError,
     SwitchoverError,
     TransientError,
-    FatalError,
-    ConfigurationError,
     ValidationError,
-    SecurityValidationError,
 )
 
 
@@ -186,8 +186,6 @@ class TestExceptionUseCases:
 
     def test_security_validation_error_for_security_issues(self):
         """SecurityValidationError is appropriate for security-related validation."""
-        exc = SecurityValidationError(
-            "State file path contains path traversal: '../../../etc/passwd'"
-        )
+        exc = SecurityValidationError("State file path contains path traversal: '../../../etc/passwd'")
         assert isinstance(exc, ValidationError)
         # Security issues are validation errors with extra severity

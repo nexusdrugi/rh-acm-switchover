@@ -21,9 +21,9 @@ from lib.constants import (
     MCE_NAMESPACE,
     PATCH_VERIFY_MAX_RETRIES,
     PATCH_VERIFY_RETRY_DELAY,
-    RESTORE_FULL_NAME,
     RESTORE_FAST_POLL_INTERVAL,
     RESTORE_FAST_POLL_TIMEOUT,
+    RESTORE_FULL_NAME,
     RESTORE_PASSIVE_SYNC_NAME,
     RESTORE_POLL_INTERVAL,
     RESTORE_WAIT_TIMEOUT,
@@ -534,7 +534,7 @@ class SecondaryActivation:
         if not cm:
             return "default"
 
-        data = (cm.get("data") or {})
+        data = cm.get("data") or {}
         strategy = data.get(AUTO_IMPORT_STRATEGY_KEY, "")
         return strategy or "default"
 
@@ -562,9 +562,7 @@ class SecondaryActivation:
             plural="managedclusters",
         )
 
-        non_local_clusters = [
-            mc for mc in managed_clusters if mc.get("metadata", {}).get("name") != LOCAL_CLUSTER_NAME
-        ]
+        non_local_clusters = [mc for mc in managed_clusters if mc.get("metadata", {}).get("name") != LOCAL_CLUSTER_NAME]
         if not non_local_clusters:
             logger.info("No non-local ManagedClusters found; skipping immediate-import annotations")
             return

@@ -16,8 +16,8 @@ from lib.constants import (
     AUTO_IMPORT_STRATEGY_DEFAULT,
     AUTO_IMPORT_STRATEGY_KEY,
     AUTO_IMPORT_STRATEGY_SYNC,
-    BACKUP_NAMESPACE,
     BACKUP_INTEGRITY_MAX_AGE_SECONDS,
+    BACKUP_NAMESPACE,
     BACKUP_POLL_INTERVAL,
     BACKUP_SCHEDULE_DEFAULT_NAME,
     BACKUP_SCHEDULE_DELETE_WAIT,
@@ -377,9 +377,7 @@ class Finalization:
                 continue
 
             lines = [line for line in logs.splitlines() if backup_name in line]
-            error_lines = [
-                line for line in lines if "error" in line.lower() or "failed" in line.lower()
-            ]
+            error_lines = [line for line in lines if "error" in line.lower() or "failed" in line.lower()]
             if error_lines:
                 error_hits += len(error_lines)
                 logger.warning(
@@ -427,6 +425,7 @@ class Finalization:
 
         if phase != "Completed":
             if phase in ("New", "InProgress"):
+
                 def _poll_backup_completion() -> Tuple[bool, str]:
                     backup = self.secondary.get_custom_resource(
                         group="velero.io",
@@ -452,16 +451,17 @@ class Finalization:
                     logger=logger,
                 )
                 if not completed:
-                    raise RuntimeError(
-                        f"Latest backup {backup_name} did not complete within {BACKUP_VERIFY_TIMEOUT}s"
+                    raise RuntimeError(f"Latest backup {backup_name} did not complete within {BACKUP_VERIFY_TIMEOUT}s")
+                latest_backup = (
+                    self.secondary.get_custom_resource(
+                        group="velero.io",
+                        version="v1",
+                        plural="backups",
+                        name=backup_name,
+                        namespace=BACKUP_NAMESPACE,
                     )
-                latest_backup = self.secondary.get_custom_resource(
-                    group="velero.io",
-                    version="v1",
-                    plural="backups",
-                    name=backup_name,
-                    namespace=BACKUP_NAMESPACE,
-                ) or latest_backup
+                    or latest_backup
+                )
                 status = latest_backup.get("status", {}) or {}
                 phase = status.get("phase", "unknown")
             else:
@@ -481,9 +481,7 @@ class Finalization:
         else:
             age_seconds = int((datetime.now(timezone.utc) - parsed_ts).total_seconds())
             if age_seconds > max_age_seconds:
-                raise RuntimeError(
-                    f"Latest backup {backup_name} is too old ({age_seconds}s > {max_age_seconds}s)"
-                )
+                raise RuntimeError(f"Latest backup {backup_name} is too old ({age_seconds}s > {max_age_seconds}s)")
             logger.info("Latest backup %s completed %ss ago", backup_name, age_seconds)
 
         self._check_velero_logs_for_backup(backup_name)
@@ -577,9 +575,7 @@ class Finalization:
             elapsed = time.time() - start
             if elapsed >= timeout:
                 details = ", non-running pods=" + (", ".join(non_running) if non_running else "none")
-                raise RuntimeError(
-                    f"MultiClusterHub {mch_name} not healthy after {timeout}s (phase={phase}{details})"
-                )
+                raise RuntimeError(f"MultiClusterHub {mch_name} not healthy after {timeout}s (phase={phase}{details})")
 
             logger.info(
                 "Waiting for MultiClusterHub %s to become healthy (phase=%s, non-running pods=%s)...",
@@ -592,8 +588,8 @@ class Finalization:
     def _gitops_markers(self, metadata: Dict) -> List[str]:
         """Detect common GitOps markers on a resource."""
         markers: List[str] = []
-        labels = (metadata.get("labels") or {})
-        annotations = (metadata.get("annotations") or {})
+        labels = metadata.get("labels") or {}
+        annotations = metadata.get("annotations") or {}
 
         def _scan(source: Dict[str, str], source_name: str) -> None:
             for key, value in source.items():
@@ -996,14 +992,10 @@ class Finalization:
                 self.primary.scale_deployment(OBSERVATORIUM_API_DEPLOYMENT, OBSERVABILITY_NAMESPACE, 0)
 
         # Wait for pods to terminate with polling
-        compactor_pods_after, api_pods_after = self._wait_for_observability_scale_down(
-            compactor_pods, api_pods
-        )
+        compactor_pods_after, api_pods_after = self._wait_for_observability_scale_down(compactor_pods, api_pods)
 
         # Report status
-        self._report_observability_scale_down_status(
-            compactor_pods, api_pods, compactor_pods_after, api_pods_after
-        )
+        self._report_observability_scale_down_status(compactor_pods, api_pods, compactor_pods_after, api_pods_after)
 
     def _wait_for_observability_scale_down(
         self,
@@ -1085,7 +1077,7 @@ class Finalization:
         if compactor_pods_after or api_pods_after:
             logger.warning(
                 "Old hub: MultiClusterObservability is still active (%s). Scale both to 0 or remove MCO.",
-                f"thanos-compact={len(compactor_pods_after)}, observatorium-api={len(api_pods_after)}"
+                f"thanos-compact={len(compactor_pods_after)}, observatorium-api={len(api_pods_after)}",
             )
         else:
             logger.info("All observability components scaled down on old hub")

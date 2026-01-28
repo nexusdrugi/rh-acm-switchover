@@ -156,10 +156,10 @@ class TestShowStateMain:
 
 def main_cli(args):
     """Helper to call main() with custom argv-like list."""
-    import show_state
-
     # Patch argparse to use our args list
     import sys
+
+    import show_state
 
     original_argv = sys.argv
     sys.argv = ["show_state.py"] + list(args)
@@ -167,4 +167,3 @@ def main_cli(args):
         return show_state.main()
     finally:
         sys.argv = original_argv
-

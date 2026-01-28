@@ -6,8 +6,12 @@ complete switchover cycles with automated context swapping, metrics
 collection, and pytest integration.
 """
 
-from .orchestrator import E2EOrchestrator, RunConfig
-from .phase_handlers import PhaseHandlers
+from .failure_injection import (
+    FailureInjector,
+    FailureScenario,
+    InjectionPhase,
+    InjectionResult,
+)
 from .monitoring import (
     Alert,
     AlertThresholds,
@@ -16,12 +20,8 @@ from .monitoring import (
     ResourceMonitor,
     ResourceSnapshot,
 )
-from .failure_injection import (
-    FailureInjector,
-    FailureScenario,
-    InjectionPhase,
-    InjectionResult,
-)
+from .orchestrator import E2EOrchestrator, RunConfig
+from .phase_handlers import PhaseHandlers
 
 __all__ = [
     "E2EOrchestrator",

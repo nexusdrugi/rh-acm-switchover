@@ -7,7 +7,7 @@ interaction with the switchover workflow.
 
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -26,10 +26,14 @@ class TestManageAutoImportFlag:
             "sys.argv",
             [
                 "script.py",
-                "--primary-context", "p1",
-                "--secondary-context", "p2",
-                "--method", "passive",
-                "--old-hub-action", "secondary",
+                "--primary-context",
+                "p1",
+                "--secondary-context",
+                "p2",
+                "--method",
+                "passive",
+                "--old-hub-action",
+                "secondary",
             ],
         ):
             args = parse_args()
@@ -41,10 +45,14 @@ class TestManageAutoImportFlag:
             "sys.argv",
             [
                 "script.py",
-                "--primary-context", "p1",
-                "--secondary-context", "p2",
-                "--method", "passive",
-                "--old-hub-action", "secondary",
+                "--primary-context",
+                "p1",
+                "--secondary-context",
+                "p2",
+                "--method",
+                "passive",
+                "--old-hub-action",
+                "secondary",
                 "--manage-auto-import-strategy",
             ],
         ):
@@ -57,10 +65,14 @@ class TestManageAutoImportFlag:
             "sys.argv",
             [
                 "script.py",
-                "--primary-context", "p1",
-                "--secondary-context", "p2",
-                "--method", "full",
-                "--old-hub-action", "secondary",
+                "--primary-context",
+                "p1",
+                "--secondary-context",
+                "p2",
+                "--method",
+                "full",
+                "--old-hub-action",
+                "secondary",
                 "--manage-auto-import-strategy",
             ],
         ):
@@ -74,10 +86,14 @@ class TestManageAutoImportFlag:
             "sys.argv",
             [
                 "script.py",
-                "--primary-context", "p1",
-                "--secondary-context", "p2",
-                "--method", "passive",
-                "--old-hub-action", "secondary",
+                "--primary-context",
+                "p1",
+                "--secondary-context",
+                "p2",
+                "--method",
+                "passive",
+                "--old-hub-action",
+                "secondary",
                 "--validate-only",
                 "--manage-auto-import-strategy",
             ],
@@ -92,10 +108,14 @@ class TestManageAutoImportFlag:
             "sys.argv",
             [
                 "script.py",
-                "--primary-context", "p1",
-                "--secondary-context", "p2",
-                "--method", "passive",
-                "--old-hub-action", "secondary",
+                "--primary-context",
+                "p1",
+                "--secondary-context",
+                "p2",
+                "--method",
+                "passive",
+                "--old-hub-action",
+                "secondary",
                 "--dry-run",
                 "--manage-auto-import-strategy",
             ],
@@ -110,10 +130,14 @@ class TestManageAutoImportFlag:
             "sys.argv",
             [
                 "script.py",
-                "--primary-context", "p1",
-                "--secondary-context", "p2",
-                "--method", "passive",
-                "--old-hub-action", "secondary",
+                "--primary-context",
+                "p1",
+                "--secondary-context",
+                "p2",
+                "--method",
+                "passive",
+                "--old-hub-action",
+                "secondary",
             ],
         ):
             args = parse_args()
@@ -125,11 +149,16 @@ class TestManageAutoImportFlag:
             "sys.argv",
             [
                 "script.py",
-                "--primary-context", "p1",
-                "--secondary-context", "p2",
-                "--method", "passive",
-                "--old-hub-action", "secondary",
-                "--activation-method", "restore",
+                "--primary-context",
+                "p1",
+                "--secondary-context",
+                "p2",
+                "--method",
+                "passive",
+                "--old-hub-action",
+                "secondary",
+                "--activation-method",
+                "restore",
             ],
         ):
             args = parse_args()
@@ -141,10 +170,14 @@ class TestManageAutoImportFlag:
             "sys.argv",
             [
                 "script.py",
-                "--primary-context", "p1",
-                "--secondary-context", "p2",
-                "--method", "passive",
-                "--old-hub-action", "secondary",
+                "--primary-context",
+                "p1",
+                "--secondary-context",
+                "p2",
+                "--method",
+                "passive",
+                "--old-hub-action",
+                "secondary",
                 "--disable-observability-on-secondary",
             ],
         ):
@@ -162,10 +195,14 @@ class TestAutoImportFlagInteraction:
             "sys.argv",
             [
                 "script.py",
-                "--primary-context", "p1",
-                "--secondary-context", "p2",
-                "--method", "passive",
-                "--old-hub-action", "secondary",
+                "--primary-context",
+                "p1",
+                "--secondary-context",
+                "p2",
+                "--method",
+                "passive",
+                "--old-hub-action",
+                "secondary",
             ],
         ):
             # Should not raise
@@ -180,10 +217,14 @@ class TestAutoImportFlagInteraction:
                 "sys.argv",
                 [
                     "script.py",
-                    "--primary-context", "p1",
-                    "--secondary-context", "p2",
-                    "--method", "passive",
-                    "--old-hub-action", action,
+                    "--primary-context",
+                    "p1",
+                    "--secondary-context",
+                    "p2",
+                    "--method",
+                    "passive",
+                    "--old-hub-action",
+                    action,
                     "--manage-auto-import-strategy",
                 ],
             ):
