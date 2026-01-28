@@ -31,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Resource list memory bounds (findings #12)**: Single-item list lookups now pass `max_items=1` (e.g., BackupSchedule, MCH, DPA) to avoid unnecessary pagination.
 - **Deletion timeout support (findings #14)**: `delete_custom_resource()` supports request timeouts and decommission/finalization deletes now pass timeouts to avoid hanging API calls.
 
+### Validated
+
+- **Real-cluster preflight (mgmt1/mgmt2)**: `discover-hub.sh --auto --run` verified both hubs on ACM 2.14.1 / OCP 4.19.21 with 38/38 preflight checks passing (2026-01-28).
+
 ## [1.4.11] - 2026-01-19
 
 ### Added

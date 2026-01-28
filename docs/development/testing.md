@@ -107,6 +107,20 @@ python -m pytest tests/e2e/ -v -m e2e
 
 See `tests/e2e/README.md` for details.
 
+### Real-Cluster Validation (Example)
+
+Example real-cluster validation using the discovery + preflight scripts:
+
+```bash
+./scripts/discover-hub.sh --auto --run
+```
+
+Observed on 2026-01-28:
+- Hubs detected: `mgmt1` (primary) and `mgmt2` (secondary)
+- ACM: 2.14.1 on both hubs
+- OCP: 4.19.21 on both hubs
+- Preflight: **38 checks passed, 0 warnings**
+
 ## Test Coverage
 
 ### Current Coverage
