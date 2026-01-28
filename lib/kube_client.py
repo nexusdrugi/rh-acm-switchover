@@ -513,9 +513,7 @@ class KubeClient:
             label_selector: Label selector filter
             max_items: Maximum number of items to return (None for unlimited).
                       Use this to prevent memory exhaustion on large clusters.
-                      NOTE: Currently max_items only limits client-side; the API may still
-                      return full pages. TODO: Pass `limit` parameter to list_*_custom_object
-                      calls for true server-side pagination (see GitHub issue for details).
+                      When set, a server-side `limit` is passed to the API calls.
 
         Returns:
             List of resource dicts, limited to max_items if specified
@@ -534,6 +532,12 @@ class KubeClient:
                 logger.debug("Hit max_items limit %d, stopping fetch", max_items)
                 break
 
+            remaining = None
+            if max_items is not None:
+                remaining = max_items - len(items)
+                if remaining <= 0:
+                    break
+
             try:
                 if namespace:
                     result = self.custom_api.list_namespaced_custom_object(
@@ -543,6 +547,7 @@ class KubeClient:
                         plural=plural,
                         label_selector=label_selector,
                         _continue=continue_token,
+                        limit=remaining,
                     )
                 else:
                     result = self.custom_api.list_cluster_custom_object(
@@ -551,6 +556,7 @@ class KubeClient:
                         plural=plural,
                         label_selector=label_selector,
                         _continue=continue_token,
+                        limit=remaining,
                     )
             except ApiException as e:
                 if e.status == 404:
@@ -563,7 +569,6 @@ class KubeClient:
 
             # If we have a limit, only take what we need
             if max_items is not None:
-                remaining = max_items - len(items)
                 items.extend(page_items[:remaining])
             else:
                 items.extend(page_items)
