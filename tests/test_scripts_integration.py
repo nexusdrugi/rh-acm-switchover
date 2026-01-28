@@ -10,6 +10,7 @@ Test categories:
 
 import os
 import re
+import shutil
 import stat
 import subprocess
 from pathlib import Path
@@ -515,12 +516,11 @@ esac
     jq_script.write_text(
         """#!/bin/bash
 # Mock jq - pass through to real jq (from PATH)
-JQ_BIN="$(command -v jq || true)"
-if [[ -z "$JQ_BIN" ]]; then
+if [[ -z "${REAL_JQ:-}" ]]; then
   echo "jq not found in PATH; please install jq to run integration tests" >&2
   exit 127
 fi
-exec "$JQ_BIN" "$@"
+exec "$REAL_JQ" "$@"
 """,
         encoding="utf-8",
     )
@@ -528,6 +528,7 @@ exec "$JQ_BIN" "$@"
 
     # Build environment with mocked PATH
     env = os.environ.copy()
+    env["REAL_JQ"] = shutil.which("jq") or ""
     env["PATH"] = f"{mock_bin}:{env.get('PATH', '')}"
 
     return env
@@ -675,8 +676,12 @@ case "$*" in
         exit 0
         ;;
     # Cluster health checks
-    *"get nodes"*)
+    *"get nodes"*"-o json"*)
         echo '{"items":[{"status":{"conditions":[{"type":"Ready","status":"True"}]}}]}'
+        exit 0
+        ;;
+    *"get nodes"*)
+        echo "node1   Ready"
         exit 0
         ;;
     *"get clusteroperator"*)
@@ -736,9 +741,8 @@ case "$EXPR" in
         ;;
     *)
         # For unhandled expressions, delegate to real jq if available, else return empty
-        JQ_BIN="$(command -v jq || true)"
-        if [[ -n "$JQ_BIN" ]]; then
-            echo "$INPUT" | "$JQ_BIN" "$@" 2>/dev/null || echo ""
+        if [[ -n "${REAL_JQ:-}" ]]; then
+            echo "$INPUT" | "$REAL_JQ" "$@" 2>/dev/null || echo ""
         else
             echo ""
         fi
@@ -750,6 +754,7 @@ esac
     jq_script.chmod(jq_script.stat().st_mode | stat.S_IEXEC)
 
     env = os.environ.copy()
+    env["REAL_JQ"] = shutil.which("jq") or ""
     env["PATH"] = f"{mock_bin}:{env.get('PATH', '')}"
     # Set short wait times so test doesn't timeout waiting for backup completion
     env["BACKUP_IN_PROGRESS_WAIT_SECONDS"] = "2"
