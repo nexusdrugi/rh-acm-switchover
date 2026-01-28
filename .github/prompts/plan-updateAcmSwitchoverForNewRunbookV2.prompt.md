@@ -15,7 +15,7 @@
   | (separate) | Step 14 | `decommission.py` | Decommission old hub |
   | (separate) | Rollback 1-5 | (manual/partial) | Rollback procedures |
 
-  **Method 2 (Full Restore) Support**: Use `--method full` CLI flag. The Python tool runs `PRIMARY_PREP` → `ACTIVATION` → `POST_ACTIVATION` → `FINALIZATION` for both methods. Method 2 creates `restore-acm-full` via `_create_full_restore()` instead of patching passive sync.
+  **Method 2 (Full Restore) Support**: Use `--method full` CLI flag (examples: `--method=full` or `--method full`). The Python tool runs `PRIMARY_PREP` → `ACTIVATION` → `POST_ACTIVATION` → `FINALIZATION` for both methods. Method 2 creates `restore-acm-full` via `_create_full_restore()` instead of patching passive sync.
 
   **Caveat**: Primary hub must be reachable; the tool does not currently support "primary unreachable" full-restore-only execution.
 
@@ -43,7 +43,7 @@
 - **Support both activation options for Method 1 (Step 5)**:
   - **Option A (default)**: Patch existing restore with `veleroManagedClustersBackupName: latest`
   - **Option B**: Delete passive sync restore and create `restore-acm-activate` resource
-  - Add CLI flag `--activation-method=patch|restore` to select
+  - Add CLI flag `--activation-method=patch|restore` to select (examples: `--activation-method=restore` or `--activation-method restore`)
 - **Clarify auto-import strategy handling (Step 4b / F4 & Step 7)**:
   - Step 4b / F4: Optional `import-controller-config` ConfigMap creation (before activation). **Guards**: Only apply `ImportAndSync` when (a) hub has existing non-local ManagedClusters restored, AND (b) intended for future switchback. Otherwise skip.
   - Step 7: Delete ConfigMap after clusters attached (in `post_activation.py` or `finalization.py`). **Guard**: Only delete if ConfigMap was explicitly set during this switchover (record a marker in state, e.g., a state file flag or a ConfigMap annotation, and check it before deletion).

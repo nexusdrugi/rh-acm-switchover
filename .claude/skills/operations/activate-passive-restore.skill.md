@@ -24,7 +24,7 @@ Before starting, confirm:
 **Batch command (all clusters except local-cluster):**
 
 ```bash
-for cluster in $(oc get managedcluster.cluster.open-cluster-management.io -o name --context <primary> | grep -v local-cluster); do
+for cluster in $(oc get managedcluster.cluster.open-cluster-management.io -o name --context <primary> | grep -v '/local-cluster$'); do
   echo "Annotating $cluster"
   oc annotate $cluster import.open-cluster-management.io/disable-auto-import='' --context <primary>
 done
@@ -125,7 +125,7 @@ done
 Ask: **"Does your secondary hub have existing managed clusters (besides local-cluster)?"**
 
 ```bash
-oc get managedcluster.cluster.open-cluster-management.io --context <secondary> | grep -v local-cluster | grep -v NAME
+oc get managedcluster.cluster.open-cluster-management.io --context <secondary> --no-headers | awk '$1 != "local-cluster" {print}'
 ```
 
 **Decision Tree:**
