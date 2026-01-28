@@ -120,6 +120,15 @@ Examples:
             "Default is detect-only."
         ),
     )
+    parser.add_argument(
+        "--activation-method",
+        choices=["patch", "restore"],
+        default="patch",
+        help=(
+            "Activation method for passive restore: patch (default) or restore "
+            "(delete passive sync and create restore-acm-activate)."
+        ),
+    )
 
     # State management
     parser.add_argument(
@@ -182,6 +191,11 @@ Examples:
         "--skip-observability-checks",
         action="store_true",
         help="Skip Observability-related steps even if detected",
+    )
+    parser.add_argument(
+        "--disable-observability-on-secondary",
+        action="store_true",
+        help="Delete MultiClusterObservability on the old hub when keeping it as secondary (not for decommission)",
     )
     parser.add_argument(
         "--skip-rbac-validation",
@@ -403,7 +417,9 @@ def _run_phase_activation(
         secondary_client=secondary,
         state_manager=state,
         method=args.method,
+        activation_method=args.activation_method,
         manage_auto_import_strategy=args.manage_auto_import_strategy,
+        old_hub_action=args.old_hub_action,
     )
 
     if not activation.activate():
@@ -460,6 +476,7 @@ def _run_phase_finalization(
         dry_run=args.dry_run,
         old_hub_action=args.old_hub_action,
         manage_auto_import_strategy=args.manage_auto_import_strategy,
+        disable_observability_on_secondary=args.disable_observability_on_secondary,
     )
 
     if not finalization.finalize():

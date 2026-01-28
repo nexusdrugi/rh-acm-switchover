@@ -969,6 +969,39 @@ class KubeClient:
         """Backward compatible alias for get_pods."""
         return self.get_pods(namespace, label_selector)
 
+    @api_call(not_found_value="", log_on_error=False, resource_desc="get pod logs")
+    def get_pod_logs(
+        self,
+        name: str,
+        namespace: str,
+        container: Optional[str] = None,
+        tail_lines: Optional[int] = None,
+    ) -> str:
+        """Retrieve logs for a pod.
+
+        Args:
+            name: Pod name
+            namespace: Namespace name
+            container: Optional container name
+            tail_lines: Optional number of lines from the end of the logs
+
+        Returns:
+            Log content string (empty if not found)
+        """
+        self._validate_resource_inputs(namespace, name, "pod")
+
+        if self.dry_run:
+            logger.info("[DRY-RUN] Would read logs for pod %s/%s", namespace, name)
+            return ""
+
+        kwargs: Dict[str, Any] = {}
+        if container:
+            kwargs["container"] = container
+        if tail_lines is not None:
+            kwargs["tail_lines"] = tail_lines
+
+        return self.core_v1.read_namespaced_pod_log(name=name, namespace=namespace, **kwargs) or ""
+
     def wait_for_pods_ready(
         self,
         namespace: str,

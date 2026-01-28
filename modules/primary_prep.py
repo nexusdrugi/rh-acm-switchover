@@ -2,6 +2,8 @@
 Primary hub preparation module for ACM switchover.
 """
 
+# Runbook: Steps 1-3 (Method 1) / F1-F3 (Method 2)
+
 import logging
 
 from kubernetes.client.rest import ApiException
@@ -64,6 +66,9 @@ class PrimaryPreparation:
                 with self.state.step("scale_down_thanos", logger) as should_run:
                     if should_run:
                         self._scale_down_thanos_compactor()
+                        logger.info(
+                            "Optional: pause Observatorium API on the old hub manually if needed (runbook Step 3)."
+                        )
             else:
                 logger.info("Skipping Thanos compactor scaling (Observability not detected)")
 

@@ -2,6 +2,8 @@
 Post-activation verification module for ACM switchover.
 """
 
+# Runbook: Steps 6-10 (Method 1) / F6 (Method 2)
+
 import base64
 import logging
 import os

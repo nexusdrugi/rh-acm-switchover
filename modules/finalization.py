@@ -2,8 +2,11 @@
 Finalization and rollback module for ACM switchover.
 """
 
+# Runbook: Steps 11-12 (finalization) and Step 14 (old hub handling)
+
 import logging
 import time
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 from kubernetes.client.rest import ApiException
@@ -14,12 +17,13 @@ from lib.constants import (
     AUTO_IMPORT_STRATEGY_KEY,
     AUTO_IMPORT_STRATEGY_SYNC,
     BACKUP_NAMESPACE,
+    BACKUP_INTEGRITY_MAX_AGE_SECONDS,
     BACKUP_POLL_INTERVAL,
     BACKUP_SCHEDULE_DEFAULT_NAME,
     BACKUP_SCHEDULE_DELETE_WAIT,
     BACKUP_VERIFY_TIMEOUT,
     DELETE_REQUEST_TIMEOUT,
-    IMPORT_CONTROLLER_CONFIGMAP,
+    IMPORT_CONTROLLER_CONFIG_CM,
     LOCAL_CLUSTER_NAME,
     MCE_NAMESPACE,
     MCH_VERIFY_INTERVAL,
@@ -38,6 +42,7 @@ from lib.constants import (
 from lib.exceptions import SwitchoverError
 from lib.kube_client import KubeClient
 from lib.utils import StateManager, dry_run_skip, is_acm_version_ge
+from lib.waiter import wait_for_condition
 
 from .backup_schedule import BackupScheduleManager
 from .decommission import Decommission
@@ -58,6 +63,7 @@ class Finalization:
         dry_run: bool = False,
         old_hub_action: str = "secondary",
         manage_auto_import_strategy: bool = False,
+        disable_observability_on_secondary: bool = False,
     ):
         self.secondary = secondary_client
         self.state = state_manager
@@ -67,6 +73,7 @@ class Finalization:
         self.dry_run = dry_run
         self.old_hub_action = old_hub_action  # "secondary", "decommission", or "none"
         self.manage_auto_import_strategy = manage_auto_import_strategy
+        self.disable_observability_on_secondary = disable_observability_on_secondary
         self.backup_manager = BackupScheduleManager(
             secondary_client,
             state_manager,
@@ -85,7 +92,13 @@ class Finalization:
         logger.info("Starting finalization...")
 
         try:
-            # Step 10: Enable BackupSchedule on new hub
+            # Optional: Disable Observability on old secondary hub before enabling backups
+            if self.disable_observability_on_secondary:
+                with self.state.step("disable_observability_on_secondary", logger) as should_run:
+                    if should_run:
+                        self._disable_observability_on_secondary()
+
+            # Step 11: Enable BackupSchedule on new hub
             with self.state.step("enable_backup_schedule", logger) as should_run:
                 if should_run:
                     self._enable_backup_schedule()
@@ -103,6 +116,10 @@ class Finalization:
             with self.state.step("verify_new_backups", logger) as should_run:
                 if should_run:
                     self._verify_new_backups()
+
+            with self.state.step("verify_backup_integrity", logger) as should_run:
+                if should_run:
+                    self._verify_backup_integrity()
 
             with self.state.step("verify_mch_health", logger) as should_run:
                 if should_run:
@@ -315,6 +332,123 @@ class Finalization:
             f"No new backups detected after {timeout}s. " "BackupSchedule may take time to create first backup."
         )
 
+    @staticmethod
+    def _parse_timestamp(timestamp: Optional[str]) -> Optional[datetime]:
+        """Parse a Kubernetes timestamp into a timezone-aware datetime."""
+        if not timestamp:
+            return None
+        try:
+            return datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return None
+
+    def _check_velero_logs_for_backup(self, backup_name: str, tail_lines: int = 2000) -> None:
+        """Scan recent Velero logs for errors related to a backup."""
+        try:
+            velero_pods = self.secondary.get_pods(
+                namespace=BACKUP_NAMESPACE,
+                label_selector="app.kubernetes.io/name=velero",
+            )
+        except Exception as e:
+            logger.warning("Unable to list Velero pods for log inspection: %s", e)
+            return
+
+        if not velero_pods:
+            logger.warning("No Velero pods found for log inspection")
+            return
+
+        error_hits = 0
+        for pod in velero_pods:
+            pod_name = pod.get("metadata", {}).get("name")
+            if not pod_name:
+                continue
+            try:
+                logs = self.secondary.get_pod_logs(
+                    name=pod_name,
+                    namespace=BACKUP_NAMESPACE,
+                    container="velero",
+                    tail_lines=tail_lines,
+                )
+            except Exception as e:
+                logger.warning("Unable to read Velero logs from %s: %s", pod_name, e)
+                continue
+
+            if not logs:
+                continue
+
+            lines = [line for line in logs.splitlines() if backup_name in line]
+            error_lines = [
+                line for line in lines if "error" in line.lower() or "failed" in line.lower()
+            ]
+            if error_lines:
+                error_hits += len(error_lines)
+                logger.warning(
+                    "Velero logs from %s show %s error line(s) for backup %s",
+                    pod_name,
+                    len(error_lines),
+                    backup_name,
+                )
+
+        if error_hits == 0:
+            logger.info("No Velero log errors found for backup %s (recent logs checked)", backup_name)
+
+    @dry_run_skip(message="Skipping backup integrity verification")
+    def _verify_backup_integrity(self, max_age_seconds: int = BACKUP_INTEGRITY_MAX_AGE_SECONDS) -> None:
+        """Verify latest backup status, logs, and recency."""
+        logger.info("Verifying backup integrity...")
+
+        backups = self.secondary.list_custom_resources(
+            group="velero.io",
+            version="v1",
+            plural="backups",
+            namespace=BACKUP_NAMESPACE,
+        )
+
+        if not backups:
+            raise RuntimeError("No Velero backups found for integrity verification")
+
+        def _backup_sort_key(backup: Dict) -> str:
+            return backup.get("metadata", {}).get("creationTimestamp", "") or ""
+
+        latest_backup = max(backups, key=_backup_sort_key)
+        backup_name = latest_backup.get("metadata", {}).get("name", "unknown")
+        status = latest_backup.get("status", {}) or {}
+
+        phase = status.get("phase", "unknown")
+
+        def _to_int(value: Optional[object]) -> int:
+            try:
+                return int(value or 0)
+            except (TypeError, ValueError):
+                return 0
+
+        errors = _to_int(status.get("errors"))
+        warnings = _to_int(status.get("warnings"))
+
+        if phase != "Completed":
+            raise RuntimeError(f"Latest backup {backup_name} not completed (phase={phase})")
+        if errors > 0:
+            raise RuntimeError(f"Latest backup {backup_name} completed with {errors} error(s)")
+        if warnings > 0:
+            logger.warning("Latest backup %s completed with %s warning(s)", backup_name, warnings)
+
+        completion_ts = status.get("completionTimestamp") or status.get("startTimestamp")
+        creation_ts = latest_backup.get("metadata", {}).get("creationTimestamp")
+        ts = completion_ts or creation_ts
+        parsed_ts = self._parse_timestamp(ts)
+
+        if not parsed_ts:
+            logger.warning("Unable to parse timestamp for backup %s (timestamp=%s)", backup_name, ts)
+        else:
+            age_seconds = int((datetime.now(timezone.utc) - parsed_ts).total_seconds())
+            if age_seconds > max_age_seconds:
+                raise RuntimeError(
+                    f"Latest backup {backup_name} is too old ({age_seconds}s > {max_age_seconds}s)"
+                )
+            logger.info("Latest backup %s completed %ss ago", backup_name, age_seconds)
+
+        self._check_velero_logs_for_backup(backup_name)
+
     def _get_backup_schedules(self, force_refresh: bool = False) -> List[Dict]:
         """Get backup schedules with caching.
 
@@ -415,6 +549,101 @@ class Finalization:
                 ", ".join(non_running) if non_running else "none",
             )
             time.sleep(interval)
+
+    def _gitops_markers(self, metadata: Dict) -> List[str]:
+        """Detect common GitOps markers on a resource."""
+        markers: List[str] = []
+        labels = (metadata.get("labels") or {})
+        annotations = (metadata.get("annotations") or {})
+
+        def _scan(source: Dict[str, str], source_name: str) -> None:
+            for key, value in source.items():
+                combined = f"{key}={value}".lower()
+                if "argocd" in combined or "argoproj.io" in combined:
+                    markers.append(f"{source_name}:{key}")
+                if "fluxcd.io" in combined or "toolkit.fluxcd.io" in combined:
+                    markers.append(f"{source_name}:{key}")
+                if key == "app.kubernetes.io/managed-by" and value.lower() in ("argocd", "fluxcd"):
+                    markers.append(f"{source_name}:{key}")
+
+        _scan(labels, "label")
+        _scan(annotations, "annotation")
+        return markers
+
+    def _disable_observability_on_secondary(self) -> None:
+        """Delete MultiClusterObservability on old hub (optional)."""
+        if not self.primary:
+            logger.info("No primary client available, skipping observability disablement")
+            return
+        if self.old_hub_action != "secondary":
+            logger.info(
+                "Skipping observability disablement (old hub action is '%s')",
+                self.old_hub_action,
+            )
+            return
+
+        logger.info("Disabling observability on old hub by deleting MultiClusterObservability...")
+
+        mcos = self.primary.list_custom_resources(
+            group="observability.open-cluster-management.io",
+            version="v1beta2",
+            plural="multiclusterobservabilities",
+        )
+
+        if not mcos:
+            logger.info("No MultiClusterObservability resources found on old hub")
+            return
+
+        for mco in mcos:
+            metadata = mco.get("metadata", {})
+            mco_name = metadata.get("name", "unknown")
+            markers = self._gitops_markers(metadata)
+            if markers:
+                logger.warning(
+                    "MultiClusterObservability %s appears GitOps-managed (%s). Coordinate deletion to avoid drift.",
+                    mco_name,
+                    ", ".join(markers),
+                )
+
+            if self.dry_run:
+                logger.info("[DRY-RUN] Would delete MultiClusterObservability: %s", mco_name)
+                continue
+
+            logger.info("Deleting MultiClusterObservability: %s", mco_name)
+            self.primary.delete_custom_resource(
+                group="observability.open-cluster-management.io",
+                version="v1beta2",
+                plural="multiclusterobservabilities",
+                name=mco_name,
+                timeout_seconds=DELETE_REQUEST_TIMEOUT,
+            )
+
+        if self.dry_run:
+            logger.info("[DRY-RUN] Skipping observability termination check")
+            return
+
+        def _observability_terminated():
+            pods = self.primary.get_pods(namespace=OBSERVABILITY_NAMESPACE)
+            if not pods:
+                return True, "no observability pods remaining"
+            return False, f"{len(pods)} pod(s) remaining"
+
+        success = wait_for_condition(
+            "observability pod termination on old hub",
+            _observability_terminated,
+            timeout=OBSERVABILITY_TERMINATE_TIMEOUT,
+            interval=OBSERVABILITY_TERMINATE_INTERVAL,
+            logger=logger,
+        )
+
+        if not success:
+            remaining = self.primary.get_pods(namespace=OBSERVABILITY_NAMESPACE)
+            if remaining:
+                logger.warning(
+                    "Observability pods still running after MCO deletion (%s pods). "
+                    "If GitOps is not recreating MCO, this may indicate a product bug.",
+                    len(remaining),
+                )
 
     def _handle_old_hub(self):
         """
@@ -846,20 +1075,20 @@ class Finalization:
         try:
             if not is_acm_version_ge(self.acm_version, "2.14.0"):
                 return
-            cm = self.secondary.get_configmap(MCE_NAMESPACE, IMPORT_CONTROLLER_CONFIGMAP)
+            cm = self.secondary.get_configmap(MCE_NAMESPACE, IMPORT_CONTROLLER_CONFIG_CM)
             if not cm:
                 return
             strategy = (cm.get("data") or {}).get(AUTO_IMPORT_STRATEGY_KEY, "default")
             if strategy != AUTO_IMPORT_STRATEGY_SYNC:
                 return
-            if self.manage_auto_import_strategy or self.state.get_config("auto_import_strategy_set", False):
+            if self.state.get_config("auto_import_strategy_set", False):
                 logger.info(
                     "Removing %s/%s to restore default autoImportStrategy (%s)",
                     MCE_NAMESPACE,
-                    IMPORT_CONTROLLER_CONFIGMAP,
+                    IMPORT_CONTROLLER_CONFIG_CM,
                     AUTO_IMPORT_STRATEGY_DEFAULT,
                 )
-                self.secondary.delete_configmap(MCE_NAMESPACE, IMPORT_CONTROLLER_CONFIGMAP)
+                self.secondary.delete_configmap(MCE_NAMESPACE, IMPORT_CONTROLLER_CONFIG_CM)
                 self.state.set_config("auto_import_strategy_set", False)
                 # Mark step completed (idempotent - no-op if already completed)
                 self.state.mark_step_completed("reset_auto_import_strategy")
@@ -868,7 +1097,7 @@ class Finalization:
                     "autoImportStrategy is %s; remove %s/%s to reset to default (%s)",
                     AUTO_IMPORT_STRATEGY_SYNC,
                     MCE_NAMESPACE,
-                    IMPORT_CONTROLLER_CONFIGMAP,
+                    IMPORT_CONTROLLER_CONFIG_CM,
                     AUTO_IMPORT_STRATEGY_DEFAULT,
                 )
         except Exception as e:

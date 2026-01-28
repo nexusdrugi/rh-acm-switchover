@@ -9,6 +9,8 @@ orchestrator for pre-flight validation, add integration tests that verify:
 See TEST_REPORT.md for coverage details.
 """
 
+# Runbook: Step 0 (pre-flight validation)
+
 import logging
 from typing import Tuple, TypedDict
 

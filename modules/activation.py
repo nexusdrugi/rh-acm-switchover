@@ -2,26 +2,35 @@
 Secondary hub activation module for ACM switchover.
 """
 
+# Runbook: Step 4-5 (Method 1) / F4-F5 (Method 2)
+
 import logging
 import time
 from typing import Dict, Optional
 
 from lib.constants import (
+    AUTO_IMPORT_STRATEGY_DEFAULT,
     AUTO_IMPORT_STRATEGY_KEY,
     AUTO_IMPORT_STRATEGY_SYNC,
     BACKUP_NAMESPACE,
-    IMPORT_CONTROLLER_CONFIGMAP,
+    DELETE_REQUEST_TIMEOUT,
+    IMMEDIATE_IMPORT_ANNOTATION,
+    IMPORT_CONTROLLER_CONFIG_CM,
     LOCAL_CLUSTER_NAME,
+    MANAGED_CLUSTER_RESTORE_NAME,
     MCE_NAMESPACE,
     PATCH_VERIFY_MAX_RETRIES,
     PATCH_VERIFY_RETRY_DELAY,
     RESTORE_FULL_NAME,
+    RESTORE_FAST_POLL_INTERVAL,
+    RESTORE_FAST_POLL_TIMEOUT,
     RESTORE_PASSIVE_SYNC_NAME,
     RESTORE_POLL_INTERVAL,
     RESTORE_WAIT_TIMEOUT,
     SPEC_SYNC_RESTORE_WITH_NEW_BACKUPS,
     SPEC_VELERO_MANAGED_CLUSTERS_BACKUP_NAME,
     VELERO_BACKUP_LATEST,
+    VELERO_BACKUP_SKIP,
 )
 from lib.exceptions import FatalError, SwitchoverError
 from lib.kube_client import KubeClient
@@ -86,14 +95,19 @@ class SecondaryActivation:
         secondary_client: KubeClient,
         state_manager: StateManager,
         method: str = "passive",
+        activation_method: str = "patch",
         manage_auto_import_strategy: bool = False,
+        old_hub_action: str = "secondary",
     ):
         self.secondary = secondary_client
         self.state = state_manager
         self.method = method
+        self.activation_method = activation_method
         self.manage_auto_import_strategy = manage_auto_import_strategy
+        self.old_hub_action = old_hub_action
         # Cache for discovered passive sync restore name
         self._passive_sync_restore_name: Optional[str] = None
+        self._activation_restore_name: Optional[str] = None
 
     def _get_passive_sync_restore_name(self) -> str:
         """
@@ -147,7 +161,10 @@ class SecondaryActivation:
 
                 with self.state.step("activate_managed_clusters", logger) as should_run:
                     if should_run:
-                        self._activate_via_passive_sync()
+                        if self.activation_method == "restore":
+                            self._activate_via_restore_resource()
+                        else:
+                            self._activate_via_passive_sync()
             else:
                 # Method 2: One-Time Full Restore
                 # Optional: set ImportAndSync pre-restore when applicable
@@ -160,6 +177,11 @@ class SecondaryActivation:
             with self.state.step("wait_restore_completion", logger) as should_run:
                 if should_run:
                     self._wait_for_restore_completion()
+
+            # Apply immediate-import annotations when ImportOnly is in effect (ACM 2.14+)
+            with self.state.step("apply_immediate_import_annotations", logger) as should_run:
+                if should_run:
+                    self._apply_immediate_import_annotations()
 
             logger.info("Secondary hub activation completed successfully")
             return True
@@ -209,6 +231,7 @@ class SecondaryActivation:
         logger.info("Activating managed clusters via passive sync...")
 
         restore_name = self._get_passive_sync_restore_name()
+        self._activation_restore_name = restore_name
         restore_before = self._get_restore_or_raise(restore_name)
 
         if self._activation_already_applied(restore_before):
@@ -236,6 +259,64 @@ class SecondaryActivation:
 
         # Verify patch was applied correctly
         self._verify_patch_applied(restore_name, restore_before)
+
+    def _activate_via_restore_resource(self):
+        """Activate managed clusters by deleting passive sync and creating activation restore."""
+        logger.info("Activating managed clusters via activation restore (Option B)...")
+
+        restore_name = self._get_passive_sync_restore_name()
+        self._activation_restore_name = MANAGED_CLUSTER_RESTORE_NAME
+
+        try:
+            logger.info("Deleting passive sync restore %s before activation restore", restore_name)
+            self.secondary.delete_custom_resource(
+                group="cluster.open-cluster-management.io",
+                version="v1beta1",
+                plural="restores",
+                name=restore_name,
+                namespace=BACKUP_NAMESPACE,
+                timeout_seconds=DELETE_REQUEST_TIMEOUT,
+            )
+        except Exception as e:
+            raise FatalError(f"Failed to delete passive sync restore {restore_name}: {e}") from e
+
+        existing_restore = self.secondary.get_custom_resource(
+            group="cluster.open-cluster-management.io",
+            version="v1beta1",
+            plural="restores",
+            name=MANAGED_CLUSTER_RESTORE_NAME,
+            namespace=BACKUP_NAMESPACE,
+        )
+        if existing_restore:
+            logger.info("%s already exists", MANAGED_CLUSTER_RESTORE_NAME)
+            return
+
+        restore_body = {
+            "apiVersion": "cluster.open-cluster-management.io/v1beta1",
+            "kind": "Restore",
+            "metadata": {
+                "name": MANAGED_CLUSTER_RESTORE_NAME,
+                "namespace": BACKUP_NAMESPACE,
+            },
+            "spec": {
+                "cleanupBeforeRestore": "CleanupRestored",
+                SPEC_VELERO_MANAGED_CLUSTERS_BACKUP_NAME: VELERO_BACKUP_LATEST,
+                "veleroCredentialsBackupName": VELERO_BACKUP_SKIP,
+                "veleroResourcesBackupName": VELERO_BACKUP_SKIP,
+            },
+        }
+
+        try:
+            self.secondary.create_custom_resource(
+                group="cluster.open-cluster-management.io",
+                version="v1beta1",
+                plural="restores",
+                body=restore_body,
+                namespace=BACKUP_NAMESPACE,
+            )
+            logger.info("Created %s resource", MANAGED_CLUSTER_RESTORE_NAME)
+        except Exception as e:
+            raise FatalError(f"Failed to create activation restore {MANAGED_CLUSTER_RESTORE_NAME}: {e}") from e
 
     def _get_restore_or_raise(self, restore_name: str) -> Dict:
         """Fetch restore resource or raise a fatal error if missing."""
@@ -411,8 +492,14 @@ class SecondaryActivation:
             has_non_local = any(mc.get("metadata", {}).get("name") != LOCAL_CLUSTER_NAME for mc in mcs)
             if not has_non_local:
                 return
+            if self.old_hub_action != "secondary":
+                logger.info(
+                    "Skipping autoImportStrategy change (old hub action is '%s', not intended for switchback)",
+                    self.old_hub_action,
+                )
+                return
             # Determine current strategy
-            cm = self.secondary.get_configmap(MCE_NAMESPACE, IMPORT_CONTROLLER_CONFIGMAP)
+            cm = self.secondary.get_configmap(MCE_NAMESPACE, IMPORT_CONTROLLER_CONFIG_CM)
             current = (cm or {}).get("data", {}).get(AUTO_IMPORT_STRATEGY_KEY, "default")
             if current == AUTO_IMPORT_STRATEGY_SYNC:
                 return
@@ -429,16 +516,80 @@ class SecondaryActivation:
             )
             self.secondary.create_or_patch_configmap(
                 namespace=MCE_NAMESPACE,
-                name=IMPORT_CONTROLLER_CONFIGMAP,
+                name=IMPORT_CONTROLLER_CONFIG_CM,
                 data={AUTO_IMPORT_STRATEGY_KEY: AUTO_IMPORT_STRATEGY_SYNC},
             )
             self.state.set_config("auto_import_strategy_set", True)
         except Exception as e:
             logger.warning("Unable to manage auto-import strategy: %s", e)
 
+    def _get_auto_import_strategy(self) -> str:
+        """Return the autoImportStrategy value or 'default' when not configured."""
+        try:
+            cm = self.secondary.get_configmap(MCE_NAMESPACE, IMPORT_CONTROLLER_CONFIG_CM)
+        except Exception as e:
+            logger.warning("Unable to retrieve autoImportStrategy ConfigMap: %s", e)
+            return "error"
+
+        if not cm:
+            return "default"
+
+        data = (cm.get("data") or {})
+        strategy = data.get(AUTO_IMPORT_STRATEGY_KEY, "")
+        return strategy or "default"
+
+    def _apply_immediate_import_annotations(self) -> None:
+        """Apply immediate-import annotations when ImportOnly is in effect (ACM 2.14+)."""
+        version = str(self.state.get_config("secondary_version", "unknown"))
+        if not is_acm_version_ge(version, "2.14.0"):
+            logger.info("Skipping immediate-import annotations (ACM %s < 2.14)", version)
+            return
+
+        strategy = self._get_auto_import_strategy()
+        if strategy == "error":
+            logger.warning("Skipping immediate-import annotations (autoImportStrategy unknown)")
+            return
+        if strategy not in ("default", AUTO_IMPORT_STRATEGY_DEFAULT):
+            logger.info(
+                "Skipping immediate-import annotations (autoImportStrategy=%s)",
+                strategy,
+            )
+            return
+
+        managed_clusters = self.secondary.list_custom_resources(
+            group="cluster.open-cluster-management.io",
+            version="v1",
+            plural="managedclusters",
+        )
+
+        non_local_clusters = [
+            mc for mc in managed_clusters if mc.get("metadata", {}).get("name") != LOCAL_CLUSTER_NAME
+        ]
+        if not non_local_clusters:
+            logger.info("No non-local ManagedClusters found; skipping immediate-import annotations")
+            return
+
+        updated = 0
+        for mc in non_local_clusters:
+            name = mc.get("metadata", {}).get("name")
+            if not name:
+                continue
+            annotations = mc.get("metadata", {}).get("annotations", {})
+            if annotations.get(IMMEDIATE_IMPORT_ANNOTATION, None) == "":
+                continue
+            patch = {"metadata": {"annotations": {IMMEDIATE_IMPORT_ANNOTATION: ""}}}
+            self.secondary.patch_managed_cluster(name=name, patch=patch)
+            updated += 1
+
+        logger.info(
+            "Applied immediate-import annotations to %s ManagedCluster(s)",
+            updated,
+        )
+
     def _create_full_restore(self):
         """Create full restore resource (Method 2)."""
         logger.info("Creating full restore resource...")
+        self._activation_restore_name = RESTORE_FULL_NAME
 
         # Check if restore already exists
         existing_restore = self.secondary.get_custom_resource(
@@ -487,7 +638,16 @@ class SecondaryActivation:
             logger.info("[DRY-RUN] Skipping wait for restore completion")
             return
 
-        restore_name = self._get_passive_sync_restore_name() if self.method == "passive" else RESTORE_FULL_NAME
+        restore_name = self._activation_restore_name
+        if not restore_name:
+            if self.method == "passive":
+                if self.activation_method == "restore":
+                    restore_name = MANAGED_CLUSTER_RESTORE_NAME
+                else:
+                    restore_name = self._get_passive_sync_restore_name()
+            else:
+                restore_name = RESTORE_FULL_NAME
+            self._activation_restore_name = restore_name
 
         def _poll_restore():
             restore = self.secondary.get_custom_resource(
@@ -521,6 +681,8 @@ class SecondaryActivation:
             _poll_restore,
             timeout=timeout,
             interval=RESTORE_POLL_INTERVAL,
+            fast_interval=RESTORE_FAST_POLL_INTERVAL,
+            fast_timeout=RESTORE_FAST_POLL_TIMEOUT,
             logger=logger,
         )
 
@@ -533,9 +695,9 @@ class SecondaryActivation:
             if self.secondary.dry_run:
                 logger.info("[DRY-RUN] Skipping wait for Velero managed clusters restore")
             else:
-                self._wait_for_managed_clusters_velero_restore(timeout)
+                self._wait_for_managed_clusters_velero_restore(restore_name, timeout)
 
-    def _wait_for_managed_clusters_velero_restore(self, timeout: int = 300):
+    def _wait_for_managed_clusters_velero_restore(self, restore_name: str, timeout: int = 300):
         """
         Wait for the Velero managed clusters restore to complete.
 
@@ -549,8 +711,6 @@ class SecondaryActivation:
         the new backups won't contain the managed clusters!
         """
         logger.info("Waiting for managed clusters Velero restore to complete...")
-
-        restore_name = self._get_passive_sync_restore_name()
 
         def _poll_velero_restore():
             # Get the ACM restore to find the Velero restore name
@@ -602,6 +762,8 @@ class SecondaryActivation:
             _poll_velero_restore,
             timeout=timeout,
             interval=RESTORE_POLL_INTERVAL,
+            fast_interval=RESTORE_FAST_POLL_INTERVAL,
+            fast_timeout=RESTORE_FAST_POLL_TIMEOUT,
             logger=logger,
         )
 

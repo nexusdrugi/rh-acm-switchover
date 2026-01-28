@@ -12,6 +12,8 @@ EXIT_INTERRUPT = 130
 # Timeouts (in seconds)
 RESTORE_WAIT_TIMEOUT = 1800
 RESTORE_POLL_INTERVAL = 30
+RESTORE_FAST_POLL_INTERVAL = 10
+RESTORE_FAST_POLL_TIMEOUT = 120
 
 CLUSTER_VERIFY_TIMEOUT = 600
 CLUSTER_VERIFY_INTERVAL = 30
@@ -74,6 +76,7 @@ THANOS_OBJECT_STORAGE_SECRET = "thanos-object-storage"  # nosec B105
 # ACM Resource Names
 RESTORE_PASSIVE_SYNC_NAME = "restore-acm-passive-sync"
 RESTORE_FULL_NAME = "restore-acm-full"
+MANAGED_CLUSTER_RESTORE_NAME = "restore-acm-activate"
 BACKUP_SCHEDULE_DEFAULT_NAME = "acm-hub-backup"
 
 # Observability Components
@@ -95,13 +98,16 @@ PATCH_VERIFY_MAX_RETRIES = 5
 PATCH_VERIFY_RETRY_DELAY = 1  # seconds between retries
 
 # Auto-import strategy (ACM 2.14+)
-IMPORT_CONTROLLER_CONFIGMAP = "import-controller-config"
+IMPORT_CONTROLLER_CONFIG_CM = "import-controller-config"
+# Backward-compatible alias (keep existing constant name)
+IMPORT_CONTROLLER_CONFIGMAP = IMPORT_CONTROLLER_CONFIG_CM
 AUTO_IMPORT_STRATEGY_KEY = "autoImportStrategy"
 AUTO_IMPORT_STRATEGY_DEFAULT = "ImportOnly"
 AUTO_IMPORT_STRATEGY_SYNC = "ImportAndSync"
 
 # ManagedCluster annotations
 DISABLE_AUTO_IMPORT_ANNOTATION = "import.open-cluster-management.io/disable-auto-import"
+IMMEDIATE_IMPORT_ANNOTATION = "import.open-cluster-management.io/immediate-import"
 
 # Local cluster name (hub's self-managed cluster, excluded from counts)
 LOCAL_CLUSTER_NAME = "local-cluster"
@@ -130,6 +136,7 @@ except (ValueError, TypeError, OverflowError) as e:
 # Backup verification settings
 BACKUP_VERIFY_TIMEOUT = 600
 BACKUP_POLL_INTERVAL = 30
+BACKUP_INTEGRITY_MAX_AGE_SECONDS = 600
 
 # MultiClusterHub verification settings
 MCH_VERIFY_TIMEOUT = 300
