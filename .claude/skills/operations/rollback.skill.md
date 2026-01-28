@@ -26,9 +26,9 @@ Consider rollback when:
 Ask: **"At which step did the switchover fail or need to abort?"**
 
 **Decision Tree:**
-- During activation (Steps 1-5) → Full rollback possible
-- After post-activation (Steps 6-10) → Rollback with caution
-- After decommission (Step 14) → Rollback NOT possible, forward recovery only
+- During activation (main switchover procedure Steps 1–5; see main switchover procedure) → Full rollback possible
+- After post-activation (main switchover procedure Steps 6–10; see main switchover procedure) → Rollback with caution
+- After decommission (main switchover procedure Step 14; see main switchover procedure) → Rollback NOT possible, forward recovery only
 - Which restore method was used? → Affects which restore to delete
 
 ---
