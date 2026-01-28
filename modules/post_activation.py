@@ -918,7 +918,7 @@ class PostActivationVerification:
 
     def _get_hub_api_server(self) -> str:
         """Get the API server URL for the new hub.
-        
+
         Note: Uses max_size=0 to bypass kubeconfig size limits since this is a
         critical operation for klusterlet verification. Large kubeconfigs in
         multi-context environments must still be readable for hub lookup.
