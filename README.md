@@ -15,7 +15,6 @@ Automated, idempotent script for switching over Red Hat Advanced Cluster Managem
 - ✅ **Validate-only mode** - Run all validations without execution
 - ✅ **State tracking** - JSON state file for resume capability
 - ✅ **Two methods supported** - Continuous passive restore (Method 1) or one-time full restore (Method 2)
-- ✅ **Container image** - Ready-to-use image with all prerequisites included
 - ✅ **Multi-deployment support** - RBAC via Kustomize, Helm, or ACM Policies
 
 ---
@@ -87,7 +86,6 @@ Standalone validation scripts ensure safe and successful switchovers:
 - **[RBAC Requirements](docs/deployment/rbac-requirements.md)** - Complete RBAC permissions guide
 - **[RBAC Deployment](docs/deployment/rbac-deployment.md)** - Step-by-step RBAC deployment instructions
 - **[ACM Switchover Runbook](docs/ACM_SWITCHOVER_RUNBOOK.md)** - Detailed operational procedures
-- **[Container Usage Guide](docs/getting-started/container.md)** - Container-based deployment and usage
 - **[Installation Guide](docs/getting-started/install.md)** - Detailed installation instructions
 - **[Architecture](docs/development/architecture.md)** - Design and implementation details
 - **[Testing Guide](docs/development/testing.md)** - How to run tests and CI/CD
@@ -104,8 +102,6 @@ See [docs/README.md](docs/README.md) for complete documentation index.
 - Network access to both Kubernetes clusters
 - **RBAC permissions**: Required permissions for switchover operations (see [RBAC Requirements](docs/deployment/rbac-requirements.md))
 
-**OR** use the container image with all prerequisites included (recommended).
-
 ## Installation
 
 ### Option 1: From Source
@@ -119,24 +115,6 @@ cd rh-acm-switchover
 pip install -r requirements.txt
 ```
 
-### Option 2: Container Image
-
-> **Note:** Container image must be built locally. See the [Container Usage Guide](docs/getting-started/container.md) for build instructions.
-
-```bash
-# Build the container image locally
-podman build -t acm-switchover:latest -f container-bootstrap/Containerfile .
-
-# Run validation
-podman run -it --rm \
-  -v ~/.kube:/app/.kube:ro \
-  acm-switchover:latest \
-  --validate-only \
-  --primary-context primary-hub \
-  --secondary-context secondary-hub
-```
-
-See **[Container Usage Guide](docs/getting-started/container.md)** for complete examples.
 
 ## Usage
 

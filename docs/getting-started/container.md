@@ -2,9 +2,7 @@
 
 ## Overview
 
-The ACM Switchover tool is available as a container image based on Red Hat Universal Base Image (UBI) 9. This provides a consistent, portable runtime environment with all prerequisites pre-installed.
-
-> **Note:** The container image is currently not published to a public registry. You must build the image locally using the instructions below.
+The container image is **not ready for general use** and is **not published** to any public registry. This guide is for internal testing and development only. You must build the image locally using the instructions below.
 
 ## Building the Image
 
