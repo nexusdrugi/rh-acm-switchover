@@ -86,8 +86,12 @@ INPUT=$(cat)
 # Handle common expressions; otherwise delegate to real jq
 case "$EXPR" in
     ".items | length")
-        # Return 0 for empty/missing arrays to keep numeric comparisons stable
-        echo "0"
+        # Prefer real jq if available; otherwise return 0 for stability
+        if [[ -n "${REAL_JQ:-}" ]]; then
+            printf "%s" "$INPUT" | "$REAL_JQ" -r "$EXPR" 2>/dev/null || echo "0"
+        else
+            echo "0"
+        fi
         ;;
     *)
         if [[ -n "${REAL_JQ:-}" ]]; then
