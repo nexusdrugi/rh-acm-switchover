@@ -172,7 +172,8 @@ oc get configmap import-controller-config -n multicluster-engine \
 # If ImportOnly and secondary hub has existing ManagedClusters, add immediate-import annotation
 oc --context <secondary> get managedcluster -o name | grep -v local-cluster | \
   xargs -I{} oc --context <secondary> annotate {} import.open-cluster-management.io/immediate-import='' --overwrite
-# Empty value triggers auto-import; controller sets value to Completed (no removal needed)
+# Empty value triggers auto-import; controller sets value to Completed
+# To re-trigger, clear the annotation and re-apply with an empty value (automation does this)
 ```
 
 ## Post-Switchover Verification

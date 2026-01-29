@@ -404,7 +404,7 @@ done
 
 - The annotation **must be present with an empty value** (`''`) in order to trigger the auto‑import process under `ImportOnly`.
 - When auto‑import completes successfully, the controller sets the annotation value to `Completed`.
-- An annotation with a non‑empty value (such as `Completed`) will **not** trigger another auto‑import attempt; there is no need to remove the annotation.
+- An annotation with a non‑empty value (such as `Completed`) will **not** trigger another auto‑import attempt. If you need to re‑trigger (for example, during an automated switchover run), clear the annotation and re‑apply it with an empty value; the automation does this automatically.
 
 > **Relationship to Step 4b (ImportAndSync):** For ACM 2.14+, using the per‑cluster `immediate-import` annotation under the default `ImportOnly` strategy is often preferable to flipping the global strategy to `ImportAndSync`. Use the `ImportAndSync` override from [Step 4b](#step-4b-set-auto-import-strategy-to-importandsync-acm-214-with-existing-clusters) only when you intentionally require continuous re‑application from the hub you are promoting and plan to remove the ConfigMap again in [Step 7](#step-7-reset-auto-import-strategy-to-default-acm-214-if-set-on-new-primary-hub).
 
