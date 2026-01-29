@@ -11,7 +11,7 @@ import signal
 import stat
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any, Callable, Dict, Optional, Set, Tuple, TypeVar
+from typing import Any, Callable, Dict, Literal, Optional, Set, Tuple, TypeVar
 
 # File locking is best-effort; fcntl isn't available on Windows.
 try:
@@ -246,6 +246,7 @@ class StateManager:
         except Exception as e:
             if suppress_errors:
                 import sys
+
                 print(f"Error flushing state: {e}", file=sys.stderr)
                 return False
             raise
@@ -325,6 +326,29 @@ class StateManager:
         )
         self.flush_state()  # Errors are critical checkpoints
 
+    def get_errors(self) -> list:
+        """Retrieve list of recorded errors."""
+        return self.state.get("errors", [])
+
+    def get_last_error_phase(self) -> Optional[Phase]:
+        """Get the phase where the last error occurred.
+
+        Returns:
+            Phase enum if there's an error with a valid phase, None otherwise.
+        """
+        errors = self.get_errors()
+        if not errors:
+            return None
+        last_error = errors[-1]
+        phase_str = last_error.get("phase")
+        if not phase_str:
+            return None
+        try:
+            return Phase(phase_str)
+        except ValueError:
+            logging.warning("Unknown phase '%s' in last error, cannot determine resume point", phase_str)
+            return None
+
     def reset(self) -> None:
         """Reset state to initial."""
         self.state = self._new_state()
@@ -373,8 +397,10 @@ class StateManager:
 
         stored_primary = stored.get("primary")
         stored_secondary = stored.get("secondary")
-        has_progress = bool(self.state.get("completed_steps")) or self.state.get("errors") or (
-            self.state.get("current_phase") not in (None, Phase.INIT.value)
+        has_progress = (
+            bool(self.state.get("completed_steps"))
+            or self.state.get("errors")
+            or (self.state.get("current_phase") not in (None, Phase.INIT.value))
         )
 
         state_changed = False
@@ -475,7 +501,7 @@ class StepContext:
             self._should_run = True
         return self._should_run
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+    def __exit__(self, exc_type, exc_val, exc_tb) -> Literal[False]:
         """Mark step completed if it ran successfully."""
         # Only mark completed if:
         # 1. The step was supposed to run (_should_run is True)

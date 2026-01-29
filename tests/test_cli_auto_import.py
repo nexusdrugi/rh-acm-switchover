@@ -7,7 +7,7 @@ interaction with the switchover workflow.
 
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -26,10 +26,14 @@ class TestManageAutoImportFlag:
             "sys.argv",
             [
                 "script.py",
-                "--primary-context", "p1",
-                "--secondary-context", "p2",
-                "--method", "passive",
-                "--old-hub-action", "secondary",
+                "--primary-context",
+                "p1",
+                "--secondary-context",
+                "p2",
+                "--method",
+                "passive",
+                "--old-hub-action",
+                "secondary",
             ],
         ):
             args = parse_args()
@@ -41,10 +45,14 @@ class TestManageAutoImportFlag:
             "sys.argv",
             [
                 "script.py",
-                "--primary-context", "p1",
-                "--secondary-context", "p2",
-                "--method", "passive",
-                "--old-hub-action", "secondary",
+                "--primary-context",
+                "p1",
+                "--secondary-context",
+                "p2",
+                "--method",
+                "passive",
+                "--old-hub-action",
+                "secondary",
                 "--manage-auto-import-strategy",
             ],
         ):
@@ -57,10 +65,14 @@ class TestManageAutoImportFlag:
             "sys.argv",
             [
                 "script.py",
-                "--primary-context", "p1",
-                "--secondary-context", "p2",
-                "--method", "full",
-                "--old-hub-action", "secondary",
+                "--primary-context",
+                "p1",
+                "--secondary-context",
+                "p2",
+                "--method",
+                "full",
+                "--old-hub-action",
+                "secondary",
                 "--manage-auto-import-strategy",
             ],
         ):
@@ -74,10 +86,14 @@ class TestManageAutoImportFlag:
             "sys.argv",
             [
                 "script.py",
-                "--primary-context", "p1",
-                "--secondary-context", "p2",
-                "--method", "passive",
-                "--old-hub-action", "secondary",
+                "--primary-context",
+                "p1",
+                "--secondary-context",
+                "p2",
+                "--method",
+                "passive",
+                "--old-hub-action",
+                "secondary",
                 "--validate-only",
                 "--manage-auto-import-strategy",
             ],
@@ -92,10 +108,14 @@ class TestManageAutoImportFlag:
             "sys.argv",
             [
                 "script.py",
-                "--primary-context", "p1",
-                "--secondary-context", "p2",
-                "--method", "passive",
-                "--old-hub-action", "secondary",
+                "--primary-context",
+                "p1",
+                "--secondary-context",
+                "p2",
+                "--method",
+                "passive",
+                "--old-hub-action",
+                "secondary",
                 "--dry-run",
                 "--manage-auto-import-strategy",
             ],
@@ -103,6 +123,66 @@ class TestManageAutoImportFlag:
             args = parse_args()
             assert args.manage_auto_import_strategy is True
             assert args.dry_run is True
+
+    def test_activation_method_default_patch(self):
+        """Activation method should default to patch."""
+        with patch(
+            "sys.argv",
+            [
+                "script.py",
+                "--primary-context",
+                "p1",
+                "--secondary-context",
+                "p2",
+                "--method",
+                "passive",
+                "--old-hub-action",
+                "secondary",
+            ],
+        ):
+            args = parse_args()
+            assert args.activation_method == "patch"
+
+    def test_activation_method_restore(self):
+        """Activation method should parse restore option."""
+        with patch(
+            "sys.argv",
+            [
+                "script.py",
+                "--primary-context",
+                "p1",
+                "--secondary-context",
+                "p2",
+                "--method",
+                "passive",
+                "--old-hub-action",
+                "secondary",
+                "--activation-method",
+                "restore",
+            ],
+        ):
+            args = parse_args()
+            assert args.activation_method == "restore"
+
+    def test_disable_observability_flag(self):
+        """Disable observability flag should parse."""
+        with patch(
+            "sys.argv",
+            [
+                "script.py",
+                "--primary-context",
+                "p1",
+                "--secondary-context",
+                "p2",
+                "--method",
+                "passive",
+                "--old-hub-action",
+                "secondary",
+                "--disable-observability-on-secondary",
+            ],
+        ):
+            args = parse_args()
+            assert args.disable_observability_on_secondary is True
 
 
 @pytest.mark.unit
@@ -115,10 +195,14 @@ class TestAutoImportFlagInteraction:
             "sys.argv",
             [
                 "script.py",
-                "--primary-context", "p1",
-                "--secondary-context", "p2",
-                "--method", "passive",
-                "--old-hub-action", "secondary",
+                "--primary-context",
+                "p1",
+                "--secondary-context",
+                "p2",
+                "--method",
+                "passive",
+                "--old-hub-action",
+                "secondary",
             ],
         ):
             # Should not raise
@@ -133,10 +217,14 @@ class TestAutoImportFlagInteraction:
                 "sys.argv",
                 [
                     "script.py",
-                    "--primary-context", "p1",
-                    "--secondary-context", "p2",
-                    "--method", "passive",
-                    "--old-hub-action", action,
+                    "--primary-context",
+                    "p1",
+                    "--secondary-context",
+                    "p2",
+                    "--method",
+                    "passive",
+                    "--old-hub-action",
+                    action,
                     "--manage-auto-import-strategy",
                 ],
             ):

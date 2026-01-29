@@ -19,8 +19,8 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from lib import KubeClient, Phase, StateManager
 
-from .phase_handlers import CycleResult, PhaseHandlers, PhaseResult
 from .failure_injection import FailureInjector, InjectionResult
+from .phase_handlers import CycleResult, PhaseHandlers, PhaseResult
 
 if TYPE_CHECKING:
     from .monitoring import MetricsLogger
@@ -153,6 +153,7 @@ class E2EOrchestrator:
         """Get the ACM switchover tool version."""
         try:
             from lib import __version__
+
             return __version__
         except ImportError:
             return "unknown"
@@ -194,6 +195,7 @@ class E2EOrchestrator:
     def _get_python_version(self) -> str:
         """Get the Python version."""
         import sys
+
         return f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
 
     def _get_resume_state_path(self) -> Path:
@@ -308,6 +310,7 @@ class E2EOrchestrator:
             MetricsLogger instance
         """
         from .monitoring import MetricsLogger
+
         return MetricsLogger(self.run_output_dir / "metrics", self.logger)
 
     def _is_transient_error(self, error_msg: str) -> bool:
@@ -332,13 +335,11 @@ class E2EOrchestrator:
             "Running -",
             "Started -",
         ]
-        
+
         error_lower = error_msg.lower()
         return any(pattern.lower() in error_lower for pattern in transient_patterns)
 
-    def _create_clients(
-        self, primary_context: str, secondary_context: str
-    ) -> tuple[KubeClient, KubeClient]:
+    def _create_clients(self, primary_context: str, secondary_context: str) -> tuple[KubeClient, KubeClient]:
         """
         Create KubeClient instances for both hubs.
 
@@ -485,18 +486,12 @@ class E2EOrchestrator:
 
         # Log cycle start to JSONL
         if self._metrics_logger:
-            self._metrics_logger.log_cycle_start(
-                cycle_id, cycle_num, primary_context, secondary_context
-            )
+            self._metrics_logger.log_cycle_start(cycle_id, cycle_num, primary_context, secondary_context)
 
         # Create fresh clients and state for this cycle
         try:
-            primary_client, secondary_client = self._create_clients(
-                primary_context, secondary_context
-            )
-            state_manager = self._create_state_manager(
-                cycle_id, primary_context, secondary_context
-            )
+            primary_client, secondary_client = self._create_clients(primary_context, secondary_context)
+            state_manager = self._create_state_manager(cycle_id, primary_context, secondary_context)
         except Exception as e:
             self.logger.error("Failed to initialize cycle %d: %s", cycle_num, e)
             end_time = datetime.now(timezone.utc)
@@ -515,7 +510,7 @@ class E2EOrchestrator:
         # Run all phases
         cycle_success = True
         failure_injector = None
-        
+
         # Set up failure injection if configured
         if self.config.inject_failure:
             failure_injector = FailureInjector(
@@ -524,28 +519,28 @@ class E2EOrchestrator:
                 inject_at_phase=self.config.inject_at_phase,
                 dry_run=self.config.dry_run,
             )
-            
+
             def phase_callback(phase_name: str, timing: str) -> None:
                 """Callback to inject failure before specified phase."""
                 if timing == "before" and failure_injector.should_inject_at(phase_name):
                     result = failure_injector.inject()
                     if result.success:
-                        self.logger.warning(
-                            "Failure injected at phase %s: %s",
-                            phase_name, result.message
-                        )
+                        self.logger.warning("Failure injected at phase %s: %s", phase_name, result.message)
                         if self._metrics_logger:
-                            self._metrics_logger.log_metric({
-                                "metric_type": "failure_injection",
-                                "scenario": result.scenario,
-                                "phase": result.phase,
-                                "success": result.success,
-                                "message": result.message,
-                                "details": result.details,
-                            })
+                            self._metrics_logger.log_metric(
+                                {
+                                    "metric_type": "failure_injection",
+                                    "scenario": result.scenario,
+                                    "phase": result.phase,
+                                    "success": result.success,
+                                    "message": result.message,
+                                    "details": result.details,
+                                }
+                            )
+
         else:
             phase_callback = None
-        
+
         try:
             phase_results = self.phase_handlers.run_all_phases(
                 primary_client=primary_client,
@@ -562,7 +557,7 @@ class E2EOrchestrator:
 
             # Check if all phases succeeded
             cycle_success = all(pr.success for pr in phase_results)
-            
+
             # Log information about transient failures (for analysis)
             if not cycle_success:
                 failed_phases = [pr for pr in phase_results if not pr.success]
@@ -571,7 +566,8 @@ class E2EOrchestrator:
                     if self._is_transient_error(error_msg):
                         self.logger.warning(
                             "Phase %s failed with transient error (may succeed on next cycle): %s",
-                            failed_phase.phase_name, error_msg
+                            failed_phase.phase_name,
+                            error_msg,
                         )
 
         except Exception as e:
@@ -602,6 +598,7 @@ class E2EOrchestrator:
         if state_file.exists():
             dest_state = self.run_output_dir / "states" / f"{cycle_id}_state.json"
             import shutil
+
             shutil.copy(state_file, dest_state)
 
         result = CycleResult(
@@ -623,16 +620,14 @@ class E2EOrchestrator:
                 self._metrics_logger.log_phase_result(
                     cycle_id, pr.phase_name, pr.success, pr.duration_seconds, pr.error
                 )
-            self._metrics_logger.log_cycle_end(
-                cycle_id, cycle_success, result.total_duration_seconds
-            )
+            self._metrics_logger.log_cycle_end(cycle_id, cycle_success, result.total_duration_seconds)
 
         if cycle_success:
-            self.logger.info("✅ Cycle %d completed successfully in %.1f seconds",
-                           cycle_num, result.total_duration_seconds)
+            self.logger.info(
+                "✅ Cycle %d completed successfully in %.1f seconds", cycle_num, result.total_duration_seconds
+            )
         else:
-            self.logger.error("❌ Cycle %d failed after %.1f seconds",
-                            cycle_num, result.total_duration_seconds)
+            self.logger.error("❌ Cycle %d failed after %.1f seconds", cycle_num, result.total_duration_seconds)
 
         return result
 
@@ -694,19 +689,24 @@ class E2EOrchestrator:
                 current_secondary = resume_state.get("current_secondary", current_secondary)
                 success_count = resume_state.get("success_count", 0)
                 failure_count = resume_state.get("failure_count", 0)
-                
+
                 # Restore original start_time for accurate time limit enforcement
                 if "start_time" in resume_state:
                     start_time = datetime.fromisoformat(resume_state["start_time"])
                     elapsed = (datetime.now(timezone.utc) - start_time).total_seconds() / 3600
                     self.logger.info(
                         "Resuming from cycle %d (previous: %d success, %d failures, elapsed: %.1fh)",
-                        start_cycle, success_count, failure_count, elapsed
+                        start_cycle,
+                        success_count,
+                        failure_count,
+                        elapsed,
                     )
                 else:
                     self.logger.info(
                         "Resuming from cycle %d (previous: %d success, %d failures)",
-                        start_cycle, success_count, failure_count
+                        start_cycle,
+                        success_count,
+                        failure_count,
                     )
 
         stop_reason = None
@@ -746,10 +746,7 @@ class E2EOrchestrator:
             # Check for early stop conditions
             if not cycle_result.success and self.config.stop_on_failure:
                 stop_reason = "stop_on_failure"
-                self.logger.warning(
-                    "Stopping after cycle %d failure (stop_on_failure=True)",
-                    cycle_num
-                )
+                self.logger.warning("Stopping after cycle %d failure (stop_on_failure=True)", cycle_num)
                 break
 
             # Check max failures limit
@@ -764,13 +761,13 @@ class E2EOrchestrator:
             # Swap contexts for next cycle
             if cycle_num < self.config.cycles:
                 current_primary, current_secondary = next_primary, next_secondary
-                self.logger.info("Swapped contexts for next cycle: Primary=%s, Secondary=%s",
-                               current_primary, current_secondary)
+                self.logger.info(
+                    "Swapped contexts for next cycle: Primary=%s, Secondary=%s", current_primary, current_secondary
+                )
 
                 # Cooldown between cycles
                 if self.config.cooldown_seconds > 0:
-                    self.logger.info("Cooldown for %d seconds before next cycle...",
-                                   self.config.cooldown_seconds)
+                    self.logger.info("Cooldown for %d seconds before next cycle...", self.config.cooldown_seconds)
                     time.sleep(self.config.cooldown_seconds)
 
         end_time = datetime.now(timezone.utc)

@@ -7,9 +7,9 @@ still works as expected with deprecation warnings.
 
 def test_backward_compatibility_imports_with_warning():
     """Test that importing from preflight_validators shows deprecation warning."""
-    import warnings
     import importlib
     import sys
+    import warnings
 
     # Remove from cache to re-trigger the deprecation warning
     if "modules.preflight_validators" in sys.modules:
@@ -18,6 +18,7 @@ def test_backward_compatibility_imports_with_warning():
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         import modules.preflight_validators
+
         importlib.reload(modules.preflight_validators)
 
         # Verify deprecation warning was raised
@@ -26,11 +27,10 @@ def test_backward_compatibility_imports_with_warning():
         assert "deprecated" in str(deprecation_warnings[0].message).lower()
 
     # Test that we can import the classes we need
-    from modules.preflight_validators import ValidationReporter, BackupValidator
-
     # Basic verification that the classes are the same
     from modules.preflight import ValidationReporter as NewValidationReporter
     from modules.preflight.backup_validators import BackupValidator as NewBackupValidator
+    from modules.preflight_validators import BackupValidator, ValidationReporter
 
     assert ValidationReporter is NewValidationReporter
     assert BackupValidator is NewBackupValidator
@@ -50,26 +50,25 @@ def test_backward_compatibility_classes_work():
     # Test that classes can be instantiated
     backup_validator = BackupValidator(reporter)
     assert backup_validator is not None
-    assert hasattr(backup_validator, 'run')
+    assert hasattr(backup_validator, "run")
 
     namespace_validator = NamespaceValidator(reporter)
     assert namespace_validator is not None
-    assert hasattr(namespace_validator, 'run')
+    assert hasattr(namespace_validator, "run")
 
     version_validator = VersionValidator(reporter)
     assert version_validator is not None
-    assert hasattr(version_validator, 'run')
+    assert hasattr(version_validator, "run")
 
 
 def test_backward_compatibility_same_classes():
     """Test that classes from old and new imports are identical."""
     # Import from old location
-    from modules.preflight_validators import ValidationReporter as OldValidationReporter
-    from modules.preflight_validators import BackupValidator as OldBackupValidator
-
     # Import from new location
     from modules.preflight import ValidationReporter as NewValidationReporter
     from modules.preflight.backup_validators import BackupValidator as NewBackupValidator
+    from modules.preflight_validators import BackupValidator as OldBackupValidator
+    from modules.preflight_validators import ValidationReporter as OldValidationReporter
 
     # They should be the same classes
     assert OldValidationReporter is NewValidationReporter
@@ -82,21 +81,21 @@ def test_all_validators_importable():
     from modules import preflight_validators
 
     expected_symbols = [
-        'AutoImportStrategyValidator',
-        'BackupScheduleValidator',
-        'BackupStorageLocationValidator',
-        'BackupValidator',
-        'ClusterDeploymentValidator',
-        'HubComponentValidator',
-        'KubeconfigValidator',
-        'ManagedClusterBackupValidator',
-        'NamespaceValidator',
-        'ObservabilityDetector',
-        'ObservabilityPrereqValidator',
-        'PassiveSyncValidator',
-        'ToolingValidator',
-        'ValidationReporter',
-        'VersionValidator',
+        "AutoImportStrategyValidator",
+        "BackupScheduleValidator",
+        "BackupStorageLocationValidator",
+        "BackupValidator",
+        "ClusterDeploymentValidator",
+        "HubComponentValidator",
+        "KubeconfigValidator",
+        "ManagedClusterBackupValidator",
+        "NamespaceValidator",
+        "ObservabilityDetector",
+        "ObservabilityPrereqValidator",
+        "PassiveSyncValidator",
+        "ToolingValidator",
+        "ValidationReporter",
+        "VersionValidator",
     ]
 
     for symbol in expected_symbols:

@@ -2,6 +2,8 @@
 Post-activation verification module for ACM switchover.
 """
 
+# Runbook: Steps 6-10 (Method 1) / F6 (Method 2)
+
 import base64
 import logging
 import os
@@ -18,6 +20,7 @@ from lib.constants import (
     CLUSTER_VERIFY_MAX_WORKERS,
     CLUSTER_VERIFY_TIMEOUT,
     DEFAULT_KUBECONFIG_SIZE,
+    DISABLE_AUTO_IMPORT_ANNOTATION,
     INITIAL_CLUSTER_WAIT_TIMEOUT,
     LOCAL_CLUSTER_NAME,
     MANAGED_CLUSTER_AGENT_NAMESPACE,
@@ -25,7 +28,6 @@ from lib.constants import (
     OBSERVABILITY_NAMESPACE,
     OBSERVABILITY_POD_TIMEOUT,
     OBSERVATORIUM_API_DEPLOYMENT,
-    DISABLE_AUTO_IMPORT_ANNOTATION,
     POD_READINESS_TOLERANCE,
     SECRET_VISIBILITY_INTERVAL,
     SECRET_VISIBILITY_TIMEOUT,
@@ -129,17 +131,13 @@ class PostActivationVerification:
                         "ManagedClusters not connected after initial wait: %s",
                         e,
                     )
-                    logger.info(
-                        "Checking if klusterlets need to be fixed (may be pointing to old hub)..."
-                    )
+                    logger.info("Checking if klusterlets need to be fixed (may be pointing to old hub)...")
                     # Try to fix klusterlet connections first
                     self._verify_klusterlet_connections()
                     self.state.mark_step_completed("verify_klusterlet_connections")
 
                     # Now wait longer for clusters to reconnect after fix
-                    logger.info(
-                        "Waiting for ManagedClusters to reconnect after klusterlet fix..."
-                    )
+                    logger.info("Waiting for ManagedClusters to reconnect after klusterlet fix...")
                     self._verify_managed_clusters_connected()
 
         # Optional: Verify klusterlet connections (non-blocking)
@@ -847,8 +845,8 @@ class PostActivationVerification:
                         "Error applying %s/%s: status=%s reason=%s",
                         kind,
                         name,
-                        getattr(e, 'status', None),
-                        getattr(e, 'reason', None),
+                        getattr(e, "status", None),
+                        getattr(e, "reason", None),
                     )
 
     def _wait_for_secret_visibility(self, context_name: str, cluster_name: str) -> None:
@@ -902,9 +900,7 @@ class PostActivationVerification:
             # Trigger a rollout restart by patching the deployment
             patch = {
                 "spec": {
-                    "template": {
-                        "metadata": {"annotations": {"acm-switchover/restart": str(int(time_module.time()))}}
-                    }
+                    "template": {"metadata": {"annotations": {"acm-switchover/restart": str(int(time_module.time()))}}}
                 }
             }
             apps_v1.patch_namespaced_deployment(
@@ -1052,9 +1048,7 @@ class PostActivationVerification:
             self._kubeconfig_cache = merged
             self._kubeconfig_paths = [os.path.expanduser(p) for p in paths]
             self._kubeconfig_mtime = {
-                path: os.path.getmtime(path)
-                for path in self._kubeconfig_paths
-                if os.path.exists(path)
+                path: os.path.getmtime(path) for path in self._kubeconfig_paths if os.path.exists(path)
             }
 
             return merged

@@ -2,6 +2,8 @@
 Decommission module for old primary hub.
 """
 
+# Runbook: Step 14 (decommission) and Rollback references where applicable
+
 import logging
 
 from lib.constants import (
@@ -56,14 +58,14 @@ class Decommission:
                 return False
 
         try:
-            # Step 12.1-12.2: Delete MultiClusterObservability
+            # Step 14.1-14.2: Delete MultiClusterObservability
             if self.has_observability:
                 if not interactive or confirm_action("\nDelete MultiClusterObservability resource?", default=False):
                     self._delete_observability()
                 else:
                     logger.info("Skipped: Delete MultiClusterObservability")
 
-            # Step 12.3: Delete ManagedClusters
+            # Step 14.3: Delete ManagedClusters
             if not interactive or confirm_action(
                 "\nDelete ManagedCluster resources (excluding local-cluster)?",
                 default=False,
@@ -72,7 +74,7 @@ class Decommission:
             else:
                 logger.info("Skipped: Delete ManagedClusters")
 
-            # Step 12.4-12.5: Delete MultiClusterHub
+            # Step 14.4-14.5: Delete MultiClusterHub
             if not interactive or confirm_action(
                 "\nDelete MultiClusterHub resource? (This will remove all ACM components)",
                 default=False,

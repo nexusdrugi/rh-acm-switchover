@@ -308,16 +308,44 @@ if [[ $BACKUPS -gt 0 ]]; then
             BACKUP_EPOCH=$(date -d "$BACKUP_COMPLETION" +%s 2>/dev/null || echo "0")
             CURRENT_EPOCH=$(date +%s)
             AGE_SECONDS=$((CURRENT_EPOCH - BACKUP_EPOCH))
-            AGE_DISPLAY=$(format_age_display $AGE_SECONDS)
-            
-            # Determine freshness status and color
-            # Fresh: < 1 hour (3600s), Acceptable: < 24 hours (86400s), Stale: >= 24 hours
-            if [[ $AGE_SECONDS -lt 3600 ]]; then
-                echo -e "${GREEN}       Backup age: $AGE_DISPLAY (completed: $BACKUP_COMPLETION) - FRESH${NC}"
-            elif [[ $AGE_SECONDS -lt 86400 ]]; then
-                echo -e "${YELLOW}       Backup age: $AGE_DISPLAY (completed: $BACKUP_COMPLETION) - acceptable${NC}"
+            AGE_DISPLAY=$(format_age_display "$AGE_SECONDS")
+
+            # If we can derive schedule cadence, show age relative to it
+            EFFECTIVE_BACKUP_AGE_MAX_SECONDS="$BACKUP_AGE_MAX_SECONDS"
+            # Fetch BackupSchedule JSON locally for cadence-aware messaging (keep Check 10 logic unchanged)
+            PRIMARY_BACKUP_SCHEDULE=$(oc --context="$PRIMARY_CONTEXT" get $RES_BACKUP_SCHEDULE -n "$BACKUP_NAMESPACE" -o json 2>/dev/null || echo "")
+            SCHEDULE_EXPR=""
+            INTERVAL_SECONDS=""
+            if [[ -n "$PRIMARY_BACKUP_SCHEDULE" ]] && echo "$PRIMARY_BACKUP_SCHEDULE" | jq -e '.items[0]' &>/dev/null; then
+                SCHEDULE_EXPR=$(echo "$PRIMARY_BACKUP_SCHEDULE" | jq -r '.items[0].spec.veleroSchedule // ""' 2>/dev/null || echo "")
+            fi
+            if [[ -n "$SCHEDULE_EXPR" ]]; then
+                INTERVAL_SECONDS=$(_derive_backup_interval_seconds "$SCHEDULE_EXPR")
+                if [[ -n "$INTERVAL_SECONDS" && "$INTERVAL_SECONDS" -gt "$BACKUP_AGE_MAX_SECONDS" ]]; then
+                    EFFECTIVE_BACKUP_AGE_MAX_SECONDS=$((INTERVAL_SECONDS + BACKUP_AGE_MAX_SECONDS))
+                fi
+            fi
+
+            if [[ -n "$INTERVAL_SECONDS" ]]; then
+                INTERVAL_DISPLAY=$(format_age_display "$INTERVAL_SECONDS")
+                THRESHOLD_DISPLAY=$(format_age_display "$EFFECTIVE_BACKUP_AGE_MAX_SECONDS")
+
+                if [[ $AGE_SECONDS -le $INTERVAL_SECONDS ]]; then
+                    echo -e "${GREEN}       Backup age: $AGE_DISPLAY (completed: $BACKUP_COMPLETION, schedule: $SCHEDULE_EXPR, interval: $INTERVAL_DISPLAY, threshold: $THRESHOLD_DISPLAY) - within one schedule interval${NC}"
+                elif [[ $AGE_SECONDS -le $EFFECTIVE_BACKUP_AGE_MAX_SECONDS ]]; then
+                    echo -e "${YELLOW}       Backup age: $AGE_DISPLAY (completed: $BACKUP_COMPLETION, schedule: $SCHEDULE_EXPR, interval: $INTERVAL_DISPLAY, threshold: $THRESHOLD_DISPLAY) - within allowed threshold${NC}"
+                else
+                    echo -e "${RED}       Backup age: $AGE_DISPLAY (completed: $BACKUP_COMPLETION, schedule: $SCHEDULE_EXPR, interval: $INTERVAL_DISPLAY, threshold: $THRESHOLD_DISPLAY) - OLDER than allowed threshold, run a fresh backup before switchover${NC}"
+                fi
             else
-                echo -e "${YELLOW}       Backup age: $AGE_DISPLAY (completed: $BACKUP_COMPLETION) - consider running a fresh backup${NC}"
+                # Fallback: absolute buckets when schedule cadence is unknown
+                if [[ $AGE_SECONDS -lt 3600 ]]; then
+                    echo -e "${GREEN}       Backup age: $AGE_DISPLAY (completed: $BACKUP_COMPLETION) - FRESH${NC}"
+                elif [[ $AGE_SECONDS -lt 86400 ]]; then
+                    echo -e "${YELLOW}       Backup age: $AGE_DISPLAY (completed: $BACKUP_COMPLETION) - acceptable${NC}"
+                else
+                    echo -e "${YELLOW}       Backup age: $AGE_DISPLAY (completed: $BACKUP_COMPLETION) - consider running a fresh backup${NC}"
+                fi
             fi
         else
             check_warn "Primary hub: Could not determine backup age (completion timestamp unavailable)"
@@ -581,15 +609,20 @@ if is_acm_214_or_higher "$ACM_SECONDARY_VERSION"; then
         echo -e "${YELLOW}       See: $AUTO_IMPORT_STRATEGY_DOC_URL${NC}"
     fi
     
-    # If secondary hub already has managed clusters, provide ImportAndSync guidance
-    if [[ $SECONDARY_MC_TOTAL -gt 0 ]]; then
-        check_warn "Secondary hub: Pre-existing clusters require autoImportStrategy change for restore"
-        echo -e "${YELLOW}       IMPORTANT for ACM 2.14+ restore with existing clusters:${NC}"
-        echo -e "${YELLOW}       1. BEFORE restore: Change autoImportStrategy to '$AUTO_IMPORT_STRATEGY_SYNC'${NC}"
-        echo -e "${YELLOW}          oc -n $MCE_NAMESPACE create configmap $IMPORT_CONTROLLER_CONFIGMAP \\${NC}"
-        echo -e "${YELLOW}            --from-literal=$AUTO_IMPORT_STRATEGY_KEY=$AUTO_IMPORT_STRATEGY_SYNC --dry-run=client -o yaml | oc apply -f -${NC}"
-        echo -e "${YELLOW}       2. AFTER restore completes: Remove the configmap to restore default behavior${NC}"
-        echo -e "${YELLOW}          oc -n $MCE_NAMESPACE delete configmap $IMPORT_CONTROLLER_CONFIGMAP${NC}"
+    # If secondary hub already has managed clusters, provide ImportOnly guidance
+    if [[ $SECONDARY_MC_TOTAL -gt 0 ]] && [[ "$SECONDARY_STRATEGY" == "default" || "$SECONDARY_STRATEGY" == "$AUTO_IMPORT_STRATEGY_DEFAULT" ]]; then
+        check_warn "Secondary hub: ImportOnly strategy with existing clusters"
+        echo -e "${YELLOW}       ACM 2.14+ default ImportOnly requires one of the following:${NC}"
+        echo -e "${YELLOW}       Option A (preferred): Add immediate-import annotation (empty value) on secondary hub${NC}"
+        echo -e "${YELLOW}         oc --context=$SECONDARY_CONTEXT get managedcluster -o name | grep -v $LOCAL_CLUSTER_NAME | \\${NC}"
+        echo -e "${YELLOW}           xargs -I{} oc --context=$SECONDARY_CONTEXT annotate {} import.open-cluster-management.io/immediate-import='' --overwrite${NC}"
+        echo -e "${YELLOW}         Note: empty value ('') triggers auto-import; controller sets it to 'Completed' afterward${NC}"
+        echo -e "${YELLOW}         It is safe to leave the annotation in place (no removal needed)${NC}"
+        echo -e "${YELLOW}       Option B (switchback scenarios): Temporarily set autoImportStrategy=${AUTO_IMPORT_STRATEGY_SYNC}${NC}"
+        echo -e "${YELLOW}         oc -n $MCE_NAMESPACE create configmap $IMPORT_CONTROLLER_CONFIGMAP \\${NC}"
+        echo -e "${YELLOW}           --from-literal=$AUTO_IMPORT_STRATEGY_KEY=$AUTO_IMPORT_STRATEGY_SYNC --dry-run=client -o yaml | oc apply -f -${NC}"
+        echo -e "${YELLOW}         Then remove the configmap after activation to restore default ImportOnly${NC}"
+        echo -e "${YELLOW}         oc -n $MCE_NAMESPACE delete configmap $IMPORT_CONTROLLER_CONFIGMAP${NC}"
         echo -e "${YELLOW}       See: $AUTO_IMPORT_STRATEGY_DOC_URL${NC}"
     fi
 else

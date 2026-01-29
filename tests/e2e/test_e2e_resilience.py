@@ -10,18 +10,19 @@ Test markers:
 - @pytest.mark.resilience: Resilience-specific tests (failure injection)
 """
 
-import pytest
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from tests.e2e import (
     E2EOrchestrator,
-    RunConfig,
     FailureInjector,
     FailureScenario,
     InjectionPhase,
     InjectionResult,
+    RunConfig,
 )
 
 
@@ -67,7 +68,7 @@ class TestFailureInjector:
         )
 
         result = injector.inject()
-        
+
         assert result.success is True
         assert "[DRY-RUN]" in result.message
         assert result.scenario == "pause-backup"
@@ -86,7 +87,7 @@ class TestFailureInjector:
         )
 
         result = injector.inject()
-        
+
         assert result.success is True
         assert "[DRY-RUN]" in result.message
         assert "Velero" in result.message
@@ -103,7 +104,7 @@ class TestFailureInjector:
         )
 
         result = injector.inject()
-        
+
         assert result.success is True
         assert "[DRY-RUN]" in result.message
         assert "MCO" in result.message
@@ -112,7 +113,7 @@ class TestFailureInjector:
     def test_injector_random_selects_valid_scenario(self):
         """Test that 'random' scenario resolves to a valid injectable scenario."""
         mock_client = MagicMock()
-        
+
         # Run multiple times to verify randomness
         selected_scenarios = set()
         for _ in range(20):
@@ -123,7 +124,7 @@ class TestFailureInjector:
                 dry_run=True,
             )
             selected_scenarios.add(injector.scenario)
-        
+
         # Should only select from injectable scenarios (not 'random')
         for scenario in selected_scenarios:
             assert scenario != FailureScenario.RANDOM
@@ -180,9 +181,7 @@ class TestFailureInjector:
     def test_pause_backup_injection_real(self):
         """Test pause-backup injection with mocked API calls."""
         mock_client = MagicMock()
-        mock_client.list_custom_resources.return_value = [
-            {"metadata": {"name": "acm-backup-schedule"}}
-        ]
+        mock_client.list_custom_resources.return_value = [{"metadata": {"name": "acm-backup-schedule"}}]
         mock_client.patch_custom_resource.return_value = {}
 
         injector = FailureInjector(
@@ -204,9 +203,7 @@ class TestFailureInjector:
     def test_pause_backup_cleanup_real(self):
         """Test pause-backup cleanup with mocked API calls."""
         mock_client = MagicMock()
-        mock_client.list_custom_resources.return_value = [
-            {"metadata": {"name": "acm-backup-schedule"}}
-        ]
+        mock_client.list_custom_resources.return_value = [{"metadata": {"name": "acm-backup-schedule"}}]
         mock_client.patch_custom_resource.return_value = {}
 
         injector = FailureInjector(
@@ -218,7 +215,7 @@ class TestFailureInjector:
 
         # Inject first
         injector.inject()
-        
+
         # Then cleanup
         result = injector.cleanup()
 
@@ -230,9 +227,7 @@ class TestFailureInjector:
     def test_delay_restore_injection_real(self):
         """Test delay-restore injection with mocked API calls."""
         mock_client = MagicMock()
-        mock_client.get_deployment.return_value = {
-            "spec": {"replicas": 2}
-        }
+        mock_client.get_deployment.return_value = {"spec": {"replicas": 2}}
         mock_client.scale_deployment.return_value = {}
 
         injector = FailureInjector(
@@ -256,9 +251,7 @@ class TestFailureInjector:
     def test_kill_observability_pod_real(self):
         """Test kill-observability-pod injection with mocked API calls."""
         mock_client = MagicMock()
-        mock_client.list_pods.return_value = [
-            {"metadata": {"name": "mco-operator-abc123"}}
-        ]
+        mock_client.list_pods.return_value = [{"metadata": {"name": "mco-operator-abc123"}}]
         mock_client.delete_pod.return_value = True
 
         injector = FailureInjector(
@@ -323,16 +316,14 @@ class TestOrchestratorWithInjection:
         )
 
         orchestrator = E2EOrchestrator(config)
-        
+
         # Verify config is stored
         assert orchestrator.config.inject_failure == "pause-backup"
         assert orchestrator.config.inject_at_phase == "activation"
 
     @patch("tests.e2e.orchestrator.E2EOrchestrator._create_clients")
     @patch("tests.e2e.orchestrator.E2EOrchestrator._create_state_manager")
-    def test_orchestrator_injects_failure_at_correct_phase(
-        self, mock_state, mock_clients, tmp_path
-    ):
+    def test_orchestrator_injects_failure_at_correct_phase(self, mock_state, mock_clients, tmp_path):
         """Test that failure is injected at the configured phase."""
         mock_primary = MagicMock()
         mock_secondary = MagicMock()
@@ -350,11 +341,12 @@ class TestOrchestratorWithInjection:
         )
 
         orchestrator = E2EOrchestrator(config)
-        
+
         # Track when injection happens
         injection_phases = []
-        
+
         original_run_all_phases = orchestrator.phase_handlers.run_all_phases
+
         def mock_run_all_phases(*args, **kwargs):
             phase_callback = kwargs.get("phase_callback")
             if phase_callback:
@@ -364,12 +356,12 @@ class TestOrchestratorWithInjection:
                     injection_phases.append(phase)
                     phase_callback(phase, "after")
             return []
-        
+
         orchestrator.phase_handlers.run_all_phases = mock_run_all_phases
-        
+
         with patch.object(orchestrator, "_write_cycle_metrics"):
             orchestrator._run_cycle(1, "hub1", "hub2")
-        
+
         # Verify phases were called
         assert "activation" in injection_phases
 
@@ -379,10 +371,10 @@ class TestOrchestratorWithInjection:
 class TestResilienceScenarios:
     """
     Integration tests for resilience scenarios.
-    
+
     These tests verify that failure injection works end-to-end
     and that the system handles failures appropriately.
-    
+
     Note: These tests require --primary-context and --secondary-context
     to run with real clusters. They are skipped in dry-run mode.
     """
@@ -406,7 +398,7 @@ class TestResilienceScenarios:
             dry_run=True,
             output_dir=tmp_path,
         )
-        
+
         # Verify config is correct
         assert config.inject_failure == "pause-backup"
         assert config.dry_run is True
@@ -420,7 +412,7 @@ class TestResilienceScenarios:
             dry_run=True,
             output_dir=tmp_path,
         )
-        
+
         assert config.inject_failure == "delay-restore"
 
     def test_kill_observability_pod_scenario_dry_run(self, resilience_config, tmp_path):
@@ -432,7 +424,7 @@ class TestResilienceScenarios:
             dry_run=True,
             output_dir=tmp_path,
         )
-        
+
         assert config.inject_failure == "kill-observability-pod"
         assert config.inject_at_phase == "post_activation"
 
@@ -445,7 +437,7 @@ class TestResilienceScenarios:
             dry_run=True,
             output_dir=tmp_path,
         )
-        
+
         # The random selection happens in FailureInjector.__init__
         mock_client = MagicMock()
         injector = FailureInjector(
@@ -454,7 +446,7 @@ class TestResilienceScenarios:
             inject_at_phase=config.inject_at_phase,
             dry_run=config.dry_run,
         )
-        
+
         # Should have resolved to a real scenario
         assert injector.scenario != FailureScenario.RANDOM
         assert injector.scenario in FailureScenario.injectable_scenarios()
@@ -463,8 +455,7 @@ class TestResilienceScenarios:
 @pytest.mark.e2e
 @pytest.mark.resilience
 @pytest.mark.skipif(
-    True,  # Skip by default - requires real clusters
-    reason="Requires real cluster contexts for failure injection"
+    True, reason="Requires real cluster contexts for failure injection"  # Skip by default - requires real clusters
 )
 class TestRealClusterResilience:
     """
@@ -490,7 +481,7 @@ class TestRealClusterResilience:
     ):
         """
         Test that system recovers after backup is paused mid-cycle.
-        
+
         This test:
         1. Injects pause-backup failure during activation
         2. Verifies the cycle handles the failure

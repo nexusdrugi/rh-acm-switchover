@@ -5,19 +5,20 @@
 This report details 21 hidden logical errors and performance issues identified through comprehensive codebase analysis. Issues are categorized by severity (Critical, High, Medium, Low) with recommended fixes.
 
 **Statistics:**
-- Critical Issues: 3
+- Critical Issues: 4
 - High Priority Issues: 4
 - Medium Priority Issues: 7
 - Low Priority Issues: 7
 
 **Status Tracking:**
-| Status | Count | Issues |
-|--------|-------|--------|
-| Resolved | 15 | #1, #3, #4, #5, #7, #8, #9, #10, #11, #12, #13, #14, #15, #17, #21 |
-| False-Positive | 4 | #2, #6, #18, #20 |
-| Open | 2 | #16, #19 |
 
-*Last updated: 2026-01-27*
+| Status | Count | Issues |
+| --- | --- | --- |
+| Resolved | 18 | #1, #3, #4, #5, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #19, #21, #22 |
+| False-Positive | 4 | #2, #6, #18, #20 |
+| Open | 0 | — |
+
+### Last updated: 2026-01-29
 
 ---
 
@@ -236,6 +237,158 @@ def ensure_contexts(self, primary_context: str, secondary_context: str) -> None:
 - Test with valid contexts (should not reset)
 - Test with mismatched contexts (should reset)
 - Test with missing context fields (should reset)
+
+---
+
+### 22. Resume Logic Treats Failed State as Completed
+
+**File:** `acm_switchover.py` (main orchestrator, resume logic)
+
+**Severity:** CRITICAL
+
+**Status:** RESOLVED
+**Discovered:** 2026-01-29 (Real cluster testing)
+**Resolution Date:** 2026-01-29
+**Resolved In:** commit 19ac153 (post v1.5.3)
+**Affected Versions:** v1.5.3 and earlier
+**Detailed Report:** [docs/development/bug-resume-logic-issue.md](bug-resume-logic-issue.md)
+
+**Description:**
+When a switchover fails during POST_ACTIVATION or later phases and is subsequently resumed, the tool incorrectly reports "SWITCHOVER COMPLETED SUCCESSFULLY" without executing the remaining FINALIZATION phase, even though the state file shows `phase: failed` and contains recorded errors.
+
+**Reproduction:**
+1. Start switchover (progresses through PREFLIGHT, PRIMARY_PREP, ACTIVATION)
+2. Failure occurs in POST_ACTIVATION phase (e.g., annotation check fails)
+3. State file shows: `current_phase: failed`, 9 completed steps
+4. User manually fixes the issue (e.g., removes problematic annotations)
+5. Re-run same switchover command
+6. Tool immediately reports: "SWITCHOVER COMPLETED SUCCESSFULLY"
+7. State shows: `current_phase: completed` (incorrect)
+8. FINALIZATION phase never executed (missing steps 10-21)
+
+**Impact:**
+- **Critical**: Incomplete switchovers reported as successful
+- **Data Loss Risk**: BackupSchedule not created on new hub (no backups running)
+- **Configuration Gap**: Old hub not configured as secondary
+- **User Confusion**: False success message with incomplete migration
+- **Production Risk**: Operators may believe switchover complete when critical steps missed
+
+**Evidence from Real Testing:**
+```bash
+# State shows only 9/21 steps completed
+$ cat .state/switchover-mgmt1__mgmt2.json | jq '.current_phase, (.completed_steps | length)'
+"completed"  # ❌ Incorrect - should be "failed"
+9            # ❌ Missing steps 10-21 (entire FINALIZATION phase)
+
+# Error recorded but ignored during resume
+$ cat .state/switchover-mgmt1__mgmt2.json | jq '.errors[0]'
+{
+  "phase": "post_activation_verification",
+  "error": "disable-auto-import annotation still present on: prod1, prod2, prod3",
+  "timestamp": "2026-01-29T12:29:10..."
+}
+
+# Real cluster state after "successful" resume
+$ oc --context=mgmt2 get backupschedule -n open-cluster-management-backup
+No resources found  # ❌ Critical - no backups being created!
+
+$ oc --context=mgmt1 get restore -n open-cluster-management-backup
+No resources found  # ❌ Old hub not configured as secondary
+```
+
+**Root Cause:**
+Resume logic in main orchestrator incorrectly determines completion based on partial criteria (e.g., completed steps count) rather than explicit `phase == Phase.COMPLETED` check. When resuming from `phase: failed`, the tool:
+1. Loads state showing `failed` phase
+2. Misinterprets state as "complete"
+3. Skips remaining phases
+4. Sets `phase: completed` and exits with success message
+
+**Expected Behavior:**
+```text
+INFO - Resuming from failed state
+INFO - Last error: disable-auto-import annotation still present on: prod1, prod2, prod3
+INFO - Failed at phase: post_activation_verification
+INFO - Retrying verification step...
+INFO - Continuing to FINALIZATION phase...
+INFO - Creating BackupSchedule on new hub...
+INFO - Setting up old hub as secondary...
+✓ SWITCHOVER COMPLETED SUCCESSFULLY
+```
+
+**Recommended Fix:**
+```python
+# In acm_switchover.py main orchestrator
+def should_resume_from_state(state: StateManager) -> Tuple[bool, Phase]:
+    """Determine if we should resume and from which phase."""
+    current_phase = state.get_current_phase()
+
+    # Explicit completion check - don't rely on step count
+    if current_phase == Phase.COMPLETED:
+        return False, current_phase  # Already complete, don't resume
+
+    # Failed state - resume from failed phase to retry
+    if current_phase == Phase.FAILED:
+        logger.info("Resuming from failed state")
+        last_error = state.get_errors()[-1] if state.get_errors() else None
+        if last_error:
+            logger.info(f"Last error: {last_error['error']}")
+            logger.info(f"Failed at phase: {last_error['phase']}")
+
+        # Resume from the phase that failed (not INIT)
+        failed_phase = Phase[last_error['phase'].upper()] if last_error else Phase.INIT
+        return True, failed_phase
+
+    # In-progress state - resume from current phase
+    return True, current_phase
+
+# Use explicit phase checks, not step counts
+if state.get_current_phase() == Phase.COMPLETED:
+    logger.info("Switchover already completed")
+    sys.exit(0)
+```
+
+**Testing Requirements:**
+1. Create unit tests for resume logic with various state scenarios
+2. Test resume from each phase (PREFLIGHT, PRIMARY_PREP, ACTIVATION, POST_ACTIVATION, FINALIZATION)
+3. Test resume from FAILED phase specifically
+4. Verify FINALIZATION always executes before marking COMPLETED
+5. Add integration test: fail during POST_ACTIVATION, fix issue manually, resume successfully
+
+**Workaround:**
+Manual finalization steps:
+```bash
+# 1. Create BackupSchedule on new hub
+oc --context=NEW_HUB apply -f - <<EOF
+apiVersion: cluster.open-cluster-management.io/v1beta1
+kind: BackupSchedule
+metadata:
+  name: acm-hub-backup
+  namespace: open-cluster-management-backup
+spec:
+  useManagedServiceAccount: true
+  veleroSchedule: "0 */4 * * *"
+  veleroTtl: 720h
+  managedServiceAccountTTL: 720h
+EOF
+
+# 2. Set up old hub as secondary
+oc --context=OLD_HUB apply -f - <<EOF
+apiVersion: cluster.open-cluster-management.io/v1beta1
+kind: Restore
+metadata:
+  name: restore-acm-passive-sync
+  namespace: open-cluster-management-backup
+spec:
+  cleanupBeforeRestore: CleanupRestored
+  veleroManagedClustersBackupName: skip
+  veleroCredentialsBackupName: latest
+  veleroResourcesBackupName: latest
+  syncRestoreWithNewBackups: true
+  restoreSyncInterval: 10m
+EOF
+```
+
+**Priority:** CRITICAL - Must be fixed before production use. Core switchover works correctly, but resume logic prevents safe recovery from transient failures.
 
 ---
 
@@ -1253,7 +1406,10 @@ if found_chars:
 
 **Severity:** LOW
 
-**Status:** OPEN
+**Status:** RESOLVED  
+**Resolution Date:** 2026-01-28  
+**Resolved In:** v1.5.0  
+**Resolution Notes:** Added fast polling parameters to `wait_for_condition` and applied 10s polling for restore checks during the initial window.
 
 **Description:**
 Many polling operations use 30-second intervals, which is reasonable. However, `_wait_for_managed_clusters_velero_restore` uses `RESTORE_POLL_INTERVAL` (30s) for Velero restore checks that may complete in 5-10 seconds.
@@ -1278,25 +1434,7 @@ completed = self.waiter.wait_for_condition(
 - Minor performance impact
 
 **Resolution:**
-Use adaptive polling or shorter interval for fast operations:
-
-```python
-# For fast operations like Velero restore
-completed = self.waiter.wait_for_condition(
-    lambda: restore.get("status", {}).get("phase") == "Completed",
-    timeout=RESTORE_TIMEOUT,
-    interval=5,  # Velero restores are fast
-    description="Velero restore completion",
-)
-
-# For slow operations (already correct)
-completed = self.waiter.wait_for_condition(
-    lambda: deployment.status.ready_replicas == deployment.spec.replicas,
-    timeout=DEPLOYMENT_TIMEOUT,
-    interval=30,  # Deployment scaling is slow
-    description="Deployment ready",
-)
-```
+Use adaptive polling or shorter interval for fast operations (implemented via `fast_interval`/`fast_timeout`).
 
 **Testing:**
 - Measure actual restore times
@@ -1380,7 +1518,10 @@ No fix needed - code is correct.
 
 **Severity:** LOW
 
-**Status:** OPEN
+**Status:** RESOLVED  
+**Resolution Date:** 2026-01-28  
+**Resolved In:** v1.5.0  
+**Resolution Notes:** Added `allow_success_after_timeout` parameter to `wait_for_condition` (default false) to prevent post-timeout success unless explicitly enabled.
 
 **Description:**
 After timeout, the function calls `condition_fn()` one more time and returns if it succeeds. This means some timeouts succeed (return True) which may confuse calling code.
@@ -1403,17 +1544,7 @@ return False
 - May confuse callers or error handling
 
 **Resolution:**
-Remove the post-timeout check or make it optional:
-
-```python
-logger.warning("%s not complete after %ss timeout", description, timeout)
-
-# Option 1: Remove post-timeout check
-return False
-
-# Option 2: Make it configurable
-# (Add parameter: post_timeout_check: bool = False)
-```
+Make post-timeout success configurable (implemented via `allow_success_after_timeout=False` by default).
 
 **Testing:**
 - Test timeout behavior (should return False)

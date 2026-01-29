@@ -22,7 +22,8 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential,
 )
-from urllib3.exceptions import HTTPError, MaxRetryError, NewConnectionError, TimeoutError as Urllib3TimeoutError
+from urllib3.exceptions import HTTPError, MaxRetryError, NewConnectionError
+from urllib3.exceptions import TimeoutError as Urllib3TimeoutError
 
 from lib.validation import InputValidator, ValidationError
 
@@ -487,9 +488,7 @@ class KubeClient:
                 name=name,
             )
         else:
-            resource = self.custom_api.get_cluster_custom_object(
-                group=group, version=version, plural=plural, name=name
-            )
+            resource = self.custom_api.get_cluster_custom_object(group=group, version=version, plural=plural, name=name)
         return resource
 
     @retry_api_call
@@ -968,6 +967,46 @@ class KubeClient:
     ) -> List[Dict]:
         """Backward compatible alias for get_pods."""
         return self.get_pods(namespace, label_selector)
+
+    @api_call(not_found_value="", log_on_error=False, resource_desc="get pod logs")
+    def get_pod_logs(
+        self,
+        name: str,
+        namespace: str,
+        container: Optional[str] = None,
+        tail_lines: Optional[int] = None,
+    ) -> str:
+        """Retrieve logs for a pod.
+
+        Args:
+            name: Pod name
+            namespace: Namespace name
+            container: Optional container name
+            tail_lines: Optional number of lines from the end of the logs
+
+        Returns:
+            Log content string (empty if not found)
+        """
+        self._validate_resource_inputs(namespace, name, "pod")
+
+        if self.dry_run:
+            logger.info("[DRY-RUN] Would read logs for pod %s/%s", namespace, name)
+            return ""
+
+        kwargs: Dict[str, Any] = {}
+        if container:
+            kwargs["container"] = container
+        if tail_lines is not None:
+            # Validate tail_lines to fail fast with clear, actionable errors
+            try:
+                tail_lines_int = int(tail_lines)
+            except (TypeError, ValueError):
+                raise ValidationError("tail_lines must be a non-negative integer")
+            if tail_lines_int < 0:
+                raise ValidationError("tail_lines must be a non-negative integer")
+            kwargs["tail_lines"] = tail_lines_int
+
+        return self.core_v1.read_namespaced_pod_log(name=name, namespace=namespace, **kwargs) or ""
 
     def wait_for_pods_ready(
         self,

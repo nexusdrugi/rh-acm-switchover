@@ -12,8 +12,8 @@
 # - MAJOR: Breaking changes to script behavior or output format
 # - MINOR: New features, new checks, significant improvements
 # - PATCH: Bug fixes, minor improvements
-export SCRIPT_VERSION="1.4.13"
-export SCRIPT_VERSION_DATE="2026-01-27"
+export SCRIPT_VERSION="1.5.3"
+export SCRIPT_VERSION_DATE="2026-01-29"
 
 # Namespaces
 export ACM_NAMESPACE="open-cluster-management"
@@ -44,6 +44,7 @@ export OBS_THANOS_COMPACT_POD="observability-thanos-compact"
 # but we can define defaults or common patterns here if needed.
 # Currently scripts detect some of these dynamically.
 export RESTORE_PASSIVE_SYNC_NAME="restore-acm-passive-sync"
+export VELERO_DEPLOYMENT="deployment/velero"
 
 # =============================================================================
 # Fully Qualified API Resource Types
@@ -88,6 +89,7 @@ export MANAGED_CLUSTER_SA="klusterlet"
 export RESTORE_AGE_WARNING_SECONDS="${RESTORE_AGE_WARNING_SECONDS:-3600}" # 1 hour
 export BACKUP_IN_PROGRESS_WAIT_SECONDS="${BACKUP_IN_PROGRESS_WAIT_SECONDS:-600}" # 10 minutes
 export BACKUP_IN_PROGRESS_POLL_SECONDS="${BACKUP_IN_PROGRESS_POLL_SECONDS:-30}"
+export BACKUP_AGE_MAX_SECONDS="${BACKUP_AGE_MAX_SECONDS:-600}" # 10 minutes
 
 # Exit Codes
 export EXIT_SUCCESS=0

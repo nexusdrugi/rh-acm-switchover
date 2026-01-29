@@ -5,6 +5,7 @@ Tests cover Finalization class for completing the switchover.
 
 import sys
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import Mock, call, patch
 
@@ -14,12 +15,14 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import modules.finalization as finalization_module
+from lib.exceptions import SwitchoverError
 
 Finalization = finalization_module.Finalization
 
 
 def create_mock_step_context(is_step_completed_func, mark_step_completed_func):
     """Create a mock step context manager that mimics StepContext behavior."""
+
     @contextmanager
     def mock_step(step_name, logger=None):
         if is_step_completed_func(step_name):
@@ -29,6 +32,7 @@ def create_mock_step_context(is_step_completed_func, mark_step_completed_func):
         else:
             yield True
             mark_step_completed_func(step_name)
+
     return mock_step
 
 
@@ -48,6 +52,7 @@ def mock_state_manager():
         mock.is_step_completed,
         mock.mark_step_completed,
     )
+    mock.state = {"completed_steps": []}
     return mock
 
 
@@ -110,6 +115,7 @@ class TestFinalization:
         """Test successful finalization workflow."""
         # Mock time to avoid loops
         mock_time.time.side_effect = [0, 1, 2, 3]
+        backup_ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
         # Mock list responses: schedule verification, collision check, initial backups, loop 1, loop 2
         mock_secondary_client.list_custom_resources.side_effect = [
@@ -124,29 +130,34 @@ class TestFinalization:
             [],  # Initial backups
             [],  # Loop iteration 1
             [{"metadata": {"name": "backup-1"}, "status": {"phase": "InProgress"}}],  # Loop iteration 2 - new backup
+            [
+                {
+                    "metadata": {"name": "backup-1", "creationTimestamp": backup_ts},
+                    "status": {"phase": "Completed", "completionTimestamp": backup_ts},
+                }
+            ],  # verify_backup_integrity
         ]
 
         mock_secondary_client.get_custom_resource.return_value = {
             "metadata": {"name": "multiclusterhub"},
             "status": {"phase": "Running"},
         }
-        mock_secondary_client.get_pods.return_value = [
-            {"metadata": {"name": "acm-pod"}, "status": {"phase": "Running"}}
-        ]
+        mock_secondary_client.get_pods.return_value = []
 
         result = finalization.finalize()
 
         assert result is True
 
-        # Verify steps (now 6 steps with collision fix and old hub handling)
+        # Verify steps (now 7 steps with backup integrity and old hub handling)
         mock_backup_manager.ensure_enabled.assert_called_with("2.12.0")
-        assert mock_state_manager.mark_step_completed.call_count == 6
+        assert mock_state_manager.mark_step_completed.call_count == 7
         mock_state_manager.mark_step_completed.assert_has_calls(
             [
                 call("enable_backup_schedule"),
                 call("verify_backup_schedule_enabled"),
                 call("fix_backup_collision"),
                 call("verify_new_backups"),
+                call("verify_backup_integrity"),
                 call("verify_mch_health"),
                 call("handle_old_hub"),
             ]
@@ -198,6 +209,157 @@ class TestFinalization:
 
         # Should log warning but not crash
         assert mock_secondary_client.list_custom_resources.called
+
+    def test_verify_backup_integrity_success(self, finalization, mock_secondary_client):
+        """Backup integrity should pass for a recent completed backup with no errors."""
+        backup_ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        mock_secondary_client.list_custom_resources.return_value = [
+            {
+                "metadata": {"name": "backup-1", "creationTimestamp": backup_ts},
+                "status": {"phase": "Completed", "completionTimestamp": backup_ts, "errors": 0, "warnings": 0},
+            }
+        ]
+        mock_secondary_client.get_pods.return_value = []
+
+        finalization._verify_backup_integrity(max_age_seconds=600)
+
+    def test_backup_verify_timeout_derived_from_schedule(self, finalization):
+        schedule = {
+            "metadata": {"name": "schedule-rhacm"},
+            "spec": {"veleroSchedule": "0 */4 * * *"},
+        }
+        finalization._cached_schedules = [schedule]
+
+        timeout = finalization._get_backup_verify_timeout()
+
+        assert timeout == 4 * 3600
+
+    def test_backup_max_age_derived_from_schedule(self, finalization):
+        schedule = {
+            "metadata": {"name": "schedule-rhacm"},
+            "spec": {"veleroSchedule": "0 */4 * * *"},
+        }
+        finalization._cached_schedules = [schedule]
+
+        max_age = finalization._get_backup_max_age_seconds(600)
+
+        assert max_age == (4 * 3600 + 600)
+
+    @pytest.mark.parametrize(
+        ("cron_expr", "expected_seconds"),
+        [
+            ("*/15 * * * *", 15 * 60),
+            ("0 */2 * * *", 2 * 3600),
+            ("0 0 * * *", 24 * 3600),
+        ],
+    )
+    def test_parse_cron_interval_seconds(self, finalization, cron_expr, expected_seconds):
+        assert finalization._parse_cron_interval_seconds(cron_expr) == expected_seconds
+
+    def test_verify_backup_integrity_skips_age_without_new_backup(self, finalization, mock_secondary_client):
+        """Backup age enforcement should be skipped if no new backup was detected."""
+        backup_ts = (datetime.now(timezone.utc) - timedelta(seconds=1200)).isoformat().replace("+00:00", "Z")
+        mock_secondary_client.list_custom_resources.return_value = [
+            {
+                "metadata": {"name": "backup-1", "creationTimestamp": backup_ts},
+                "status": {"phase": "Completed", "completionTimestamp": backup_ts, "errors": 0, "warnings": 0},
+            }
+        ]
+        mock_secondary_client.get_pods.return_value = []
+        finalization.state.get_config.side_effect = lambda key, default=None: False
+
+        finalization._verify_backup_integrity(max_age_seconds=600)
+
+    def test_verify_backup_integrity_enforces_age_with_new_backup(self, finalization, mock_secondary_client):
+        """Backup age enforcement should fail when a new backup was detected but is too old."""
+        backup_ts = (datetime.now(timezone.utc) - timedelta(seconds=1200)).isoformat().replace("+00:00", "Z")
+        mock_secondary_client.list_custom_resources.return_value = [
+            {
+                "metadata": {"name": "backup-1", "creationTimestamp": backup_ts},
+                "status": {"phase": "Completed", "completionTimestamp": backup_ts, "errors": 0, "warnings": 0},
+            }
+        ]
+        mock_secondary_client.get_pods.return_value = []
+        finalization.state.get_config.side_effect = (
+            lambda key, default=None: True if key == "new_backup_detected" else None
+        )
+
+        with pytest.raises(SwitchoverError):
+            finalization._verify_backup_integrity(max_age_seconds=600)
+
+    def test_verify_backup_integrity_skips_age_if_backup_before_enable(self, finalization, mock_secondary_client):
+        """Backup age enforcement should be skipped if backup predates enable timestamp."""
+        backup_ts = (datetime.now(timezone.utc) - timedelta(seconds=1200)).isoformat().replace("+00:00", "Z")
+        enabled_ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        mock_secondary_client.list_custom_resources.return_value = [
+            {
+                "metadata": {"name": "backup-1", "creationTimestamp": backup_ts},
+                "status": {"phase": "Completed", "completionTimestamp": backup_ts, "errors": 0, "warnings": 0},
+            }
+        ]
+        mock_secondary_client.get_pods.return_value = []
+        finalization.state.get_config.side_effect = (
+            lambda key, default=None: enabled_ts if key == "backup_schedule_enabled_at" else True
+        )
+
+        finalization._verify_backup_integrity(max_age_seconds=600)
+
+    @patch("modules.finalization.wait_for_condition")
+    def test_verify_backup_integrity_waits_for_completion(self, mock_wait, finalization, mock_secondary_client):
+        """Backup integrity should wait for the latest backup to complete."""
+        backup_ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        mock_wait.return_value = True
+        mock_secondary_client.list_custom_resources.return_value = [
+            {
+                "metadata": {"name": "backup-1", "creationTimestamp": backup_ts},
+                "status": {"phase": "InProgress"},
+            }
+        ]
+        mock_secondary_client.get_custom_resource.return_value = {
+            "metadata": {"name": "backup-1", "creationTimestamp": backup_ts},
+            "status": {"phase": "Completed", "completionTimestamp": backup_ts, "errors": 0, "warnings": 0},
+        }
+        mock_secondary_client.get_pods.return_value = []
+
+        finalization._verify_backup_integrity(max_age_seconds=600)
+
+        mock_wait.assert_called_once()
+
+    def test_verify_backup_integrity_fails_on_errors(self, finalization, mock_secondary_client):
+        """Backup integrity should fail when backup reports errors."""
+        backup_ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        mock_secondary_client.list_custom_resources.return_value = [
+            {
+                "metadata": {"name": "backup-1", "creationTimestamp": backup_ts},
+                "status": {"phase": "Completed", "completionTimestamp": backup_ts, "errors": 2},
+            }
+        ]
+        mock_secondary_client.get_pods.return_value = []
+
+        with pytest.raises(SwitchoverError):
+            finalization._verify_backup_integrity(max_age_seconds=600)
+
+    @patch("modules.finalization.wait_for_condition")
+    def test_disable_observability_on_secondary_deletes_mco(
+        self, mock_wait, mock_secondary_client, mock_state_manager, mock_backup_manager
+    ):
+        """Optional MCO deletion should remove observability on old hub."""
+        mock_wait.return_value = True
+        primary = Mock()
+        fin = Finalization(
+            secondary_client=mock_secondary_client,
+            state_manager=mock_state_manager,
+            acm_version="2.14.0",
+            primary_client=primary,
+            old_hub_action="secondary",
+            disable_observability_on_secondary=True,
+        )
+        primary.list_custom_resources.return_value = [{"metadata": {"name": "observability", "labels": {}}}]
+        primary.get_pods.return_value = []
+
+        fin._disable_observability_on_secondary()
+
+        primary.delete_custom_resource.assert_called_once()
 
     def test_finalize_failure_handling(self, finalization, mock_backup_manager):
         """Test finalization failure handling."""
@@ -267,14 +429,15 @@ class TestFinalization:
         self, mock_time, mock_secondary_client, mock_state_manager, mock_backup_manager
     ):
         """Test that _verify_old_hub_state is not called when old_hub_action is 'none'.
-        
+
         This ensures the CLI contract is respected: --old-hub-action none should
         leave the old hub unchanged for manual handling.
         """
         # Mock time to avoid loops and sleep delays
         mock_time.time.side_effect = [0, 1, 2, 3]
         mock_time.sleep.return_value = None
-        
+        backup_ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
         primary = Mock()
         fin = Finalization(
             secondary_client=mock_secondary_client,
@@ -284,7 +447,7 @@ class TestFinalization:
             primary_has_observability=True,
             old_hub_action="none",
         )
-        
+
         # Mock all required responses with side_effect for sequential calls
         mock_secondary_client.list_custom_resources.side_effect = [
             [{"metadata": {"name": "schedule"}, "spec": {"paused": False}}],  # verify_backup_schedule_enabled
@@ -292,19 +455,23 @@ class TestFinalization:
             [],  # Initial backups
             [],  # Loop iteration 1
             [{"metadata": {"name": "backup-1"}, "status": {"phase": "InProgress"}}],  # Loop iteration 2 - new backup
+            [
+                {
+                    "metadata": {"name": "backup-1", "creationTimestamp": backup_ts},
+                    "status": {"phase": "Completed", "completionTimestamp": backup_ts},
+                }
+            ],  # verify_backup_integrity
         ]
         mock_secondary_client.get_custom_resource.return_value = {
             "metadata": {"name": "multiclusterhub"},
             "status": {"phase": "Running"},
         }
-        mock_secondary_client.get_pods.return_value = [
-            {"metadata": {"name": "acm-pod"}, "status": {"phase": "Running"}}
-        ]
-        
+        mock_secondary_client.get_pods.return_value = []
+
         # Ensure we track if _verify_old_hub_state was called
-        with patch.object(fin, '_verify_old_hub_state') as mock_verify:
+        with patch.object(fin, "_verify_old_hub_state") as mock_verify:
             result = fin.finalize()
-            
+
             assert result is True
             # _verify_old_hub_state should NOT be called when old_hub_action is 'none'
             mock_verify.assert_not_called()
@@ -312,8 +479,8 @@ class TestFinalization:
             primary.scale_statefulset.assert_not_called()
             primary.scale_deployment.assert_not_called()
 
-    @patch('time.sleep')
-    @patch('time.time')
+    @patch("time.sleep")
+    @patch("time.time")
     def test_finalize_calls_verify_old_hub_state_when_action_secondary(
         self, mock_time_time, mock_time_sleep, mock_secondary_client, mock_state_manager, mock_backup_manager
     ):
@@ -321,11 +488,12 @@ class TestFinalization:
         # Mock time to avoid real waits
         mock_time_time.return_value = 0
         mock_time_sleep.return_value = None
-        
+        backup_ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
         primary = Mock()
         primary.list_custom_resources.return_value = []
         primary.get_pods.return_value = []
-        
+
         fin = Finalization(
             secondary_client=mock_secondary_client,
             state_manager=mock_state_manager,
@@ -334,25 +502,35 @@ class TestFinalization:
             primary_has_observability=False,
             old_hub_action="secondary",
         )
-        
+
         # Mock all required responses with side_effect for sequential calls
-        # Order: _cleanup_restore_resources, verify_backup_schedule_enabled, fix_backup_collision, verify_new_backups (2x)
+        # Order: _cleanup_restore_resources, verify_backup_schedule_enabled, fix_backup_collision,
+        # _get_backup_verify_timeout, verify_new_backups (2x), verify_backup_integrity
         mock_secondary_client.list_custom_resources.side_effect = [
             [],  # _cleanup_restore_resources - no restores to clean up
             [{"metadata": {"name": "schedule"}, "spec": {"paused": False}}],  # verify_backup_schedule_enabled
             [{"metadata": {"name": "schedule"}, "spec": {}, "status": {"phase": "Enabled"}}],  # fix_backup_collision
+            [
+                {"metadata": {"name": "schedule"}, "spec": {"veleroSchedule": "*/15 * * * *"}}
+            ],  # _get_backup_verify_timeout
             [],  # Initial backups
             [{"metadata": {"name": "backup-1"}, "status": {"phase": "InProgress"}}],  # New backup detected
+            [
+                {
+                    "metadata": {"name": "backup-1", "creationTimestamp": backup_ts},
+                    "status": {"phase": "Completed", "completionTimestamp": backup_ts},
+                }
+            ],  # verify_backup_integrity
         ]
         mock_secondary_client.get_custom_resource.return_value = {
             "metadata": {"name": "multiclusterhub"},
             "status": {"phase": "Running"},
         }
         mock_secondary_client.get_pods.return_value = []
-        
-        with patch.object(fin, '_verify_old_hub_state') as mock_verify:
+
+        with patch.object(fin, "_verify_old_hub_state") as mock_verify:
             result = fin.finalize()
-            
+
             assert result is True
             # _verify_old_hub_state SHOULD be called when old_hub_action is 'secondary'
             mock_verify.assert_called_once()

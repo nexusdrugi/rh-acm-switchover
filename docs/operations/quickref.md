@@ -165,9 +165,15 @@ oc patch clusterdeployment <name> -n <namespace> \
   --type='merge' -p '{"spec":{"preserveOnDelete":true}}'
 
 # Check auto-import strategy (ACM 2.14+)
-oc get configmap import-controller -n multicluster-engine \
+oc get configmap import-controller-config -n multicluster-engine \
   -o jsonpath='{.data.autoImportStrategy}'
 # If not found or returns empty, default (ImportOnly) is in use
+
+# If ImportOnly and secondary hub has existing ManagedClusters, add immediate-import annotation
+oc --context <secondary> get managedcluster -o name | grep -v local-cluster | \
+  xargs -I{} oc --context <secondary> annotate {} import.open-cluster-management.io/immediate-import='' --overwrite
+# Empty value triggers auto-import; controller sets value to Completed
+# To re-trigger, clear the annotation and re-apply with an empty value (automation does this)
 ```
 
 ## Post-Switchover Verification
@@ -220,14 +226,22 @@ oc rollout restart deployment/observability-observatorium-api \
 | `--secondary-context` | Kubernetes context for secondary hub (required for switchover) |
 | `--method {passive,full}` | Switchover method: `passive` or `full` (required) |
 | `--old-hub-action {secondary,decommission,none}` | Action for old hub after switchover (required) |
+| `--activation-method {patch,restore}` | Activation method for passive restores (default: patch) |
 | `--validate-only` | Run validation checks only, no changes |
 | `--dry-run` | Show planned actions without executing |
 | `--decommission` | Decommission old hub (interactive) |
 | `--state-file PATH` | Path to state file (default: .state/switchover-<primary>__<secondary>.json) |
 | `--reset-state` | Reset state file and start fresh |
+| `--manage-auto-import-strategy` | Temporarily set ImportAndSync on destination hub (ACM 2.14+) |
 | `--skip-observability-checks` | Skip Observability steps even if detected |
+| `--disable-observability-on-secondary` | Delete MCO on old hub when keeping it as secondary |
 | `--non-interactive` | Non-interactive mode (only valid with `--decommission`) |
 | `--verbose, -v` | Enable verbose logging |
+
+> **Note:** When using `--activation-method restore`, ensure the passive restore is fully deleted
+> before creating `restore-acm-activate`. The tool now waits for deletion to propagate; if done
+> manually and the restore shows `Phase=FinishedWithErrors`, delete/recreate after confirming the
+> old restore is gone.
 
 ## Exit Codes
 
@@ -258,6 +272,7 @@ oc rollout restart deployment/observability-observatorium-api \
 - [ ] Latest backup completed successfully
 - [ ] ACM versions match between hubs
 - [ ] (ACM 2.14+) Verified `autoImportStrategy` configuration
+- [ ] Do not re-enable Thanos/Observatorium on the old hub unless switching back
 - [ ] Decided on `--old-hub-action` (secondary/decommission/none)
 - [ ] Stakeholders informed of maintenance window
 - [ ] Reverse switchover procedure tested in non-production
@@ -379,7 +394,9 @@ podman run -it --rm \
 | `--dry-run` | Preview actions without executing |
 | `--method passive` | Use passive sync method (required) |
 | `--method full` | Use full restore method (required) |
+| `--activation-method {patch,restore}` | Activation option for passive method |
 | `--old-hub-action` | Action for old hub: `secondary`, `decommission`, or `none` (required) |
+| `--disable-observability-on-secondary` | Delete MCO on old hub when keeping it as secondary |
 | `--verbose` | Enable debug logging |
 
 ### Container Aliases (Optional)

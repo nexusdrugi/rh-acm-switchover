@@ -299,6 +299,18 @@ if [[ $BACKUP_SCHEDULE -gt 0 ]]; then
         check_fail "BackupSchedule '$SCHEDULE_NAME' is paused (should be enabled on new hub)"
     fi
     
+    # Derive an effective backup age threshold from the schedule cadence
+    EFFECTIVE_BACKUP_AGE_MAX_SECONDS="$BACKUP_AGE_MAX_SECONDS"
+    SCHEDULE_EXPR=$(oc --context="$NEW_HUB_CONTEXT" get $RES_BACKUP_SCHEDULE "$SCHEDULE_NAME" -n "$BACKUP_NAMESPACE" -o jsonpath='{.spec.veleroSchedule}' 2>/dev/null || echo "")
+    INTERVAL_SECONDS=""
+    if [[ -n "$SCHEDULE_EXPR" ]]; then
+        INTERVAL_SECONDS=$(_derive_backup_interval_seconds "$SCHEDULE_EXPR")
+        if [[ -n "$INTERVAL_SECONDS" ]] && [[ "$INTERVAL_SECONDS" -gt "$BACKUP_AGE_MAX_SECONDS" ]]; then
+            # Match Python behavior: threshold = schedule interval + default max age
+            EFFECTIVE_BACKUP_AGE_MAX_SECONDS=$((INTERVAL_SECONDS + BACKUP_AGE_MAX_SECONDS))
+        fi
+    fi
+    
     # Check for recent backups
     RECENT_BACKUPS=$(oc --context="$NEW_HUB_CONTEXT" get $RES_BACKUP -n "$BACKUP_NAMESPACE" --sort-by=.metadata.creationTimestamp --no-headers 2>/dev/null | tail -3 | wc -l || true)
     if [[ $RECENT_BACKUPS -gt 0 ]]; then
@@ -311,6 +323,51 @@ if [[ $BACKUP_SCHEDULE -gt 0 ]]; then
             check_warn "Latest backup: '$LATEST_BACKUP' is InProgress (Created: $LATEST_TIME)"
         else
             check_fail "Latest backup: '$LATEST_BACKUP' failed or in unexpected state: $LATEST_PHASE"
+        fi
+
+        # Check backup age relative to schedule frequency
+        if [[ -n "$LATEST_TIME" ]]; then
+            LATEST_EPOCH=$(date -d "$LATEST_TIME" +%s 2>/dev/null || echo 0)
+            CURRENT_EPOCH=$(date +%s)
+            if [[ $LATEST_EPOCH -gt 0 ]]; then
+                AGE_SECONDS=$((CURRENT_EPOCH - LATEST_EPOCH))
+                AGE_DISPLAY=$(format_age_display "$AGE_SECONDS")
+                if [[ -n "$INTERVAL_SECONDS" ]]; then
+                    INTERVAL_DISPLAY=$(format_age_display "$INTERVAL_SECONDS")
+                    THRESHOLD_DISPLAY=$(format_age_display "$EFFECTIVE_BACKUP_AGE_MAX_SECONDS")
+                fi
+
+                if [[ $AGE_SECONDS -gt $EFFECTIVE_BACKUP_AGE_MAX_SECONDS ]]; then
+                    if [[ "$LATEST_PHASE" == "InProgress" ]]; then
+                        check_warn "Backup '$LATEST_BACKUP' running longer than expected: $AGE_DISPLAY"
+                    elif [[ -n "$INTERVAL_SECONDS" ]]; then
+                        check_fail "Latest backup is too old: $AGE_DISPLAY (schedule: $SCHEDULE_EXPR, interval: $INTERVAL_DISPLAY, threshold: $THRESHOLD_DISPLAY)"
+                    else
+                        check_fail "Latest backup is older than $((EFFECTIVE_BACKUP_AGE_MAX_SECONDS / 60)) minutes ($AGE_DISPLAY ago)"
+                    fi
+                else
+                    if [[ -n "$INTERVAL_SECONDS" ]]; then
+                        check_pass "Latest backup age OK: $AGE_DISPLAY (schedule: $SCHEDULE_EXPR, interval: $INTERVAL_DISPLAY, threshold: $THRESHOLD_DISPLAY)"
+                    else
+                        check_pass "Latest backup age OK ($AGE_DISPLAY)"
+                    fi
+                fi
+            else
+                check_warn "Could not parse latest backup timestamp for age validation"
+            fi
+        fi
+
+        # Check Velero logs for backup errors
+        VELERO_LOG_OUTPUT=$(oc --context="$NEW_HUB_CONTEXT" logs -n "$BACKUP_NAMESPACE" "$VELERO_DEPLOYMENT" -c velero --tail=500 2>/dev/null || true)
+        if [[ -n "$VELERO_LOG_OUTPUT" ]]; then
+            VELERO_LOG_ERRORS=$(echo "$VELERO_LOG_OUTPUT" | grep "$LATEST_BACKUP" | grep -iE "error|failed" | head -1 || true)
+            if [[ -n "$VELERO_LOG_ERRORS" ]]; then
+                check_fail "Velero logs show errors for backup '$LATEST_BACKUP' (see velero logs)"
+            else
+                check_pass "Velero logs show no errors for backup '$LATEST_BACKUP' (recent logs checked)"
+            fi
+        else
+            check_warn "Velero logs unavailable for backup verification (check manually)"
         fi
     else
         check_warn "No recent backups found (may take time for first backup to run)"
@@ -415,6 +472,8 @@ if [[ -n "$OLD_HUB_CONTEXT" ]]; then
         else
             check_pass "Old hub: MultiClusterObservability CR not present (expected)"
         fi
+
+        check_warn "Do NOT re-enable Thanos compactor or Observatorium API on the old hub unless switching back"
     fi
     
     # Check if old hub has passive sync restore configured (for failback capability)

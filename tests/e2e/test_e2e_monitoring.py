@@ -6,19 +6,20 @@ functionality in the E2E testing framework.
 """
 
 import json
-import pytest
 import threading
 import time
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from tests.e2e.monitoring import (
     Alert,
     AlertThresholds,
     MetricsLogger,
+    MonitoringContext,
     ResourceMonitor,
     ResourceSnapshot,
-    MonitoringContext,
 )
 
 
@@ -208,9 +209,7 @@ class TestMetricsLogger:
     def test_log_phase_result_with_error(self, tmp_path):
         """Test logging failed phase result."""
         logger = MetricsLogger(tmp_path)
-        logger.log_phase_result(
-            "cycle_001", "activation", False, 30.0, error="Connection timeout"
-        )
+        logger.log_phase_result("cycle_001", "activation", False, 30.0, error="Connection timeout")
 
         metrics_file = tmp_path / "metrics.jsonl"
         with open(metrics_file) as f:

@@ -7,9 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
 ### Changed
 
 ### Fixed
+
+## [1.5.3] - 2026-01-29
+
+### Fixed
+
+- **Backup integrity recency guard**: Skip backup age enforcement until a new backup is observed after re-enabling the BackupSchedule (avoids false failures on long cadences).
+- **Schedule-aware backup timeouts**: Derive backup verification timeouts from BackupSchedule cadence to avoid premature failures on longer schedules.
+- **Schedule-aware backup age threshold**: Derive backup age enforcement from BackupSchedule cadence to avoid false failures on long schedules or slow backups.
+
+## [1.5.1] - 2026-01-29
+
+### Changed
+
+- **Restore activation guidance**: Documented deletion propagation wait and `FinishedWithErrors` handling for activation restores.
+
+### Fixed
+
+- **Restore activation race**: Wait for passive restore deletion before creating `restore-acm-activate` and treat
+  `FinishedWithErrors`/`FailedWithErrors` as fatal restore phases.
+
+## [1.5.0] - 2026-01-28
+
+### Added
+
+- **Activation method selection**: Added `--activation-method {patch,restore}` to support both passive activation options, including creation of `restore-acm-activate`.
+- **Immediate-import annotations**: Automatically annotate non-local ManagedClusters when `autoImportStrategy=ImportOnly` (ACM 2.14+).
+- **Optional MCO deletion**: Added `--disable-observability-on-secondary` to delete MultiClusterObservability on the old hub (non-decommission flows).
+- **Backup integrity verification**: Finalization now validates latest backup status, age, and Velero logs.
+- **Fast polling support**: `wait_for_condition` now supports fast polling intervals for quick operations (e.g., Velero restores).
+
+### Changed
+
+- **Auto-import strategy cleanup guard**: ImportAndSync ConfigMap is removed only when set by this switchover (state flag).
+- **Preflight/postflight scripts**: Added immediate-import guidance and backup age/log checks aligned with runbook v2.
+- **Timeout behavior**: Post-timeout success is now configurable and disabled by default.
+
+### Fixed
+
+- **Waiter timeout semantics**: Prevents silent success after timeouts unless explicitly enabled.
 
 ## [1.4.13] - 2026-01-27
 
@@ -761,6 +802,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ManagedCluster connection: 30 seconds
 - Pod readiness: 5 seconds
 - Backup creation: 30 seconds
+
+[Unreleased]: https://github.com/tomazb/rh-acm-switchover/compare/v1.5.3...HEAD
+[1.5.3]: https://github.com/tomazb/rh-acm-switchover/compare/v1.5.1...v1.5.3
+[1.5.1]: https://github.com/tomazb/rh-acm-switchover/compare/v1.5.0...v1.5.1
+[1.5.0]: https://github.com/tomazb/rh-acm-switchover/compare/v1.4.13...v1.5.0
 
 #### Timeouts
 - Restore completion: 30 minutes

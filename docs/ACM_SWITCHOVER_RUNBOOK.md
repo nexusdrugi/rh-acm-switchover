@@ -404,7 +404,7 @@ done
 
 - The annotation **must be present with an empty value** (`''`) in order to trigger the auto‑import process under `ImportOnly`.
 - When auto‑import completes successfully, the controller sets the annotation value to `Completed`.
-- An annotation with a non‑empty value (such as `Completed`) will **not** trigger another auto‑import attempt; there is no need to remove the annotation.
+- An annotation with a non‑empty value (such as `Completed`) will **not** trigger another auto‑import attempt. If you need to re‑trigger (for example, during an automated switchover run), clear the annotation and re‑apply it with an empty value; the automation does this automatically.
 
 > **Relationship to Step 4b (ImportAndSync):** For ACM 2.14+, using the per‑cluster `immediate-import` annotation under the default `ImportOnly` strategy is often preferable to flipping the global strategy to `ImportAndSync`. Use the `ImportAndSync` override from [Step 4b](#step-4b-set-auto-import-strategy-to-importandsync-acm-214-with-existing-clusters) only when you intentionally require continuous re‑application from the hub you are promoting and plan to remove the ConfigMap again in [Step 7](#step-7-reset-auto-import-strategy-to-default-acm-214-if-set-on-new-primary-hub).
 
@@ -501,6 +501,17 @@ oc get restore.cluster.open-cluster-management.io restore-acm-passive-sync -n op
 oc delete restore.cluster.open-cluster-management.io restore-acm-passive-sync -n open-cluster-management-backup
 ```
 
+> **Important:** Wait until the restore is fully deleted before creating the activation restore.
+> The ACM restore controller can briefly treat the deleted restore as still "active" and reject a new restore.
+
+```bash
+until ! oc get restore.cluster.open-cluster-management.io restore-acm-passive-sync \
+  -n open-cluster-management-backup >/dev/null 2>&1; do
+  echo "Waiting for restore deletion to propagate..."
+  sleep 2
+done
+```
+
 **Step 5c:** Create activation restore manifest (`restore-acm-activate.yaml`):
 ```yaml
 apiVersion: cluster.open-cluster-management.io/v1beta1
@@ -528,6 +539,9 @@ oc get restore.cluster.open-cluster-management.io restore-acm-activate -n open-c
 # Check for completion
 oc get restore.cluster.open-cluster-management.io restore-acm-activate -n open-cluster-management-backup
 # Expected: Phase should transition to "Finished"
+
+# If Phase=FinishedWithErrors, the controller may still see the old restore as active.
+# Ensure the passive restore is fully deleted, then re-create restore-acm-activate.
 
 # Check for any errors
 oc describe restore.cluster.open-cluster-management.io restore-acm-activate -n open-cluster-management-backup
@@ -735,8 +749,7 @@ If you keep the old primary hub as a warm secondary/DR hub (that is, you **do no
   # On the OLD/secondary hub
   oc get multiclusterobservability.observability.open-cluster-management.io -A
 
-  oc delete multiclusterobservability.observability.open-cluster-management.io observability \
-    -n open-cluster-management-observability
+  oc delete multiclusterobservability.observability.open-cluster-management.io observability
 
   # Wait for Observability pods to terminate (may take 2-5 minutes):
   oc get pods -n open-cluster-management-observability
@@ -810,7 +823,7 @@ oc get backupschedule.cluster.open-cluster-management.io "$BACKUP_SCHEDULE_NAME"
 
 **Check that new backups are being created:**
 ```bash
-# Wait 5-10 minutes, then check newest entries:
+# Wait 5-10 minutes (or one full schedule interval), then check newest entries:
 oc get backup.velero.io -n open-cluster-management-backup \
   --sort-by=.metadata.creationTimestamp | tail -n10
 # Should show new backups with recent timestamps
@@ -855,7 +868,11 @@ oc logs -n open-cluster-management-backup deployment/velero -c velero | grep "$B
 **SUCCESS CRITERIA:**
 - Backup status shows "Completed" with no errors
 - No errors in backup logs
-- Backup timestamp is recent (within last 10 minutes)
+- Backup timestamp is recent (within last 10 minutes, or within the schedule interval + 10 minutes for longer cadences) **after** a new backup has been observed since re-enabling the BackupSchedule
+
+> **Note:** If the BackupSchedule runs less frequently (for example, hourly or daily) or was just re-enabled,
+> the latest backup can legitimately be older than 10 minutes. Wait for the first post-enable backup to complete,
+> then apply the recency check.
 
 > **WARNING:** Do NOT decommission the old hub if backup integrity validation fails.
 >
@@ -924,7 +941,7 @@ If the old primary hub will no longer be used, remove ACM components to free res
 oc get multiclusterobservability.observability.open-cluster-management.io -A
 
 # Delete it:
-oc delete multiclusterobservability.observability.open-cluster-management.io observability -n open-cluster-management-observability
+oc delete multiclusterobservability.observability.open-cluster-management.io observability
 
 # Wait for Observability pods to terminate (may take 2-5 minutes):
 oc get pods -n open-cluster-management-observability
@@ -1246,4 +1263,3 @@ This runbook has been validated against:
 - Red Hat official HA/DR blog posts
 - stolostron/cluster-backup-operator source code and documentation
 - OpenShift Hive documentation
-

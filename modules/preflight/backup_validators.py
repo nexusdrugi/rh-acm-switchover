@@ -9,8 +9,8 @@ from typing import List, Optional
 from lib.constants import (
     BACKUP_NAMESPACE,
     BACKUP_POLL_INTERVAL,
-    BACKUP_VERIFY_TIMEOUT,
     BACKUP_SCHEDULE_DEFAULT_NAME,
+    BACKUP_VERIFY_TIMEOUT,
     LOCAL_CLUSTER_NAME,
     RESTORE_PASSIVE_SYNC_NAME,
     SPEC_USE_MANAGED_SERVICE_ACCOUNT,
@@ -116,9 +116,7 @@ class BackupValidator(BaseValidator):
                 return remaining
 
             remaining = [
-                b.get("metadata", {}).get("name")
-                for b in backups
-                if b.get("status", {}).get("phase") == "InProgress"
+                b.get("metadata", {}).get("name") for b in backups if b.get("status", {}).get("phase") == "InProgress"
             ]
 
         return remaining
@@ -443,9 +441,7 @@ class PassiveSyncValidator(BaseValidator):
             def _creation_ts(item: dict) -> str:
                 return item.get("metadata", {}).get("creationTimestamp", "")
 
-            passive_candidates = [
-                r for r in restores if r.get("spec", {}).get("syncRestoreWithNewBackups") is True
-            ]
+            passive_candidates = [r for r in restores if r.get("spec", {}).get("syncRestoreWithNewBackups") is True]
             passive_candidates.sort(key=_creation_ts, reverse=True)
 
             restore = passive_candidates[0] if passive_candidates else None
@@ -604,8 +600,12 @@ class ManagedClusterBackupValidator(BaseValidator):
 
             # Filter for managed-clusters backups using ACM backup schedule type label
             mc_backups = [
-                b for b in backups
-                if b.get("metadata", {}).get("labels", {}).get("cluster.open-cluster-management.io/backup-schedule-type") == "managedClusters"
+                b
+                for b in backups
+                if b.get("metadata", {})
+                .get("labels", {})
+                .get("cluster.open-cluster-management.io/backup-schedule-type")
+                == "managedClusters"
             ]
 
             if not mc_backups:

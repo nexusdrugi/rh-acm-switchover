@@ -16,10 +16,10 @@ Usage:
         scenario="pause-backup",
         dry_run=False,
     )
-    
+
     # Inject failure at specified phase
     injector.inject()
-    
+
     # Later: cleanup/restore (if applicable)
     injector.cleanup()
 """
@@ -372,9 +372,7 @@ class FailureInjector:
         )
 
         self._injected = True
-        logger.warning(
-            "Velero scaled to 0 (was %d replicas)", self._original_velero_replicas
-        )
+        logger.warning("Velero scaled to 0 (was %d replicas)", self._original_velero_replicas)
 
         return InjectionResult(
             scenario=self.scenario.value,

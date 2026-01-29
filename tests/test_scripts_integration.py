@@ -86,8 +86,12 @@ INPUT=$(cat)
 # Handle common expressions; otherwise delegate to real jq
 case "$EXPR" in
     ".items | length")
-        # Return 0 for empty/missing arrays to keep numeric comparisons stable
-        echo "0"
+        # Prefer real jq if available; otherwise return 0 for stability
+        if [[ -n "${REAL_JQ:-}" ]]; then
+            printf "%s" "$INPUT" | "$REAL_JQ" -r "$EXPR" 2>/dev/null || echo "0"
+        else
+            echo "0"
+        fi
         ;;
     *)
         if [[ -n "${REAL_JQ:-}" ]]; then
@@ -305,6 +309,14 @@ CV_JSON
 BACKUPSCHEDULE_JSON
         exit 0
         ;;
+    *"--context=primary-ok"*"get "*"backupschedule"*"schedule-acm"*"-n open-cluster-management-backup"*"jsonpath='{.spec.veleroSchedule}'"*)
+        echo "0 */4 * * *"
+        exit 0
+        ;;
+    *"--context=new-hub"*"get "*"backupschedule"*"schedule-acm"*"-n open-cluster-management-backup"*"jsonpath='{.spec.veleroSchedule}'"*)
+        echo "0 */4 * * *"
+        exit 0
+        ;;
     
     # Backup checks - match both short 'backup' and full API group name
     *"--context=primary-ok"*"get "*"backup"*"-n open-cluster-management-backup"*"--no-headers"*)
@@ -496,7 +508,12 @@ EOF
         exit 0
         ;;
     *"--context=new-hub"*"get "*"backup"*"-n open-cluster-management-backup"*"--sort-by"*)
-        echo "backup-3 Completed 2024-11-24T12:00:00Z"
+        NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        echo "backup-3 Completed $NOW"
+        exit 0
+        ;;
+    *"--context=new-hub"*"logs"*"-n open-cluster-management-backup"*"deployment/velero"*)
+        # Return empty logs to avoid errors
         exit 0
         ;;
     *"--context=new-hub"*"get "*"backupstoragelocation"*"-n open-cluster-management-backup"*"--no-headers"*)
@@ -565,8 +582,8 @@ esac
     )
     oc_script.chmod(oc_script.stat().st_mode | stat.S_IEXEC)
 
-        # Create shared mock jq for consistency with other fixtures
-        write_shared_jq_mock(mock_bin)
+    # Create shared mock jq for consistency with other fixtures
+    write_shared_jq_mock(mock_bin)
 
     # Build environment with mocked PATH
     env = os.environ.copy()

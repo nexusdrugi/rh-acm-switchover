@@ -154,22 +154,26 @@ class MetricsLogger:
 
     def log_cycle_start(self, cycle_id: str, cycle_num: int, primary_context: str, secondary_context: str) -> None:
         """Log the start of a cycle."""
-        self.log_metric({
-            "metric_type": "cycle_start",
-            "cycle_id": cycle_id,
-            "cycle_num": cycle_num,
-            "primary_context": primary_context,
-            "secondary_context": secondary_context,
-        })
+        self.log_metric(
+            {
+                "metric_type": "cycle_start",
+                "cycle_id": cycle_id,
+                "cycle_num": cycle_num,
+                "primary_context": primary_context,
+                "secondary_context": secondary_context,
+            }
+        )
 
     def log_cycle_end(self, cycle_id: str, success: bool, duration_seconds: float) -> None:
         """Log the end of a cycle."""
-        self.log_metric({
-            "metric_type": "cycle_end",
-            "cycle_id": cycle_id,
-            "success": success,
-            "duration_seconds": duration_seconds,
-        })
+        self.log_metric(
+            {
+                "metric_type": "cycle_end",
+                "cycle_id": cycle_id,
+                "success": success,
+                "duration_seconds": duration_seconds,
+            }
+        )
 
     def log_phase_result(
         self,
@@ -180,14 +184,16 @@ class MetricsLogger:
         error: Optional[str] = None,
     ) -> None:
         """Log a phase result."""
-        self.log_metric({
-            "metric_type": "phase_result",
-            "cycle_id": cycle_id,
-            "phase_name": phase_name,
-            "success": success,
-            "duration_seconds": duration_seconds,
-            "error": error,
-        })
+        self.log_metric(
+            {
+                "metric_type": "phase_result",
+                "cycle_id": cycle_id,
+                "phase_name": phase_name,
+                "success": success,
+                "duration_seconds": duration_seconds,
+                "error": error,
+            }
+        )
 
 
 class ResourceMonitor:
@@ -332,12 +338,14 @@ class ResourceMonitor:
                 joined = self._get_condition_status(conditions, "ManagedClusterJoined")
                 accepted = self._get_condition_status(conditions, "HubAcceptedManagedCluster")
 
-                snapshot.managed_clusters.append({
-                    "name": name,
-                    "available": available,
-                    "joined": joined,
-                    "accepted": accepted,
-                })
+                snapshot.managed_clusters.append(
+                    {
+                        "name": name,
+                        "available": available,
+                        "joined": joined,
+                        "accepted": accepted,
+                    }
+                )
         except Exception as e:
             self.logger.debug("Failed to list managed clusters on %s: %s", hub_type, e)
 
@@ -356,12 +364,14 @@ class ResourceMonitor:
                     paused = schedule.get("spec", {}).get("paused", False)
                     last_backup = schedule.get("status", {}).get("lastBackupTime", "Never")
 
-                    snapshot.backup_schedules.append({
-                        "name": name,
-                        "phase": phase,
-                        "paused": paused,
-                        "last_backup": last_backup,
-                    })
+                    snapshot.backup_schedules.append(
+                        {
+                            "name": name,
+                            "phase": phase,
+                            "paused": paused,
+                            "last_backup": last_backup,
+                        }
+                    )
             except Exception as e:
                 self.logger.debug("Failed to list backup schedules on %s: %s", hub_type, e)
 
@@ -380,12 +390,14 @@ class ResourceMonitor:
                     started = restore.get("status", {}).get("startTimestamp", "Unknown")
                     completed = restore.get("status", {}).get("completionTimestamp", "Running")
 
-                    snapshot.restores.append({
-                        "name": name,
-                        "phase": phase,
-                        "started": started,
-                        "completed": completed,
-                    })
+                    snapshot.restores.append(
+                        {
+                            "name": name,
+                            "phase": phase,
+                            "started": started,
+                            "completed": completed,
+                        }
+                    )
             except Exception as e:
                 self.logger.debug("Failed to list restores on %s: %s", hub_type, e)
 
@@ -396,9 +408,7 @@ class ResourceMonitor:
 
                 # Check deployments
                 try:
-                    deployments = client.apps_v1.list_namespaced_deployment(
-                        namespace=OBSERVABILITY_NAMESPACE
-                    )
+                    deployments = client.apps_v1.list_namespaced_deployment(namespace=OBSERVABILITY_NAMESPACE)
                     obs_status["deployments"] = len(deployments.items)
                     for dep in deployments.items:
                         ready = dep.status.ready_replicas or 0
@@ -410,9 +420,7 @@ class ResourceMonitor:
 
                 # Check statefulsets
                 try:
-                    statefulsets = client.apps_v1.list_namespaced_stateful_set(
-                        namespace=OBSERVABILITY_NAMESPACE
-                    )
+                    statefulsets = client.apps_v1.list_namespaced_stateful_set(namespace=OBSERVABILITY_NAMESPACE)
                     obs_status["statefulsets"] = len(statefulsets.items)
                     for sts in statefulsets.items:
                         ready = sts.status.ready_replicas or 0
@@ -453,13 +461,15 @@ class ResourceMonitor:
                         alert_key = f"{state_key}_unavailable"
                         if alert_key not in self._alert_counts:
                             self._alert_counts[alert_key] = 0
-                            self._emit_alert(Alert(
-                                alert_type="CLUSTER_UNAVAILABLE",
-                                hub_type=snapshot.hub_type,
-                                resource=name,
-                                message=f"Cluster unavailable for {int(duration)}s",
-                                phase=self._current_phase,
-                            ))
+                            self._emit_alert(
+                                Alert(
+                                    alert_type="CLUSTER_UNAVAILABLE",
+                                    hub_type=snapshot.hub_type,
+                                    resource=name,
+                                    message=f"Cluster unavailable for {int(duration)}s",
+                                    phase=self._current_phase,
+                                )
+                            )
                         self._alert_counts[alert_key] += 1
             else:
                 # Reset state when cluster becomes available
@@ -487,13 +497,15 @@ class ResourceMonitor:
                         alert_key = f"{state_key}_exceeded"
                         if alert_key not in self._alert_counts:
                             self._alert_counts[alert_key] = 0
-                            self._emit_alert(Alert(
-                                alert_type="BACKUP_FAILURE",
-                                hub_type=snapshot.hub_type,
-                                resource=schedule["name"],
-                                message=f"Backup failing for {int(duration)}s (phase: {phase})",
-                                phase=self._current_phase,
-                            ))
+                            self._emit_alert(
+                                Alert(
+                                    alert_type="BACKUP_FAILURE",
+                                    hub_type=snapshot.hub_type,
+                                    resource=schedule["name"],
+                                    message=f"Backup failing for {int(duration)}s (phase: {phase})",
+                                    phase=self._current_phase,
+                                )
+                            )
                         self._alert_counts[alert_key] += 1
             else:
                 # Reset failure state
@@ -522,13 +534,15 @@ class ResourceMonitor:
                         state_key = f"{snapshot.hub_type}_{restore['name']}_stalled"
                         if state_key not in self._alert_counts:
                             self._alert_counts[state_key] = 0
-                            self._emit_alert(Alert(
-                                alert_type="RESTORE_STALLED",
-                                hub_type=snapshot.hub_type,
-                                resource=restore["name"],
-                                message=f"Restore stalled in phase '{phase}' for {int(duration)}s",
-                                phase=self._current_phase,
-                            ))
+                            self._emit_alert(
+                                Alert(
+                                    alert_type="RESTORE_STALLED",
+                                    hub_type=snapshot.hub_type,
+                                    resource=restore["name"],
+                                    message=f"Restore stalled in phase '{phase}' for {int(duration)}s",
+                                    phase=self._current_phase,
+                                )
+                            )
                         self._alert_counts[state_key] += 1
                 except (ValueError, TypeError):
                     pass

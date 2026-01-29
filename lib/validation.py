@@ -212,6 +212,11 @@ class InputValidator:
         InputValidator._validate_choice(action, ["secondary", "decommission", "none"], "old-hub-action")
 
     @staticmethod
+    def validate_cli_activation_method(method: str) -> None:
+        """Validate CLI activation-method argument."""
+        InputValidator._validate_choice(method, ["patch", "restore"], "activation-method")
+
+    @staticmethod
     def validate_cli_log_format(log_format: str) -> None:
         """Validate CLI log format argument."""
         InputValidator._validate_choice(log_format, ["text", "json"], "log format")
@@ -346,6 +351,10 @@ class InputValidator:
         if hasattr(args, "method") and args.method:
             InputValidator.validate_cli_method(args.method)
 
+        # Validate activation method
+        if hasattr(args, "activation_method") and args.activation_method:
+            InputValidator.validate_cli_activation_method(args.activation_method)
+
         # Validate old-hub-action
         if hasattr(args, "old_hub_action") and args.old_hub_action:
             InputValidator.validate_cli_old_hub_action(args.old_hub_action)
@@ -365,10 +374,24 @@ class InputValidator:
             if hasattr(args, "secondary_context") and not args.secondary_context:
                 raise ValidationError("secondary-context is required for switchover operations")
 
+        # Validate activation-method combinations
+        # - It is only meaningful for passive method
+        # - --activation-method=restore must not be used with --method full
+        if hasattr(args, "method") and hasattr(args, "activation_method") and args.activation_method:
+            if args.method != "passive" and args.activation_method == "restore":
+                raise ValidationError("--activation-method=restore can only be used with --method passive")
+
         # Validate that --non-interactive only makes sense with --decommission
         if hasattr(args, "non_interactive") and args.non_interactive:
             if not is_decommission:
                 raise ValidationError("--non-interactive can only be used with --decommission")
+
+        # Validate disable-observability-on-secondary flag
+        if hasattr(args, "disable_observability_on_secondary") and args.disable_observability_on_secondary:
+            if is_decommission:
+                raise ValidationError("--disable-observability-on-secondary cannot be used with --decommission")
+            if hasattr(args, "old_hub_action") and args.old_hub_action != "secondary":
+                raise ValidationError("--disable-observability-on-secondary requires --old-hub-action secondary")
 
         # Validate setup-specific arguments
         if is_setup:
@@ -384,9 +407,7 @@ class InputValidator:
             # Validate token-duration format (basic check for number + unit)
             if hasattr(args, "token_duration") and args.token_duration:
                 if not re.match(r"^\d+[hms]$", args.token_duration):
-                    raise ValidationError(
-                        "--token-duration must be in format like '48h', '30m', or '3600s'"
-                    )
+                    raise ValidationError("--token-duration must be in format like '48h', '30m', or '3600s'")
             # Validate output-dir if provided
             if hasattr(args, "output_dir") and args.output_dir:
                 InputValidator.validate_safe_filesystem_path(args.output_dir, "output-dir")

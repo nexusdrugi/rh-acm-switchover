@@ -14,20 +14,29 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import modules.activation as activation_module
+from kubernetes.client.rest import ApiException
+
 from lib.constants import (
+    AUTO_IMPORT_STRATEGY_KEY,
+    AUTO_IMPORT_STRATEGY_SYNC,
     BACKUP_NAMESPACE,
+    IMMEDIATE_IMPORT_ANNOTATION,
+    MANAGED_CLUSTER_RESTORE_NAME,
     PATCH_VERIFY_RETRY_DELAY,
     RESTORE_PASSIVE_SYNC_NAME,
     SPEC_SYNC_RESTORE_WITH_NEW_BACKUPS,
     SPEC_VELERO_MANAGED_CLUSTERS_BACKUP_NAME,
     VELERO_BACKUP_LATEST,
+    VELERO_BACKUP_SKIP,
 )
+from lib.exceptions import FatalError
 
 SecondaryActivation = activation_module.SecondaryActivation
 
 
 def create_mock_step_context(is_step_completed_func, mark_step_completed_func):
     """Create a mock step context manager that mimics StepContext behavior."""
+
     @contextmanager
     def mock_step(step_name, logger=None):
         if is_step_completed_func(step_name):
@@ -37,6 +46,7 @@ def create_mock_step_context(is_step_completed_func, mark_step_completed_func):
         else:
             yield True
             mark_step_completed_func(step_name)
+
     return mock_step
 
 
@@ -324,7 +334,7 @@ class TestSecondaryActivation:
                     "status": {
                         "phase": "Enabled",
                         "veleroManagedClustersRestoreName": "test-velero-mc-restore",
-                    }
+                    },
                 }
             if kwargs.get("plural") == "restores" and kwargs.get("group") == "velero.io":
                 return {
@@ -357,6 +367,147 @@ class TestSecondaryActivation:
 
             # Verify get_custom_resource was called by the callback
             assert mock_secondary_client.get_custom_resource.called
+
+    @patch("modules.activation.wait_for_condition")
+    def test_activate_passive_restore_method(self, mock_wait, mock_secondary_client, mock_state_manager):
+        """Test passive activation using restore-acm-activate (Option B)."""
+        mock_wait.return_value = True
+        mock_state_manager.get_config.return_value = "2.13.0"
+
+        activation = SecondaryActivation(
+            secondary_client=mock_secondary_client,
+            state_manager=mock_state_manager,
+            method="passive",
+            activation_method="restore",
+        )
+
+        mock_secondary_client.list_custom_resources.return_value = [
+            {"metadata": {"name": RESTORE_PASSIVE_SYNC_NAME}, "spec": {SPEC_SYNC_RESTORE_WITH_NEW_BACKUPS: True}}
+        ]
+
+        def get_custom_resource_side_effect(**kwargs):
+            name = kwargs.get("name")
+            if name == RESTORE_PASSIVE_SYNC_NAME:
+                return {"metadata": {"name": name}, "status": {"phase": "Enabled"}}
+            if name == MANAGED_CLUSTER_RESTORE_NAME:
+                return None
+            return None
+
+        mock_secondary_client.get_custom_resource.side_effect = get_custom_resource_side_effect
+
+        with patch.object(activation, "_wait_for_managed_clusters_velero_restore") as mock_wait_mc:
+            result = activation.activate()
+
+        assert result is True
+        mock_secondary_client.delete_custom_resource.assert_called_once()
+        mock_secondary_client.create_custom_resource.assert_called_once()
+        body = mock_secondary_client.create_custom_resource.call_args.kwargs["body"]
+        assert body["metadata"]["name"] == MANAGED_CLUSTER_RESTORE_NAME
+        assert body["spec"][SPEC_VELERO_MANAGED_CLUSTERS_BACKUP_NAME] == VELERO_BACKUP_LATEST
+        assert body["spec"]["veleroCredentialsBackupName"] == VELERO_BACKUP_SKIP
+        assert body["spec"]["veleroResourcesBackupName"] == VELERO_BACKUP_SKIP
+        mock_wait_mc.assert_called_once()
+
+    def test_apply_immediate_import_annotations(self, mock_secondary_client, mock_state_manager):
+        """Test immediate-import annotation application under ImportOnly."""
+        mock_state_manager.get_config.return_value = "2.14.0"
+        activation = SecondaryActivation(
+            secondary_client=mock_secondary_client,
+            state_manager=mock_state_manager,
+            method="passive",
+        )
+
+        mock_secondary_client.get_configmap.return_value = None
+        mock_secondary_client.list_custom_resources.return_value = [
+            {"metadata": {"name": "cluster-a", "annotations": {}}},
+            {"metadata": {"name": "cluster-b", "annotations": {IMMEDIATE_IMPORT_ANNOTATION: ""}}},
+            {"metadata": {"name": "local-cluster", "annotations": {}}},
+        ]
+
+        activation._apply_immediate_import_annotations()
+
+        mock_secondary_client.patch_managed_cluster.assert_called_once()
+        args, kwargs = mock_secondary_client.patch_managed_cluster.call_args
+        assert kwargs["name"] == "cluster-a"
+        assert kwargs["patch"]["metadata"]["annotations"][IMMEDIATE_IMPORT_ANNOTATION] == ""
+
+    def test_apply_immediate_import_annotations_handles_completed_value(self, mock_secondary_client, mock_state_manager):
+        """Ensure Completed annotations are reset via delete-and-add."""
+        mock_state_manager.get_config.return_value = "2.14.1"
+        activation = SecondaryActivation(
+            secondary_client=mock_secondary_client,
+            state_manager=mock_state_manager,
+            method="passive",
+        )
+
+        mock_secondary_client.get_configmap.return_value = {"data": {}}
+        mock_secondary_client.list_custom_resources.return_value = [
+            {"metadata": {"name": "cluster-a", "annotations": {IMMEDIATE_IMPORT_ANNOTATION: "Completed"}}},
+            {"metadata": {"name": "local-cluster", "annotations": {}}},
+        ]
+
+        activation._apply_immediate_import_annotations()
+
+        assert mock_secondary_client.patch_managed_cluster.call_count == 2
+        first_call = mock_secondary_client.patch_managed_cluster.call_args_list[0]
+        second_call = mock_secondary_client.patch_managed_cluster.call_args_list[1]
+
+        assert first_call.kwargs["patch"]["metadata"]["annotations"][IMMEDIATE_IMPORT_ANNOTATION] is None
+        assert second_call.kwargs["patch"]["metadata"]["annotations"][IMMEDIATE_IMPORT_ANNOTATION] == ""
+
+    def test_apply_immediate_import_annotations_skips_for_sync_strategy(self, mock_secondary_client, mock_state_manager):
+        """Skip annotation when autoImportStrategy already ImportAndSync."""
+        mock_state_manager.get_config.return_value = "2.14.2"
+        activation = SecondaryActivation(
+            secondary_client=mock_secondary_client,
+            state_manager=mock_state_manager,
+            method="passive",
+        )
+
+        mock_secondary_client.get_configmap.return_value = {
+            "data": {AUTO_IMPORT_STRATEGY_KEY: AUTO_IMPORT_STRATEGY_SYNC}
+        }
+
+        activation._apply_immediate_import_annotations()
+
+        mock_secondary_client.list_custom_resources.assert_not_called()
+        mock_secondary_client.patch_managed_cluster.assert_not_called()
+
+    def test_apply_immediate_import_annotations_raises_on_failures(
+        self, mock_secondary_client, mock_state_manager
+    ):
+        """Ensure failures raise and do not mark the step completed."""
+        mock_state_manager.get_config.return_value = "2.14.0"
+        activation = SecondaryActivation(
+            secondary_client=mock_secondary_client,
+            state_manager=mock_state_manager,
+            method="passive",
+        )
+
+        mock_secondary_client.get_configmap.return_value = None
+        mock_secondary_client.list_custom_resources.return_value = [
+            {"metadata": {"name": "cluster-a", "annotations": {}}},
+            {"metadata": {"name": "local-cluster", "annotations": {}}},
+        ]
+
+        with patch.object(activation, "_reset_immediate_import_annotation", return_value=False):
+            with pytest.raises(FatalError, match="cluster-a"):
+                activation._apply_immediate_import_annotations()
+
+    def test_reset_immediate_import_annotation_handles_api_exception(self, mock_secondary_client, mock_state_manager):
+        """Verify ApiException returns False and logs warning."""
+        activation = SecondaryActivation(
+            secondary_client=mock_secondary_client,
+            state_manager=mock_state_manager,
+            method="passive",
+        )
+
+        mock_secondary_client.patch_managed_cluster.side_effect = ApiException(status=409)
+
+        result = activation._reset_immediate_import_annotation("cluster-a", "Completed")
+
+        assert result is False
+        mock_secondary_client.patch_managed_cluster.assert_called_once()
 
 
 @pytest.mark.unit
