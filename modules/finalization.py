@@ -7,7 +7,7 @@ Finalization and rollback module for ACM switchover.
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from kubernetes.client.rest import ApiException
 
@@ -529,14 +529,11 @@ class Finalization:
 
         phase = status.get("phase", "unknown")
 
-        def _to_int(value: Optional[object]) -> int:
+        def _to_int(value: Optional[Any]) -> int:
             try:
                 return int(value or 0)
             except (TypeError, ValueError):
                 return 0
-
-        errors = _to_int(status.get("errors"))
-        warnings = _to_int(status.get("warnings"))
 
         if phase != "Completed":
             if phase in ("New", "InProgress"):
@@ -584,6 +581,9 @@ class Finalization:
                 phase = status.get("phase", "unknown")
             else:
                 raise SwitchoverError(f"Latest backup {backup_name} not completed (phase={phase})")
+
+        errors = _to_int(status.get("errors"))
+        warnings = _to_int(status.get("warnings"))
         if errors > 0:
             raise SwitchoverError(f"Latest backup {backup_name} completed with {errors} error(s)")
         if warnings > 0:

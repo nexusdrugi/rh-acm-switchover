@@ -11,7 +11,7 @@ import signal
 import stat
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any, Callable, Dict, Optional, Set, Tuple, TypeVar
+from typing import Any, Callable, Dict, Literal, Optional, Set, Tuple, TypeVar
 
 # File locking is best-effort; fcntl isn't available on Windows.
 try:
@@ -478,7 +478,7 @@ class StepContext:
             self._should_run = True
         return self._should_run
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+    def __exit__(self, exc_type, exc_val, exc_tb) -> Literal[False]:
         """Mark step completed if it ran successfully."""
         # Only mark completed if:
         # 1. The step was supposed to run (_should_run is True)
