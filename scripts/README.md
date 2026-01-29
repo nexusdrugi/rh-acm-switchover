@@ -120,7 +120,7 @@ This resolves ambiguity during the transition period when the old hub hasn't yet
 ╔════════════════════════════════════════════════════════════╗
 ║   ACM Hub Discovery                                        ║
 ╚════════════════════════════════════════════════════════════╝
-discover-hub.sh v1.4.11 (2026-01-19)
+discover-hub.sh v1.5.3 (2026-01-29)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Analyzing Contexts
@@ -237,9 +237,9 @@ Automates all prerequisite checks before starting an ACM switchover to catch con
 
 ```
 ╔════════════════════════════════════════════════════════════╗
-║   ACM Switchover Pre-flight Validation                    ║
+║   ACM Switchover Pre-flight Validation                     ║
 ╚════════════════════════════════════════════════════════════╝
-preflight-check.sh v1.5.0 (2026-01-28)
+preflight-check.sh v1.5.3 (2026-01-29)
 
 Primary Hub:    primary-hub
 Secondary Hub:  secondary-hub

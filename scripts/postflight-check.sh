@@ -338,7 +338,9 @@ if [[ $BACKUP_SCHEDULE -gt 0 ]]; then
                 fi
 
                 if [[ $AGE_SECONDS -gt $EFFECTIVE_BACKUP_AGE_MAX_SECONDS ]]; then
-                    if [[ -n "$INTERVAL_SECONDS" ]]; then
+                    if [[ "$LATEST_PHASE" == "InProgress" ]]; then
+                        check_warn "Backup '$LATEST_BACKUP' running longer than expected: $AGE_DISPLAY"
+                    elif [[ -n "$INTERVAL_SECONDS" ]]; then
                         check_fail "Latest backup is too old: $AGE_DISPLAY (schedule: $SCHEDULE_EXPR, interval: $INTERVAL_DISPLAY, threshold: $THRESHOLD_DISPLAY)"
                     else
                         check_fail "Latest backup is older than $((EFFECTIVE_BACKUP_AGE_MAX_SECONDS / 60)) minutes ($AGE_DISPLAY ago)"
