@@ -115,7 +115,7 @@ class Finalization:
             # Verify new backups are being created
             with self.state.step("verify_new_backups", logger) as should_run:
                 if should_run:
-                    self._verify_new_backups()
+                    self._verify_new_backups(timeout=self._get_backup_verify_timeout())
 
             with self.state.step("verify_backup_integrity", logger) as should_run:
                 if should_run:
@@ -334,6 +334,47 @@ class Finalization:
             f"No new backups detected after {timeout}s. " "BackupSchedule may take time to create first backup."
         )
 
+    def _get_backup_verify_timeout(self) -> int:
+        """Derive backup verification timeout from BackupSchedule cadence."""
+        schedule_interval = self._get_backup_schedule_interval_seconds()
+        if schedule_interval:
+            derived_timeout = max(BACKUP_VERIFY_TIMEOUT, schedule_interval)
+            logger.info(
+                "Derived backup verification timeout from schedule cadence: %ss (interval=%ss)",
+                derived_timeout,
+                schedule_interval,
+            )
+            return derived_timeout
+        return BACKUP_VERIFY_TIMEOUT
+
+    def _get_backup_schedule_interval_seconds(self) -> Optional[int]:
+        schedules = self._get_backup_schedules()
+        if not schedules:
+            logger.warning("No BackupSchedule found; using default backup verification timeout")
+            return None
+
+        schedule = schedules[0]
+        schedule_name = schedule.get("metadata", {}).get("name", BACKUP_SCHEDULE_DEFAULT_NAME)
+        spec = schedule.get("spec", {}) or {}
+        cron_expr = spec.get("veleroSchedule")
+
+        if not cron_expr:
+            logger.warning(
+                "BackupSchedule %s missing spec.veleroSchedule; using default backup verification timeout",
+                schedule_name,
+            )
+            return None
+
+        interval = self._parse_cron_interval_seconds(cron_expr)
+        if interval is None:
+            logger.warning(
+                "Unable to derive schedule cadence from BackupSchedule %s veleroSchedule=%s; "
+                "using default backup verification timeout",
+                schedule_name,
+                cron_expr,
+            )
+        return interval
+
     @staticmethod
     def _parse_timestamp(timestamp: Optional[str]) -> Optional[datetime]:
         """Parse a Kubernetes timestamp into a timezone-aware datetime."""
@@ -343,6 +384,49 @@ class Finalization:
             return datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
         except (ValueError, TypeError):
             return None
+
+    @staticmethod
+    def _parse_cron_interval_seconds(cron_expr: str) -> Optional[int]:
+        fields = cron_expr.split()
+        if len(fields) != 5:
+            return None
+
+        minute, hour, dom, month, dow = fields
+
+        def _parse_every(field: str) -> Optional[int]:
+            if field.startswith("*/"):
+                value = field[2:]
+                if value.isdigit():
+                    interval = int(value)
+                    if interval > 0:
+                        return interval
+            return None
+
+        def _is_number(field: str) -> bool:
+            return field.isdigit()
+
+        every_minute = _parse_every(minute)
+        if every_minute and hour == dom == month == dow == "*":
+            return every_minute * 60
+
+        every_hour = _parse_every(hour)
+        if every_hour and dom == month == dow == "*" and _is_number(minute):
+            return every_hour * 3600
+
+        every_day = _parse_every(dom)
+        if every_day and month == dow == "*" and _is_number(minute) and _is_number(hour):
+            return every_day * 86400
+
+        if dom == "*" and month == "*" and dow == "*" and _is_number(minute) and _is_number(hour):
+            return 86400
+
+        if dom == "*" and month == "*" and _is_number(minute) and _is_number(hour) and dow.isdigit():
+            return 7 * 86400
+
+        if _is_number(minute) and _is_number(hour) and dom.isdigit() and month == "*" and dow == "*":
+            return 30 * 86400
+
+        return None
 
     def _check_velero_logs_for_backup(self, backup_name: str, tail_lines: int = 2000) -> None:
         """Scan recent Velero logs for errors related to a backup."""
@@ -430,6 +514,7 @@ class Finalization:
 
         if phase != "Completed":
             if phase in ("New", "InProgress"):
+                backup_verify_timeout = self._get_backup_verify_timeout()
 
                 def _poll_backup_completion() -> Tuple[bool, str]:
                     backup = self.secondary.get_custom_resource(
@@ -451,12 +536,14 @@ class Finalization:
                 completed = wait_for_condition(
                     f"backup {backup_name} completion",
                     _poll_backup_completion,
-                    timeout=BACKUP_VERIFY_TIMEOUT,
+                    timeout=backup_verify_timeout,
                     interval=BACKUP_POLL_INTERVAL,
                     logger=logger,
                 )
                 if not completed:
-                    raise RuntimeError(f"Latest backup {backup_name} did not complete within {BACKUP_VERIFY_TIMEOUT}s")
+                    raise RuntimeError(
+                        f"Latest backup {backup_name} did not complete within {backup_verify_timeout}s"
+                    )
                 latest_backup = (
                     self.secondary.get_custom_resource(
                         group="velero.io",

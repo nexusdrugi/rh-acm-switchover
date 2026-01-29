@@ -221,6 +221,28 @@ class TestFinalization:
 
         finalization._verify_backup_integrity(max_age_seconds=600)
 
+    def test_backup_verify_timeout_derived_from_schedule(self, finalization):
+        schedule = {
+            "metadata": {"name": "schedule-rhacm"},
+            "spec": {"veleroSchedule": "0 */4 * * *"},
+        }
+        finalization._cached_schedules = [schedule]
+
+        timeout = finalization._get_backup_verify_timeout()
+
+        assert timeout == 4 * 3600
+
+    @pytest.mark.parametrize(
+        ("cron_expr", "expected_seconds"),
+        [
+            ("*/15 * * * *", 15 * 60),
+            ("0 */2 * * *", 2 * 3600),
+            ("0 0 * * *", 24 * 3600),
+        ],
+    )
+    def test_parse_cron_interval_seconds(self, finalization, cron_expr, expected_seconds):
+        assert finalization._parse_cron_interval_seconds(cron_expr) == expected_seconds
+
     def test_verify_backup_integrity_skips_age_without_new_backup(self, finalization, mock_secondary_client):
         """Backup age enforcement should be skipped if no new backup was detected."""
         backup_ts = (datetime.now(timezone.utc) - timedelta(seconds=1200)).isoformat().replace("+00:00", "Z")
