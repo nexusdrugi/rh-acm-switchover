@@ -272,7 +272,7 @@ class Finalization:
         Verify new backups are being created.
 
         Args:
-            timeout: Maximum wait time in seconds (default 10 minutes)
+            timeout: Maximum wait time in seconds
         """
 
         logger.info("Verifying new backups are being created...")
@@ -288,7 +288,7 @@ class Finalization:
         initial_backup_names = {b.get("metadata", {}).get("name") for b in initial_backups}
 
         logger.info("Found %s existing backup(s)", len(initial_backups))
-        logger.info("Waiting for new backup to appear (this may take 5-10 minutes)...")
+        logger.info("Waiting for new backup to appear (timeout: %ss)...", timeout)
 
         start_time = time.time()
 
