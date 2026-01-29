@@ -319,8 +319,8 @@ if [[ $BACKUP_SCHEDULE -gt 0 ]]; then
             CURRENT_EPOCH=$(date +%s)
             if [[ $LATEST_EPOCH -gt 0 ]]; then
                 AGE_SECONDS=$((CURRENT_EPOCH - LATEST_EPOCH))
-                if [[ $AGE_SECONDS -gt 600 ]]; then
-                    check_fail "Latest backup is older than 10 minutes ($((AGE_SECONDS / 60)) mins ago)"
+                if [[ $AGE_SECONDS -gt $BACKUP_AGE_MAX_SECONDS ]]; then
+                    check_fail "Latest backup is older than $((BACKUP_AGE_MAX_SECONDS / 60)) minutes ($((AGE_SECONDS / 60)) mins ago)"
                 else
                     check_pass "Latest backup age OK ($AGE_SECONDS seconds)"
                 fi

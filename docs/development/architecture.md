@@ -177,7 +177,7 @@ Handle optional components gracefully:
 The automation phases map to the v2 runbook steps as follows:
 
 | Python Phase | Runbook Steps | Module | Key Actions |
-|--------------|---------------|--------|-------------|
+| -------------- | --------------- | -------- | ------------- |
 | `PREFLIGHT` | Step 0 | `preflight_coordinator.py` | Validate both hubs, versions, backups, prerequisites |
 | `PRIMARY_PREP` | Steps 1-3 (Method 1) / F1-F3 (Method 2) | `primary_prep.py` | Pause backups, disable auto-import, scale down Thanos compactor |
 | `ACTIVATION` | Steps 4-5 (Method 1) / F4-F5 (Method 2) | `activation.py` | Verify passive sync or create full restore, activate clusters |

@@ -586,7 +586,7 @@ if is_acm_214_or_higher "$ACM_SECONDARY_VERSION"; then
         check_warn "Secondary hub: ImportOnly strategy with existing clusters"
         echo -e "${YELLOW}       ACM 2.14+ default ImportOnly requires one of the following:${NC}"
         echo -e "${YELLOW}       Option A (preferred): Add immediate-import annotation (empty value) on secondary hub${NC}"
-        echo -e "${YELLOW}         oc --context=$SECONDARY_CONTEXT get managedcluster -o name | grep -v $LOCAL_CLUSTER_NAME | \\\${NC}"
+        echo -e "${YELLOW}         oc --context=$SECONDARY_CONTEXT get managedcluster -o name | grep -v $LOCAL_CLUSTER_NAME | \\${NC}"
         echo -e "${YELLOW}           xargs -I{} oc --context=$SECONDARY_CONTEXT annotate {} import.open-cluster-management.io/immediate-import='' --overwrite${NC}"
         echo -e "${YELLOW}         Note: empty value ('') triggers auto-import; controller sets it to 'Completed' afterward${NC}"
         echo -e "${YELLOW}         It is safe to leave the annotation in place (no removal needed)${NC}"
