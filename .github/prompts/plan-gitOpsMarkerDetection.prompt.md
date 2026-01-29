@@ -8,7 +8,7 @@ Add GitOps-managed resource detection to preflight/postflight scripts and Python
 
 2. **Add Bash helper `collect_gitops_markers()`** to `scripts/lib-common.sh` using indexed arrays `GITOPS_DETECTED_RESOURCES[]` and `GITOPS_DETECTED_MARKERS[]`. Caller passes resource identifier string. Add `print_gitops_report()` function that samples first 10 ManagedClusters with "and X more" note if exceeded.
 
-3. **Integrate Python detection at 8 points** across 6 resource types:
+3. **Integrate Python detection at 9 points** across 6 resource types:
    | Resource | Integration Points |
    |----------|-------------------|
    | `BackupSchedule` | `BackupScheduleValidator.run()`, `PrimaryPrep._pause_backup_schedule()`, `Finalization._enable_backup_schedule()` |
