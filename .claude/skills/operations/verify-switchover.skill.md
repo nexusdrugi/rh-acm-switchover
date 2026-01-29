@@ -135,7 +135,7 @@ oc get route grafana -n open-cluster-management-observability --context <seconda
 
 ```bash
 oc delete multiclusterobservability.observability.open-cluster-management.io observability \
-  -n open-cluster-management-observability --context <primary>
+  --context <primary>
 ```
 
 **Verify pods terminate:**

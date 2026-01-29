@@ -749,8 +749,7 @@ If you keep the old primary hub as a warm secondary/DR hub (that is, you **do no
   # On the OLD/secondary hub
   oc get multiclusterobservability.observability.open-cluster-management.io -A
 
-  oc delete multiclusterobservability.observability.open-cluster-management.io observability \
-    -n open-cluster-management-observability
+  oc delete multiclusterobservability.observability.open-cluster-management.io observability
 
   # Wait for Observability pods to terminate (may take 2-5 minutes):
   oc get pods -n open-cluster-management-observability
@@ -938,7 +937,7 @@ If the old primary hub will no longer be used, remove ACM components to free res
 oc get multiclusterobservability.observability.open-cluster-management.io -A
 
 # Delete it:
-oc delete multiclusterobservability.observability.open-cluster-management.io observability -n open-cluster-management-observability
+oc delete multiclusterobservability.observability.open-cluster-management.io observability
 
 # Wait for Observability pods to terminate (may take 2-5 minutes):
 oc get pods -n open-cluster-management-observability
