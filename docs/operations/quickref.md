@@ -165,9 +165,14 @@ oc patch clusterdeployment <name> -n <namespace> \
   --type='merge' -p '{"spec":{"preserveOnDelete":true}}'
 
 # Check auto-import strategy (ACM 2.14+)
-oc get configmap import-controller -n multicluster-engine \
+oc get configmap import-controller-config -n multicluster-engine \
   -o jsonpath='{.data.autoImportStrategy}'
 # If not found or returns empty, default (ImportOnly) is in use
+
+# If ImportOnly and secondary hub has existing ManagedClusters, add immediate-import annotation
+oc --context <secondary> get managedcluster -o name | grep -v local-cluster | \
+  xargs -I{} oc --context <secondary> annotate {} import.open-cluster-management.io/immediate-import='' --overwrite
+# Empty value triggers auto-import; controller sets value to Completed (no removal needed)
 ```
 
 ## Post-Switchover Verification
