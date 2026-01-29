@@ -15,6 +15,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import modules.finalization as finalization_module
+from lib.exceptions import SwitchoverError
 
 Finalization = finalization_module.Finalization
 
@@ -279,9 +280,11 @@ class TestFinalization:
             }
         ]
         mock_secondary_client.get_pods.return_value = []
-        finalization.state.get_config.side_effect = lambda key, default=None: True
+        finalization.state.get_config.side_effect = (
+            lambda key, default=None: True if key == "new_backup_detected" else None
+        )
 
-        with pytest.raises(RuntimeError):
+        with pytest.raises(SwitchoverError):
             finalization._verify_backup_integrity(max_age_seconds=600)
 
     def test_verify_backup_integrity_skips_age_if_backup_before_enable(self, finalization, mock_secondary_client):
@@ -333,7 +336,7 @@ class TestFinalization:
         ]
         mock_secondary_client.get_pods.return_value = []
 
-        with pytest.raises(RuntimeError):
+        with pytest.raises(SwitchoverError):
             finalization._verify_backup_integrity(max_age_seconds=600)
 
     @patch("modules.finalization.wait_for_condition")
@@ -501,11 +504,15 @@ class TestFinalization:
         )
 
         # Mock all required responses with side_effect for sequential calls
-        # Order: _cleanup_restore_resources, verify_backup_schedule_enabled, fix_backup_collision, verify_new_backups (2x)
+        # Order: _cleanup_restore_resources, verify_backup_schedule_enabled, fix_backup_collision,
+        # _get_backup_verify_timeout, verify_new_backups (2x), verify_backup_integrity
         mock_secondary_client.list_custom_resources.side_effect = [
             [],  # _cleanup_restore_resources - no restores to clean up
             [{"metadata": {"name": "schedule"}, "spec": {"paused": False}}],  # verify_backup_schedule_enabled
             [{"metadata": {"name": "schedule"}, "spec": {}, "status": {"phase": "Enabled"}}],  # fix_backup_collision
+            [
+                {"metadata": {"name": "schedule"}, "spec": {"veleroSchedule": "*/15 * * * *"}}
+            ],  # _get_backup_verify_timeout
             [],  # Initial backups
             [{"metadata": {"name": "backup-1"}, "status": {"phase": "InProgress"}}],  # New backup detected
             [
